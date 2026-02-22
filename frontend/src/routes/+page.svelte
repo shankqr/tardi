@@ -91,7 +91,7 @@
 			href="/signup"
 			class="mt-8 inline-block rounded-lg bg-white px-6 py-3 text-sm font-medium text-gray-900 hover:bg-gray-100"
 		>
-			Get Started Free
+			Get Started
 		</a>
 	</div>
 </section>
