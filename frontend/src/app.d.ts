@@ -6,7 +6,12 @@ declare global {
 		// interface Locals {}
 		// interface PageData {}
 		// interface PageState {}
-		// interface Platform {}
+		interface Platform {
+			env?: {
+				COMING_SOON?: string;
+				API_URL?: string;
+			};
+		}
 	}
 }
 

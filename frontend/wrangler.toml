@@ -2,3 +2,13 @@ name = "tardi"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".svelte-kit/cloudflare"
+
+# Preview environment (dev deployments via --branch=dev)
+[env.preview.vars]
+COMING_SOON = "false"
+API_URL = "http://localhost:8080"
+
+# Production environment
+[env.production.vars]
+COMING_SOON = "true"
+API_URL = "http://localhost:8080"

@@ -1,15 +1,15 @@
 import type { DashboardState } from '$lib/types';
 import { mockDashboardState } from './mock';
+import { getApiUrl } from '$lib/stores/config';
 
 const USE_MOCK = true;
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export async function getDashboardState(token: string): Promise<DashboardState> {
 	if (USE_MOCK) {
 		return mockDashboardState;
 	}
 
-	const res = await fetch(`${API_BASE}/api/dashboard/state`, {
+	const res = await fetch(`${getApiUrl()}/api/dashboard/state`, {
 		headers: { Authorization: `Bearer ${token}` }
 	});
 
@@ -26,7 +26,7 @@ export async function createInstance(
 ): Promise<void> {
 	if (USE_MOCK) return;
 
-	const res = await fetch(`${API_BASE}/api/instances`, {
+	const res = await fetch(`${getApiUrl()}/api/instances`, {
 		method: 'POST',
 		headers: {
 			Authorization: `Bearer ${token}`,
@@ -43,7 +43,7 @@ export async function createInstance(
 export async function restartInstance(token: string, instanceId: string): Promise<void> {
 	if (USE_MOCK) return;
 
-	const res = await fetch(`${API_BASE}/api/instances/${instanceId}/restart`, {
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/restart`, {
 		method: 'POST',
 		headers: { Authorization: `Bearer ${token}` }
 	});
@@ -56,7 +56,7 @@ export async function restartInstance(token: string, instanceId: string): Promis
 export async function deleteInstance(token: string, instanceId: string): Promise<void> {
 	if (USE_MOCK) return;
 
-	const res = await fetch(`${API_BASE}/api/instances/${instanceId}`, {
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}`, {
 		method: 'DELETE',
 		headers: { Authorization: `Bearer ${token}` }
 	});
