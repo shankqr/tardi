@@ -103,30 +103,6 @@ export async function signUp(email: string, password: string) {
 	}
 }
 
-export async function signInWithGoogle() {
-	if (USE_MOCK_AUTH) {
-		authState.set({
-			user: createMockUser('demo@tardi.app'),
-			loading: false,
-			error: null
-		});
-		return;
-	}
-
-	const { getFirebaseAuth } = await import('$lib/firebase');
-	const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
-	const auth = getFirebaseAuth();
-	authState.update((s) => ({ ...s, error: null }));
-	try {
-		const provider = new GoogleAuthProvider();
-		await signInWithPopup(auth, provider);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Google sign in failed';
-		authState.update((s) => ({ ...s, error: message }));
-		throw err;
-	}
-}
-
 export async function signOut() {
 	if (USE_MOCK_AUTH) {
 		authState.set({ user: null, loading: false, error: null });
