@@ -14,15 +14,14 @@ concurrency:
   group: deploy-infra
   cancel-in-progress: false
 
-defaults:
-  run:
-    working-directory: infra
-
 jobs:
-  apply:
-    name: Terraform Apply
+  apply-dev:
+    name: Terraform Apply (Dev)
     runs-on: ubuntu-latest
-    environment: infrastructure
+    environment: infrastructure-dev
+    defaults:
+      run:
+        working-directory: infra/environments/dev
 
     steps:
       - uses: actions/checkout@v4
@@ -41,9 +40,32 @@ jobs:
         run: terraform init
 
       - name: Terraform Apply
-        run: |
-          terraform apply \
-            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
-            -var-file=environments/dev.tfvars \
-            -var-file=environments/prod.tfvars \
-            -auto-approve
+        run: terraform apply -auto-approve
+
+  apply-prod:
+    name: Terraform Apply (Prod)
+    runs-on: ubuntu-latest
+    environment: infrastructure-prod
+    needs: apply-dev
+    defaults:
+      run:
+        working-directory: infra/environments/prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.5"
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve

@@ -33,7 +33,14 @@ variable "db_tier" {
   type        = string
 }
 
-variable "vpc_network" {
-  description = "VPC network ID for Cloud SQL private IP"
+variable "enable_monitoring" {
+  description = "Whether to create monitoring alert policies"
+  type        = bool
+  default     = false
+}
+
+variable "alert_email" {
+  description = "Email address for monitoring alerts"
   type        = string
+  default     = "alerts@tardi.dev"
 }

@@ -15,7 +15,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REGISTRY: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/tardi
   IMAGE_NAME: api
 
 jobs:
@@ -23,6 +22,8 @@ jobs:
     name: Build, Push & Deploy to ${{ github.ref_name == 'main' && 'Production' || 'Dev' }}
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'production' || 'development' }}
+    env:
+      REGISTRY: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/tardi
 
     steps:
       - uses: actions/checkout@v4

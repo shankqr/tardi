@@ -1,15 +1,19 @@
 # Notification channel — update email after creation
 resource "google_monitoring_notification_channel" "email" {
+  count        = var.enable_monitoring ? 1 : 0
+  project      = var.project_id
   display_name = "Tardi Alerts Email"
   type         = "email"
 
   labels = {
-    email_address = "alerts@tardi.dev"
+    email_address = var.alert_email
   }
 }
 
 # Cloud Run error rate > 5%
 resource "google_monitoring_alert_policy" "cloud_run_errors" {
+  count        = var.enable_monitoring ? 1 : 0
+  project      = var.project_id
   display_name = "Cloud Run Error Rate > 5%"
   combiner     = "OR"
 
@@ -31,7 +35,7 @@ resource "google_monitoring_alert_policy" "cloud_run_errors" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.name]
+  notification_channels = [google_monitoring_notification_channel.email[0].name]
 
   alert_strategy {
     auto_close = "1800s"
@@ -40,6 +44,8 @@ resource "google_monitoring_alert_policy" "cloud_run_errors" {
 
 # Cloud Run p95 latency > 2s
 resource "google_monitoring_alert_policy" "cloud_run_latency" {
+  count        = var.enable_monitoring ? 1 : 0
+  project      = var.project_id
   display_name = "Cloud Run p95 Latency > 2s"
   combiner     = "OR"
 
@@ -61,7 +67,7 @@ resource "google_monitoring_alert_policy" "cloud_run_latency" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.name]
+  notification_channels = [google_monitoring_notification_channel.email[0].name]
 
   alert_strategy {
     auto_close = "1800s"
@@ -70,6 +76,8 @@ resource "google_monitoring_alert_policy" "cloud_run_latency" {
 
 # Cloud SQL CPU > 80%
 resource "google_monitoring_alert_policy" "cloud_sql_cpu" {
+  count        = var.enable_monitoring ? 1 : 0
+  project      = var.project_id
   display_name = "Cloud SQL CPU > 80%"
   combiner     = "OR"
 
@@ -91,7 +99,7 @@ resource "google_monitoring_alert_policy" "cloud_sql_cpu" {
     }
   }
 
-  notification_channels = [google_monitoring_notification_channel.email.name]
+  notification_channels = [google_monitoring_notification_channel.email[0].name]
 
   alert_strategy {
     auto_close = "1800s"

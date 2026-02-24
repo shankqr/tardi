@@ -1,6 +1,7 @@
 # VPC for Cloud SQL private networking
 resource "google_compute_network" "vpc" {
   name                    = "tardi-vpc"
+  project                 = var.project_id
   auto_create_subnetworks = false
 
   depends_on = [google_project_service.apis]
@@ -8,6 +9,7 @@ resource "google_compute_network" "vpc" {
 
 resource "google_compute_subnetwork" "default" {
   name          = "tardi-subnet"
+  project       = var.project_id
   ip_cidr_range = "10.0.0.0/24"
   region        = var.region
   network       = google_compute_network.vpc.id
@@ -16,6 +18,7 @@ resource "google_compute_subnetwork" "default" {
 # Private IP range for Cloud SQL
 resource "google_compute_global_address" "private_ip" {
   name          = "tardi-sql-private-ip"
+  project       = var.project_id
   purpose       = "VPC_PEERING"
   address_type  = "INTERNAL"
   prefix_length = 16

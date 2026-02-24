@@ -1,6 +1,7 @@
 # Database URL — constructed from Cloud SQL instance
 resource "google_secret_manager_secret" "database_url" {
   secret_id = "${var.environment}-database-url"
+  project   = var.project_id
 
   replication {
     auto {}
@@ -15,6 +16,7 @@ resource "google_secret_manager_secret_version" "database_url" {
 # Firebase project ID — set manually after creation
 resource "google_secret_manager_secret" "firebase_project_id" {
   secret_id = "${var.environment}-firebase-project-id"
+  project   = var.project_id
 
   replication {
     auto {}
@@ -33,6 +35,7 @@ resource "google_secret_manager_secret_version" "firebase_project_id" {
 # Stripe secret key — set manually after creation
 resource "google_secret_manager_secret" "stripe_secret_key" {
   secret_id = "${var.environment}-stripe-secret-key"
+  project   = var.project_id
 
   replication {
     auto {}
@@ -51,6 +54,7 @@ resource "google_secret_manager_secret_version" "stripe_secret_key" {
 # Stripe webhook secret — set manually after creation
 resource "google_secret_manager_secret" "stripe_webhook_secret" {
   secret_id = "${var.environment}-stripe-webhook-secret"
+  project   = var.project_id
 
   replication {
     auto {}
@@ -69,6 +73,7 @@ resource "google_secret_manager_secret_version" "stripe_webhook_secret" {
 # Hetzner API token — set manually after creation
 resource "google_secret_manager_secret" "hetzner_api_token" {
   secret_id = "${var.environment}-hetzner-api-token"
+  project   = var.project_id
 
   replication {
     auto {}

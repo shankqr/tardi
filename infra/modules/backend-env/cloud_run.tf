@@ -1,6 +1,7 @@
 resource "google_cloud_run_v2_service" "api" {
   name     = "tardi-api-${var.environment}"
   location = var.region
+  project  = var.project_id
 
   template {
     service_account = google_service_account.api.email
@@ -120,6 +121,7 @@ resource "google_cloud_run_v2_service" "api" {
 resource "google_cloud_run_v2_service_iam_member" "public" {
   name     = google_cloud_run_v2_service.api.name
   location = var.region
+  project  = var.project_id
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
