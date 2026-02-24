@@ -14,6 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/shanq/tardi/internal/api"
+	"github.com/shanq/tardi/internal/auth"
 	"github.com/shanq/tardi/internal/config"
 	"github.com/shanq/tardi/internal/db"
 	"github.com/shanq/tardi/internal/jobs"
@@ -64,6 +65,12 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("migrations complete")
+
+	// Initialize Firebase Auth
+	if err := auth.InitFirebase(cfg.FirebaseProjectID, cfg.IsDev()); err != nil {
+		logger.Error("failed to initialize firebase", "error", err)
+		os.Exit(1)
+	}
 
 	// Seed dev data
 	if cfg.IsDev() {

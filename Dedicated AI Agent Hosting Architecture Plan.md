@@ -574,29 +574,254 @@ Lean on GCP's built-in stack — zero extra services to manage.
 
 ## Deployment Model
 
-### CI/CD (GitHub Actions)
-
-| Trigger | Action |
-|---|---|
-| Push to `main` | Build Go binary → Docker image → push to GCR → deploy to Cloud Run |
-| Pull request | Run tests + lint only |
-| Frontend push to `main` | Cloudflare Pages auto-deploys |
-
 ### Environments
 
-Two only (solo dev doesn't need staging):
+Two environments, each tied to a Git branch:
 
-- **dev:** Local Docker Compose (Go service + PostgreSQL)
-- **prod:** Cloud Run + Cloud SQL
+| Environment | Branch | Frontend | Backend | Database |
+|---|---|---|---|---|
+| Development | `dev` | dev.tardi.pages.dev | Cloud Run `tardi-api-dev` | Cloud SQL `tardi-db-dev` (f1-micro, single zone) |
+| Production | `main` | tardi.pages.dev | Cloud Run `tardi-api-prod` | Cloud SQL `tardi-db-prod` (custom-1-3840, regional HA) |
+
+### Branching Strategy
+
+```
+feature branch → PR to dev → merge → deploys to dev environment
+                               ↓
+              PR from dev to main → merge → deploys to prod environment
+```
+
+Feature branches are created from `dev`. All changes flow through `dev` before reaching `main`.
 
 ### Infrastructure as Code
 
 Terraform for GCP resources, stored in `infra/` directory:
-- Cloud Run service
-- Cloud SQL instance
-- Secret Manager secrets
-- IAM bindings
-- Cloud Monitoring alert policies
+
+```
+infra/
+  main.tf                  # Provider, APIs, module.dev + module.prod
+  variables.tf             # Top-level variables
+  network.tf               # VPC, private service networking
+  artifact_registry.tf     # Docker image registry
+  monitoring.tf            # Alert policies
+  environments/
+    dev.tfvars             # Dev overrides (f1-micro, latest tag)
+    prod.tfvars            # Prod overrides (custom tier, stable tag)
+  modules/
+    backend-env/           # Reusable module per environment
+      main.tf              # Cloud SQL instance
+      cloud_run.tf         # Cloud Run service
+      secrets.tf           # Secret Manager entries
+      iam.tf               # Service account + roles
+```
+
+Single Terraform root module with both `module.dev` and `module.prod`. Shared root-level resources: VPC, Artifact Registry, API enablements, monitoring. State stored in GCS bucket (`tardi-terraform-state`).
+
+---
+
+## CI/CD Pipeline (GitHub Actions)
+
+### Workflow Architecture
+
+Seven workflow files in `.github/workflows/`:
+
+```
+.github/workflows/
+  ci-gate.yml            # PR gate — change detection + orchestration
+  ci-frontend.yml        # Reusable: type check + build
+  ci-backend.yml         # Reusable: lint + test + build
+  ci-infra.yml           # Reusable: terraform validate + plan
+  deploy-frontend.yml    # CD: build + deploy to Cloudflare Pages
+  deploy-backend.yml     # CD: Docker build → Artifact Registry → Cloud Run
+  deploy-infra.yml       # CD: terraform apply (main branch only)
+```
+
+### CI: Pull Request Checks
+
+Every PR to `dev` or `main` triggers the CI Gate workflow:
+
+```
+PR opened/updated
+    │
+    ▼
+ci-gate.yml
+    │
+    ├── dorny/paths-filter (detect which dirs changed)
+    │
+    ├── frontend/**  → ci-frontend.yml
+    │                   ├── npm run check (svelte-check + TypeScript)
+    │                   └── npm run build (validates production build)
+    │
+    ├── backend/**   → ci-backend.yml
+    │                   ├── golangci-lint (parallel)
+    │                   ├── go test ./... -v -race (parallel)
+    │                   └── CGO_ENABLED=0 go build (parallel)
+    │
+    ├── infra/**     → ci-infra.yml
+    │                   ├── terraform fmt -check -recursive
+    │                   ├── terraform init
+    │                   ├── terraform validate
+    │                   └── terraform plan (output posted as PR comment)
+    │
+    └── gate job (if: always())
+        └── "All Checks Passed" — single required status check
+```
+
+**Why a CI Gate?** GitHub requires that required status checks actually report for every PR. Path-filtered workflows skip entirely when their paths don't change, leaving the check as "pending" forever. The gate pattern uses `dorny/paths-filter` to conditionally call reusable workflows, with a final `gate` job that always runs and reports success/failure.
+
+### CD: Frontend Deployment
+
+Triggered on push to `dev` or `main` when `frontend/**` changes:
+
+```
+Push to dev/main (frontend/** changed)
+    │
+    ▼
+deploy-frontend.yml
+    │
+    ├── npm ci
+    ├── npm run build (with real VITE_FIREBASE_* secrets)
+    └── wrangler pages deploy --branch=${{ github.ref_name }}
+        │
+        ├── dev branch  → dev.tardi.pages.dev (preview environment)
+        └── main branch → tardi.pages.dev (production)
+```
+
+Runtime variables (`COMING_SOON`, `API_URL`) are configured in the Cloudflare Pages dashboard, not baked into the build. They are read server-side via `platform.env`.
+
+### CD: Backend Deployment
+
+Triggered on push to `dev` or `main` when `backend/**` changes:
+
+```
+Push to dev/main (backend/** changed)
+    │
+    ▼
+deploy-backend.yml
+    │
+    ├── Authenticate to GCP (Workload Identity Federation)
+    ├── Login to Artifact Registry
+    ├── Docker build (multi-stage, Buildx with GHA cache)
+    ├── Push image with tags:
+    │   ├── dev branch:  dev-{sha7} + latest
+    │   └── main branch: prod-{sha7} + stable
+    └── Deploy to Cloud Run
+        ├── dev branch:  tardi-api-dev with image dev-{sha7}
+        └── main branch: tardi-api-prod with image prod-{sha7}
+```
+
+Docker image tagging convention:
+- **`{env}-{sha7}`**: Immutable tag for every build (e.g., `dev-a1b2c3d`). Used for actual Cloud Run deployments. Makes rollbacks trivial.
+- **`latest` / `stable`**: Floating convenience tags. `latest` tracks dev HEAD, `stable` tracks prod HEAD.
+
+### CD: Infrastructure Deployment
+
+Triggered on push to `main` only when `infra/**` changes:
+
+```
+Push to main (infra/** changed)
+    │
+    ▼
+deploy-infra.yml
+    │
+    ├── Authenticate to GCP (Workload Identity Federation)
+    ├── terraform init
+    └── terraform apply -var-file=environments/dev.tfvars -var-file=environments/prod.tfvars -auto-approve
+```
+
+**Infrastructure applies from `main` only.** Both dev and prod modules share Terraform state (VPC, Artifact Registry, API enablements). Splitting state would require a third "shared" root module — unnecessary at this scale. All infra changes go through PR review before reaching `main`.
+
+### Concurrency Control
+
+Each deploy workflow uses a concurrency group scoped by branch:
+
+```yaml
+concurrency:
+  group: deploy-{component}-${{ github.ref_name }}
+  cancel-in-progress: false
+```
+
+This prevents parallel deployments to the same environment. `cancel-in-progress: false` ensures running deployments finish rather than being killed by newer pushes.
+
+### GCP Authentication: Workload Identity Federation
+
+GitHub Actions authenticates to GCP via OIDC — no long-lived service account keys.
+
+Setup:
+1. Workload Identity Pool: `github-actions`
+2. OIDC Provider: `github` (bound to `token.actions.githubusercontent.com`)
+3. Attribute condition: scoped to the repository
+4. Service account: `github-actions-cicd@{project}.iam.gserviceaccount.com`
+5. Roles: `artifactregistry.writer`, `run.admin`, `iam.serviceAccountUser`, `storage.admin`, `editor`
+
+### GitHub Secrets
+
+| Secret | Purpose |
+|---|---|
+| `GCP_PROJECT_ID` | GCP project identifier |
+| `GCP_REGION` | GCP region (e.g., `us-central1`) |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | Workload Identity Pool provider path |
+| `GCP_SERVICE_ACCOUNT` | CI/CD service account email |
+| `CLOUDFLARE_API_TOKEN` | Wrangler deployment (Cloudflare Pages:Edit permission) |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account identifier |
+| `VITE_FIREBASE_API_KEY` | Firebase web API key (build-time) |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase auth domain (build-time) |
+| `VITE_FIREBASE_PROJECT_ID` | Firebase project ID (build-time) |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket (build-time) |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID (build-time) |
+| `VITE_FIREBASE_APP_ID` | Firebase app ID (build-time) |
+
+### GitHub Environments
+
+Three GitHub Environments for deployment protection:
+
+| Environment | Used By | Protection |
+|---|---|---|
+| `development` | deploy-frontend, deploy-backend (dev) | None |
+| `production` | deploy-frontend, deploy-backend (main) | Optional: manual approval |
+| `infrastructure` | deploy-infra | Optional: manual approval |
+
+### Branch Protection Rules
+
+**`main` branch:**
+- Require PR reviews (1 approver)
+- Require "CI Gate / All Checks Passed" status check
+- Require linear history (rebase/squash merges)
+- No direct push
+
+**`dev` branch:**
+- Require "CI Gate / All Checks Passed" status check
+- PR reviews optional
+
+### End-to-End Deployment Flow
+
+```
+Developer pushes feature branch
+    │
+    ▼
+PR to dev ──── CI Gate runs relevant checks
+    │              │
+    │          All Checks Passed ✓
+    │              │
+    ▼              ▼
+Merge to dev ─── Triggers deploy workflows (path-filtered)
+    │              ├── deploy-frontend.yml → dev.tardi.pages.dev
+    │              └── deploy-backend.yml  → tardi-api-dev
+    │
+    ▼
+Manual testing on dev environment
+    │
+    ▼
+PR from dev to main ── CI Gate runs all checks again
+    │                       │
+    │                   Review + Approve
+    │                       │
+    ▼                       ▼
+Merge to main ──────── Triggers deploy workflows
+                           ├── deploy-frontend.yml → tardi.pages.dev
+                           ├── deploy-backend.yml  → tardi-api-prod
+                           └── deploy-infra.yml    → terraform apply (if infra/** changed)
+```
 
 ---
 

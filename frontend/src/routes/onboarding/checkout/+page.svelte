@@ -2,8 +2,8 @@
 	import { onboardingState } from '$lib/stores/onboarding';
 	import { plan as planInfo } from '$lib/api/mock';
 
-	const state = $derived($onboardingState);
-	const selectedPlan = $derived(state.selectedPlan ? planInfo : null);
+	const onboarding = $derived.by(() => $onboardingState);
+	const selectedPlan = $derived.by(() => (onboarding.selectedPlan ? planInfo : null));
 
 	let processing = $state(false);
 
@@ -29,7 +29,7 @@
 
 	<h1 class="mt-8 text-2xl font-bold text-gray-900 text-center">Review & Checkout</h1>
 
-	{#if !state.agentConfig || !selectedPlan}
+	{#if !onboarding.agentConfig || !selectedPlan}
 		<div class="mt-8 rounded-lg bg-yellow-50 p-4 text-sm text-yellow-700 text-center">
 			<p>Missing configuration. Please start from the beginning.</p>
 			<a href="/onboarding/configure" class="mt-2 inline-block font-medium underline">Start over</a>
@@ -45,12 +45,12 @@
 				<dl class="mt-3 space-y-2 text-sm">
 					<div class="flex justify-between">
 						<dt class="text-gray-500">Name</dt>
-						<dd class="text-gray-900">{state.agentConfig.name}</dd>
+						<dd class="text-gray-900">{onboarding.agentConfig.name}</dd>
 					</div>
-					{#if state.agentConfig.description}
+					{#if onboarding.agentConfig.description}
 						<div class="flex justify-between">
 							<dt class="text-gray-500">Description</dt>
-							<dd class="text-gray-900 text-right max-w-xs">{state.agentConfig.description}</dd>
+							<dd class="text-gray-900 text-right max-w-xs">{onboarding.agentConfig.description}</dd>
 						</div>
 					{/if}
 				</dl>

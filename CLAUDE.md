@@ -44,13 +44,88 @@ npm run check        # Type check
 - No VPS specs (vCPU, RAM) shown to users — abstracted away
 - All TODO backend integrations show `alert()` placeholder or simulate with `setTimeout`
 
-## Backend (WIP)
+## Backend
 
-- Go with `cmd/` and `internal/` layout
-- PostgreSQL via Docker Compose
-- Migrations in `backend/migrations/`
+- Go 1.26 with `cmd/` and `internal/` layout
+- PostgreSQL via Docker Compose (local), Cloud SQL (deployed)
+- Migrations in `backend/migrations/` (Goose)
+- Dockerfile: multi-stage alpine build, exposes 8080
+- Deployed to GCP Cloud Run (`tardi-api-dev` / `tardi-api-prod`)
 
-## Infra (WIP)
+### Key Paths
 
-- Terraform in `infra/`
-- Hetzner Cloud provider for VPS provisioning
+- `backend/cmd/server/main.go` — Entry point
+- `backend/internal/api/` — HTTP handlers and middleware
+- `backend/internal/config/config.go` — Environment-based config
+- `backend/internal/db/` — PostgreSQL connection, queries, migrations
+- `backend/internal/provider/` — Multi-provider abstraction (Hetzner, etc.)
+- `backend/internal/jobs/` — Async provisioning worker + reconciler
+- `backend/Dockerfile` — Production container image
+- `backend/Makefile` — `make build`, `make test`, `make lint`, `make dev`
+
+### Commands
+
+```bash
+cd backend
+make dev             # Hot reload with air
+make build           # Compile to bin/server
+make test            # go test ./... -v -race
+make lint            # golangci-lint
+make db-reset        # Reset local PostgreSQL
+```
+
+## Infrastructure
+
+- Terraform in `infra/` targeting GCP
+- Single root module with `module.dev` and `module.prod`
+- Shared resources: VPC, Artifact Registry, API enablements
+- State backend: GCS bucket `tardi-terraform-state`
+- Environment overrides: `infra/environments/dev.tfvars` and `prod.tfvars`
+
+### Key Paths
+
+- `infra/main.tf` — Root module (both env instantiations)
+- `infra/variables.tf` — Top-level variables
+- `infra/network.tf` — VPC, private service networking
+- `infra/modules/backend-env/` — Reusable env module (Cloud Run, Cloud SQL, Secrets, IAM)
+- `infra/environments/` — Per-environment tfvars
+
+## CI/CD
+
+GitHub Actions with two branches as source of truth:
+
+- **`dev` branch** → development environment
+- **`main` branch** → production environment
+
+### Workflows (`.github/workflows/`)
+
+| File | Trigger | Purpose |
+|------|---------|---------|
+| `ci-gate.yml` | PR to `dev`/`main` | Path-based change detection, calls reusable CI workflows, single required status check |
+| `ci-frontend.yml` | Reusable + PR | `npm run check` + `npm run build` |
+| `ci-backend.yml` | Reusable + PR | `golangci-lint` + `go test` + `go build` (3 parallel jobs) |
+| `ci-infra.yml` | Reusable + PR | `terraform fmt -check` + `validate` + `plan` (posts plan as PR comment) |
+| `deploy-frontend.yml` | Push to `dev`/`main` (frontend/**) | Build + Wrangler deploy to Cloudflare Pages |
+| `deploy-backend.yml` | Push to `dev`/`main` (backend/**) | Docker build → Artifact Registry → Cloud Run deploy |
+| `deploy-infra.yml` | Push to `main` only (infra/**) | `terraform apply` (both envs, unified state) |
+
+### Branch-to-Environment Mapping
+
+| Branch | Frontend | Backend | Image Tags |
+|--------|----------|---------|------------|
+| `dev` | dev.tardi.pages.dev | tardi-api-dev | `dev-{sha7}` + `latest` |
+| `main` | tardi.pages.dev | tardi-api-prod | `prod-{sha7}` + `stable` |
+
+### Key Design Decisions
+
+- **CI Gate pattern**: `dorny/paths-filter` detects changes, conditionally runs component CI workflows. Single `gate` job is the only required status check (solves path-filter + required-check incompatibility)
+- **Infra applies from `main` only**: Both dev and prod modules share state (VPC, Artifact Registry). All infra changes go through PR review
+- **GCP auth**: Workload Identity Federation (no long-lived service account keys)
+- **Concurrency**: Per-branch groups with `cancel-in-progress: false` (running deploys finish)
+- **Runtime vars** (`COMING_SOON`, `API_URL`): Managed in Cloudflare dashboard, not baked into builds
+
+### GitHub Secrets Required
+
+- `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`
+- `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+- `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`

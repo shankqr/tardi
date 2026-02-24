@@ -2,7 +2,7 @@ import type { DashboardState } from '$lib/types';
 import { mockDashboardState } from './mock';
 import { getApiUrl } from '$lib/stores/config';
 
-const USE_MOCK = true;
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 export async function getDashboardState(token: string): Promise<DashboardState> {
 	if (USE_MOCK) {

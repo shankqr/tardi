@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/shanq/tardi/internal/auth"
 	"github.com/shanq/tardi/internal/db"
 	"github.com/shanq/tardi/internal/models"
 )
@@ -27,13 +28,29 @@ func Auth(pool *pgxpool.Pool, devMode bool) func(http.Handler) http.Handler {
 			var err error
 
 			if devMode && token == "mock-token" {
+				// Dev mock user
 				user, err = db.UpsertUser(r.Context(), pool, "mock-uid-12345", "demo@tardi.app", nil)
-			} else if devMode {
-				// In dev mode, accept any token as a mock user with the token as UID
+			} else if devMode && auth.Client == nil {
+				// Dev mode without Firebase — treat token as UID
 				user, err = db.UpsertUser(r.Context(), pool, token, "dev@tardi.app", nil)
+			} else if auth.Client != nil {
+				// Production: verify Firebase JWT
+				decoded, verifyErr := auth.Client.VerifyIDToken(r.Context(), token)
+				if verifyErr != nil {
+					slog.Warn("auth: invalid firebase token", "error", verifyErr)
+					http.Error(w, `{"error":"invalid or expired token","code":"unauthorized"}`, http.StatusUnauthorized)
+					return
+				}
+
+				email, _ := decoded.Claims["email"].(string)
+				name, _ := decoded.Claims["name"].(string)
+				var namePtr *string
+				if name != "" {
+					namePtr = &name
+				}
+
+				user, err = db.UpsertUser(r.Context(), pool, decoded.UID, email, namePtr)
 			} else {
-				// TODO: Firebase JWT verification
-				// For now, reject non-dev requests without Firebase
 				http.Error(w, `{"error":"firebase auth not configured","code":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
@@ -58,9 +75,9 @@ func UserFromContext(ctx context.Context) *models.User {
 }
 
 func extractBearerToken(r *http.Request) string {
-	auth := r.Header.Get("Authorization")
-	if !strings.HasPrefix(auth, "Bearer ") {
+	a := r.Header.Get("Authorization")
+	if !strings.HasPrefix(a, "Bearer ") {
 		return ""
 	}
-	return strings.TrimPrefix(auth, "Bearer ")
+	return strings.TrimPrefix(a, "Bearer ")
 }

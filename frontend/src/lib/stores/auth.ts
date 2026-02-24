@@ -1,7 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import type { User } from 'firebase/auth';
 
-const USE_MOCK_AUTH = true;
+const USE_MOCK_AUTH = import.meta.env.VITE_USE_MOCK_AUTH === 'true';
 
 interface AuthState {
 	user: User | null;
