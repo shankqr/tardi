@@ -19,10 +19,6 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.environment
       }
       env {
-        name  = "PORT"
-        value = "8080"
-      }
-      env {
         name  = "ALLOWED_ORIGINS"
         value = var.frontend_url
       }
@@ -81,7 +77,7 @@ resource "google_cloud_run_v2_service" "api" {
       resources {
         limits = {
           cpu    = "1"
-          memory = var.environment == "prod" ? "512Mi" : "256Mi"
+          memory = "512Mi"
         }
       }
 
