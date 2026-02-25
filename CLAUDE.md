@@ -77,18 +77,16 @@ make db-reset        # Reset local PostgreSQL
 ## Infrastructure
 
 - Terraform in `infra/` targeting GCP
-- Single root module with `module.dev` and `module.prod`
-- Shared resources: VPC, Artifact Registry, API enablements
-- State backend: GCS bucket `tardi-terraform-state`
-- Environment overrides: `infra/environments/dev.tfvars` and `prod.tfvars`
+- Separate root per GCP project (blast-radius isolation)
+- Dev project: `tardi-dev-488420`, Prod project: `tardi-prod-488420`
+- State backends: `tardi-dev-488420-terraform-state` / `tardi-prod-488420-terraform-state`
+- Shared reusable module: `infra/modules/backend-env/`
 
 ### Key Paths
 
-- `infra/main.tf` — Root module (both env instantiations)
-- `infra/variables.tf` — Top-level variables
-- `infra/network.tf` — VPC, private service networking
-- `infra/modules/backend-env/` — Reusable env module (Cloud Run, Cloud SQL, Secrets, IAM)
-- `infra/environments/` — Per-environment tfvars
+- `infra/environments/dev/` — Dev root (main.tf, variables.tf, terraform.tfvars)
+- `infra/environments/prod/` — Prod root (main.tf, variables.tf, terraform.tfvars)
+- `infra/modules/backend-env/` — Reusable env module (Cloud Run, Cloud SQL, VPC, AR, Secrets, IAM, Monitoring)
 
 ## CI/CD
 
@@ -107,22 +105,22 @@ GitHub Actions with two branches as source of truth:
 | `ci-infra.yml` | Reusable + PR | `terraform fmt -check` + `validate` + `plan` (posts plan as PR comment) |
 | `deploy-frontend.yml` | Push to `dev`/`main` (frontend/**) | Build + Wrangler deploy to Cloudflare Pages |
 | `deploy-backend.yml` | Push to `dev`/`main` (backend/**) | Docker build → Artifact Registry → Cloud Run deploy |
-| `deploy-infra.yml` | Push to `main` only (infra/**) | `terraform apply` (both envs, unified state) |
+| `deploy-infra.yml` | Push to `main` only (infra/**) | `terraform apply` (dev then prod, separate roots) |
 
 ### Branch-to-Environment Mapping
 
 | Branch | Frontend | Backend | Image Tags |
 |--------|----------|---------|------------|
-| `dev` | dev.tardi.pages.dev | tardi-api-dev | `dev-{sha7}` + `latest` |
-| `main` | tardi.pages.dev | tardi-api-prod | `prod-{sha7}` + `stable` |
+| `dev` | dev.tardi-18e.pages.dev | tardi-api-dev | `dev-{sha7}` + `latest` |
+| `main` | tardi-18e.pages.dev | tardi-api-prod | `prod-{sha7}` + `stable` |
 
 ### Key Design Decisions
 
 - **CI Gate pattern**: `dorny/paths-filter` detects changes, conditionally runs component CI workflows. Single `gate` job is the only required status check (solves path-filter + required-check incompatibility)
-- **Infra applies from `main` only**: Both dev and prod modules share state (VPC, Artifact Registry). All infra changes go through PR review
+- **Infra applies from `main` only**: Separate Terraform roots per project, applied sequentially (dev then prod)
 - **GCP auth**: Workload Identity Federation (no long-lived service account keys)
 - **Concurrency**: Per-branch groups with `cancel-in-progress: false` (running deploys finish)
-- **Runtime vars** (`COMING_SOON`, `API_URL`): Managed in Cloudflare dashboard, not baked into builds
+- **Runtime vars** (`COMING_SOON`, `API_URL`): Set in `wrangler.toml` per environment, can be overridden in Cloudflare dashboard
 
 ### GitHub Secrets Required
 
