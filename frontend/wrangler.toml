@@ -6,7 +6,7 @@ pages_build_output_dir = ".svelte-kit/cloudflare"
 # Preview environment (dev deployments via --branch=dev)
 [env.preview.vars]
 COMING_SOON = "false"
-API_URL = "http://localhost:8080"
+API_URL = "https://tardi-api-dev-lckw22k4gq-uc.a.run.app"
 VITE_USE_MOCK_AUTH = "false"
 VITE_USE_MOCK = "false"
 VITE_FIREBASE_API_KEY = "AIzaSyC6qEnkLZn09RBWg1oAekZ2s8QabtpBIqE"
