@@ -1,0 +1,56 @@
+meta {
+  name: Stripe Subscription Updated
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/webhooks/stripe
+  body: json
+  auth: none
+}
+
+headers {
+  Stripe-Signature: t=1234567890,v1=test_signature_placeholder
+}
+
+body:json {
+  {
+    "id": "evt_sub_updated_456",
+    "object": "event",
+    "type": "customer.subscription.updated",
+    "data": {
+      "object": {
+        "id": "sub_test_subscription123",
+        "object": "subscription",
+        "customer": "cus_test_customer123",
+        "status": "active",
+        "current_period_end": 1740000000,
+        "items": {
+          "data": [
+            {
+              "price": {
+                "id": "price_standard_monthly",
+                "unit_amount": 2900,
+                "currency": "usd",
+                "recurring": {
+                  "interval": "month"
+                }
+              }
+            }
+          ]
+        },
+        "metadata": {
+          "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "plan_tier": "standard"
+        }
+      }
+    },
+    "livemode": false,
+    "created": 1234567890
+  }
+}
+
+assert {
+  res.status: eq 200
+}

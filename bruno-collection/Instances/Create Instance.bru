@@ -1,0 +1,26 @@
+meta {
+  name: Create Instance
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/instances
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+body:json {
+  {
+    "name": "my-trading-agent",
+    "region": "eu-central"
+  }
+}
+
+assert {
+  res.status: eq 201
+}

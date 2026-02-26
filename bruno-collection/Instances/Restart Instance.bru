@@ -1,0 +1,19 @@
+meta {
+  name: Restart Instance
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/instances/{{instanceId}}/restart
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+assert {
+  res.status: eq 200
+}

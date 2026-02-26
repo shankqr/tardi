@@ -1,0 +1,21 @@
+meta {
+  name: Get Agent Config
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/agent/config
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentToken}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.config: isDefined
+  res.body.version: isDefined
+}

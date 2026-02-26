@@ -1,0 +1,22 @@
+meta {
+  name: Get Dashboard State
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/dashboard/state
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.instances: isDefined
+  res.body.subscription: isDefined
+  res.body.pending_jobs: isDefined
+}

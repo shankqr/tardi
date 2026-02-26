@@ -1,0 +1,46 @@
+meta {
+  name: Stripe Checkout Completed
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/webhooks/stripe
+  body: json
+  auth: none
+}
+
+headers {
+  Stripe-Signature: t=1234567890,v1=test_signature_placeholder
+}
+
+body:json {
+  {
+    "id": "evt_1234567890",
+    "object": "event",
+    "type": "checkout.session.completed",
+    "data": {
+      "object": {
+        "id": "cs_test_abc123",
+        "object": "checkout.session",
+        "customer": "cus_test_customer123",
+        "subscription": "sub_test_subscription123",
+        "client_reference_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "customer_email": "demo@tardi.app",
+        "payment_status": "paid",
+        "status": "complete",
+        "mode": "subscription",
+        "metadata": {
+          "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "plan_tier": "standard"
+        }
+      }
+    },
+    "livemode": false,
+    "created": 1234567890
+  }
+}
+
+assert {
+  res.status: eq 200
+}

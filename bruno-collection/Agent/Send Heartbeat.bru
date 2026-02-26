@@ -1,0 +1,27 @@
+meta {
+  name: Send Heartbeat
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/agent/heartbeat
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{agentToken}}
+}
+
+body:json {
+  {
+    "cpu_percent": 12.5,
+    "memory_percent": 45.2,
+    "uptime_seconds": 86400
+  }
+}
+
+assert {
+  res.status: eq 200
+}

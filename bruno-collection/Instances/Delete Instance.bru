@@ -1,0 +1,19 @@
+meta {
+  name: Delete Instance
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/api/instances/{{instanceId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+assert {
+  res.status: eq 200
+}

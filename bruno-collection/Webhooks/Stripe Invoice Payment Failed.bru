@@ -1,0 +1,42 @@
+meta {
+  name: Stripe Invoice Payment Failed
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/webhooks/stripe
+  body: json
+  auth: none
+}
+
+headers {
+  Stripe-Signature: t=1234567890,v1=test_signature_placeholder
+}
+
+body:json {
+  {
+    "id": "evt_invoice_failed_012",
+    "object": "event",
+    "type": "invoice.payment_failed",
+    "data": {
+      "object": {
+        "id": "in_test_invoice123",
+        "object": "invoice",
+        "customer": "cus_test_customer123",
+        "subscription": "sub_test_subscription123",
+        "status": "open",
+        "amount_due": 2900,
+        "currency": "usd",
+        "attempt_count": 1,
+        "next_payment_attempt": 1740086400
+      }
+    },
+    "livemode": false,
+    "created": 1234567890
+  }
+}
+
+assert {
+  res.status: eq 200
+}

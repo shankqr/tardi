@@ -1,0 +1,42 @@
+meta {
+  name: Stripe Subscription Deleted
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/webhooks/stripe
+  body: json
+  auth: none
+}
+
+headers {
+  Stripe-Signature: t=1234567890,v1=test_signature_placeholder
+}
+
+body:json {
+  {
+    "id": "evt_sub_deleted_789",
+    "object": "event",
+    "type": "customer.subscription.deleted",
+    "data": {
+      "object": {
+        "id": "sub_test_subscription123",
+        "object": "subscription",
+        "customer": "cus_test_customer123",
+        "status": "canceled",
+        "current_period_end": 1740000000,
+        "metadata": {
+          "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+          "plan_tier": "standard"
+        }
+      }
+    },
+    "livemode": false,
+    "created": 1234567890
+  }
+}
+
+assert {
+  res.status: eq 200
+}
