@@ -99,6 +99,26 @@ func UpdateSubscriptionStatus(ctx context.Context, pool *pgxpool.Pool, stripeSub
 	return nil
 }
 
+// GetSubscriptionByStripeSubID returns the subscription for a Stripe subscription ID.
+func GetSubscriptionByStripeSubID(ctx context.Context, pool *pgxpool.Pool, stripeSubID string) (*models.Subscription, error) {
+	s := &models.Subscription{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
+		       plan_tier, status, current_period_end, created_at, updated_at
+		FROM subscriptions WHERE stripe_subscription_id = $1
+	`, stripeSubID).Scan(
+		&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
+		&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get subscription by stripe sub id: %w", err)
+	}
+	return s, nil
+}
+
 // GetInstancesByUserID returns all non-terminated instances for a user.
 func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) ([]models.VpsInstance, error) {
 	rows, err := pool.Query(ctx, `

@@ -10,6 +10,8 @@ declare global {
 			env?: {
 				COMING_SOON?: string;
 				API_URL?: string;
+				STRIPE_PRICING_TABLE_ID?: string;
+				STRIPE_PUBLISHABLE_KEY?: string;
 			};
 		}
 	}

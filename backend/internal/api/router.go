@@ -7,13 +7,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/shanq/tardi/internal/api/middleware"
+	"github.com/shanq/tardi/internal/billing"
 	"github.com/shanq/tardi/internal/config"
 )
 
 type Dependencies struct {
-	Pool   *pgxpool.Pool
-	Logger *slog.Logger
-	Config *config.Config
+	Pool    *pgxpool.Pool
+	Logger  *slog.Logger
+	Config  *config.Config
+	Billing *billing.StripeService
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -29,6 +31,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("POST /api/instances", CreateInstanceHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/restart", RestartInstanceHandler(deps))
 	authedMux.HandleFunc("DELETE /api/instances/{id}", DeleteInstanceHandler(deps))
+	authedMux.HandleFunc("POST /api/billing/portal", BillingPortalHandler(deps))
 
 	// Agent phone-home endpoints (agent token auth, handled inside handlers)
 	mux.HandleFunc("GET /api/agent/config", AgentConfigHandler(deps))

@@ -1,20 +1,26 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { onboardingState } from '$lib/stores/onboarding';
+	import { user } from '$lib/stores/auth';
+	import { stripePricingTableId, stripePublishableKey } from '$lib/stores/config';
 	import { plan as planInfo } from '$lib/api/mock';
 
 	const onboarding = $derived.by(() => $onboardingState);
 	const selectedPlan = $derived.by(() => (onboarding.selectedPlan ? planInfo : null));
+	const currentUser = $derived($user);
 
-	let processing = $state(false);
+	const clientReferenceId = $derived(currentUser?.uid ?? '');
+	const pricingTableId = $derived($stripePricingTableId);
+	const publishableKey = $derived($stripePublishableKey);
 
-	async function handleCheckout() {
-		processing = true;
-		// TODO: Call backend to create Stripe Checkout Session and redirect
-		// For now, simulate a delay
-		await new Promise((r) => setTimeout(r, 1500));
-		processing = false;
-		alert('Stripe Checkout integration will be connected when the backend is ready.');
-	}
+	onMount(() => {
+		if (!document.querySelector('script[src*="pricing-table.js"]')) {
+			const script = document.createElement('script');
+			script.src = 'https://js.stripe.com/v3/pricing-table.js';
+			script.async = true;
+			document.head.appendChild(script);
+		}
+	});
 </script>
 
 <div class="mx-auto max-w-2xl py-12 px-4">
@@ -56,40 +62,42 @@
 				</dl>
 			</div>
 
-			<!-- Plan summary -->
-			<div class="rounded-xl border border-gray-200 p-5">
-				<div class="flex items-center justify-between">
-					<h3 class="text-sm font-semibold text-gray-900">Plan</h3>
-					<a href="/onboarding/plan" class="text-xs text-gray-500 hover:text-gray-700">Change</a>
+			<!-- Stripe Pricing Table -->
+			{#if pricingTableId && publishableKey && clientReferenceId}
+				<div class="mt-2">
+					<stripe-pricing-table
+						pricing-table-id={pricingTableId}
+						publishable-key={publishableKey}
+						client-reference-id={clientReferenceId}
+					></stripe-pricing-table>
 				</div>
-				<div class="mt-3 flex items-baseline justify-between">
-					<p class="text-lg font-semibold text-gray-900">{selectedPlan.name}</p>
-					<div class="text-right">
-						<p class="text-2xl font-bold text-gray-900">${selectedPlan.price_monthly}</p>
-						<p class="text-xs text-gray-500">/month</p>
-					</div>
+			{:else}
+				<!-- Dev fallback when Stripe config is missing -->
+				<div class="mt-6 rounded-xl border border-gray-200 p-6 text-center">
+					<p class="text-sm text-gray-500">Stripe Pricing Table not configured.</p>
+					<p class="mt-1 text-xs text-gray-400">
+						Set STRIPE_PRICING_TABLE_ID and STRIPE_PUBLISHABLE_KEY in environment.
+					</p>
+					<a
+						href="/onboarding/success"
+						class="mt-4 inline-block rounded-lg bg-gray-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
+					>
+						Simulate Checkout (Dev)
+					</a>
 				</div>
-			</div>
+			{/if}
 
-			<!-- Checkout button -->
-			<div class="flex justify-between pt-2">
+			<div class="flex justify-start pt-2">
 				<a
 					href="/onboarding/plan"
 					class="rounded-lg border border-gray-300 px-6 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
 				>
 					&larr; Back
 				</a>
-				<button
-					onclick={handleCheckout}
-					disabled={processing}
-					class="rounded-lg bg-gray-900 px-8 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-				>
-					{processing ? 'Processing...' : 'Proceed to Payment'}
-				</button>
 			</div>
 
 			<p class="text-center text-xs text-gray-400">
-				You'll be redirected to Stripe for secure payment processing.
+				Powered by Stripe. Your payment details are handled securely.
 			</p>
 		</div>
 	{/if}

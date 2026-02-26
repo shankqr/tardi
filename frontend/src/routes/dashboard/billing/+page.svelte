@@ -1,19 +1,24 @@
 <script lang="ts">
 	import { dashboardState } from '$lib/stores/dashboard';
+	import { getIdToken } from '$lib/stores/auth';
+	import { createPortalSession } from '$lib/api/client';
 	import { plan } from '$lib/api/mock';
 
 	const subscription = $derived($dashboardState?.subscription ?? null);
 
-	let showCancelConfirm = $state(false);
-	let cancelling = $state(false);
+	let loadingPortal = $state(false);
 
-	async function handleCancel() {
-		cancelling = true;
-		// TODO: Call backend to cancel subscription via Stripe
-		await new Promise((r) => setTimeout(r, 1000));
-		cancelling = false;
-		showCancelConfirm = false;
-		alert('Subscription cancellation will be connected when the backend is ready.');
+	async function handleManageBilling() {
+		loadingPortal = true;
+		try {
+			const token = await getIdToken();
+			if (!token) return;
+			const { url } = await createPortalSession(token);
+			window.location.href = url;
+		} catch {
+			alert('Failed to open billing portal. Please try again.');
+			loadingPortal = false;
+		}
 	}
 </script>
 
@@ -45,45 +50,20 @@
 		</p>
 	</div>
 
-	<!-- Cancel subscription -->
-	{#if subscription.status === 'active'}
-		<div class="mt-6 rounded-xl border border-gray-200 p-6">
-			<h3 class="text-sm font-semibold text-gray-900">Cancel Subscription</h3>
-			<p class="mt-2 text-sm text-gray-500">
-				Your agent will remain active until the end of your current billing period. You won't be charged again.
-			</p>
-
-			{#if !showCancelConfirm}
-				<button
-					onclick={() => (showCancelConfirm = true)}
-					class="mt-4 rounded-lg border border-red-200 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-				>
-					Cancel renewal
-				</button>
-			{:else}
-				<div class="mt-4 rounded-lg bg-red-50 p-4">
-					<p class="text-sm text-red-700">
-						Are you sure? Your agent will stop running after {new Date(subscription.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
-					</p>
-					<div class="mt-3 flex gap-3">
-						<button
-							onclick={handleCancel}
-							disabled={cancelling}
-							class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-						>
-							{cancelling ? 'Cancelling...' : 'Yes, cancel'}
-						</button>
-						<button
-							onclick={() => (showCancelConfirm = false)}
-							class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-						>
-							Keep subscription
-						</button>
-					</div>
-				</div>
-			{/if}
-		</div>
-	{/if}
+	<!-- Manage subscription via Stripe Customer Portal -->
+	<div class="mt-6 rounded-xl border border-gray-200 p-6">
+		<h3 class="text-sm font-semibold text-gray-900">Manage Subscription</h3>
+		<p class="mt-2 text-sm text-gray-500">
+			Update payment method, view invoices, or cancel your subscription through the billing portal.
+		</p>
+		<button
+			onclick={handleManageBilling}
+			disabled={loadingPortal}
+			class="mt-4 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+		>
+			{loadingPortal ? 'Opening...' : 'Manage Billing'}
+		</button>
+	</div>
 {/if}
 
 <div class="mt-10">

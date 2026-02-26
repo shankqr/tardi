@@ -15,6 +15,7 @@ import (
 
 	"github.com/shanq/tardi/internal/api"
 	"github.com/shanq/tardi/internal/auth"
+	"github.com/shanq/tardi/internal/billing"
 	"github.com/shanq/tardi/internal/config"
 	"github.com/shanq/tardi/internal/db"
 	"github.com/shanq/tardi/internal/jobs"
@@ -77,6 +78,9 @@ func main() {
 		seedDevData(ctx, pool, logger)
 	}
 
+	// Initialize Stripe billing
+	stripeSvc := billing.NewStripeService(cfg.StripeSecretKey, cfg.StripeWebhookSecret, logger)
+
 	// Provider registry
 	registry := provider.NewRegistry()
 	registry.Register("hetzner", provider.NewStubProvider(logger))
@@ -90,9 +94,10 @@ func main() {
 
 	// Build router with all endpoints
 	deps := api.Dependencies{
-		Pool:   pool,
-		Logger: logger,
-		Config: cfg,
+		Pool:    pool,
+		Logger:  logger,
+		Config:  cfg,
+		Billing: stripeSvc,
 	}
 	handler := api.NewRouter(deps)
 

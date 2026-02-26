@@ -2,7 +2,7 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { initAuth } from '$lib/stores/auth';
-	import { apiUrl } from '$lib/stores/config';
+	import { apiUrl, stripePricingTableId, stripePublishableKey } from '$lib/stores/config';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import ComingSoon from '$lib/components/ComingSoon.svelte';
@@ -12,6 +12,8 @@
 
 	$effect(() => {
 		apiUrl.set(data.config.apiUrl);
+		stripePricingTableId.set(data.config.stripePricingTableId);
+		stripePublishableKey.set(data.config.stripePublishableKey);
 	});
 
 	onMount(() => {

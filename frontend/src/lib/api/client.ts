@@ -65,3 +65,20 @@ export async function deleteInstance(token: string, instanceId: string): Promise
 		throw new Error(`Delete failed: ${res.status}`);
 	}
 }
+
+export async function createPortalSession(token: string): Promise<{ url: string }> {
+	if (USE_MOCK) {
+		return { url: '/dashboard/billing' };
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/billing/portal`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${token}` }
+	});
+
+	if (!res.ok) {
+		throw new Error(`Create portal session failed: ${res.status}`);
+	}
+
+	return res.json();
+}
