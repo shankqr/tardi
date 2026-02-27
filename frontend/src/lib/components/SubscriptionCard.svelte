@@ -50,8 +50,8 @@
 {:else}
 	<div class="rounded-xl border border-dashed border-gray-300 p-5 text-center">
 		<p class="text-sm text-gray-500">No active subscription</p>
-		<a href="/onboarding/plan" class="mt-2 inline-block text-sm font-medium text-gray-900 hover:underline">
-			Choose a plan
+		<a href="/dashboard/billing" class="mt-2 inline-block text-sm font-medium text-gray-900 hover:underline">
+			Subscribe &rarr;
 		</a>
 	</div>
 {/if}
