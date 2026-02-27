@@ -9,13 +9,15 @@ import (
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/billing"
 	"github.com/shanq/tardi/internal/config"
+	"github.com/shanq/tardi/internal/provider"
 )
 
 type Dependencies struct {
-	Pool    *pgxpool.Pool
-	Logger  *slog.Logger
-	Config  *config.Config
-	Billing *billing.StripeService
+	Pool     *pgxpool.Pool
+	Logger   *slog.Logger
+	Config   *config.Config
+	Billing  *billing.StripeService
+	Registry *provider.Registry
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -31,6 +33,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("POST /api/instances", CreateInstanceHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/restart", RestartInstanceHandler(deps))
 	authedMux.HandleFunc("DELETE /api/instances/{id}", DeleteInstanceHandler(deps))
+	authedMux.HandleFunc("PUT /api/instances/{id}/config", UpdateAgentConfigHandler(deps))
 	authedMux.HandleFunc("POST /api/billing/portal", BillingPortalHandler(deps))
 
 	// Agent phone-home endpoints (agent token auth, handled inside handlers)
@@ -50,6 +53,7 @@ func NewRouter(deps Dependencies) http.Handler {
 		middleware.Logger(deps.Logger),
 		middleware.CORS(deps.Config.AllowedOrigins),
 		middleware.RateLimit(60),
+		middleware.RateLimitProvisioning(),
 	)
 
 	return handler

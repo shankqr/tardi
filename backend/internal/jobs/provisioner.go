@@ -1,10 +1,14 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"math"
+	"text/template"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,18 +19,81 @@ import (
 	"github.com/shanq/tardi/internal/provider"
 )
 
+// Per-step timeouts per the architecture spec.
+var stepTimeouts = map[models.ProvisioningStep]time.Duration{
+	models.StepSelectProvider:  2 * time.Minute,
+	models.StepCreateServer:    5 * time.Minute,
+	models.StepWaitServerReady: 5 * time.Minute,
+	models.StepBootstrap:       10 * time.Minute,
+	models.StepInstallAgent:    10 * time.Minute,
+	models.StepActivate:        1 * time.Minute,
+}
+
+// cloudInitTemplate is the user-data script for bootstrapping a new VPS.
+var cloudInitTemplate = template.Must(template.New("cloudinit").Parse(`#!/bin/bash
+set -euo pipefail
+
+# --- System setup ---
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq docker.io curl jq
+
+systemctl enable docker
+systemctl start docker
+
+# --- Agent configuration ---
+AGENT_TOKEN="{{.AgentToken}}"
+API_URL="{{.APIURL}}"
+INSTANCE_ID="{{.InstanceID}}"
+
+# --- Create agent config ---
+mkdir -p /opt/openclaw
+cat > /opt/openclaw/env <<ENVEOF
+AGENT_TOKEN=${AGENT_TOKEN}
+API_URL=${API_URL}
+INSTANCE_ID=${INSTANCE_ID}
+ENVEOF
+
+# --- Create systemd service ---
+cat > /etc/systemd/system/openclaw-agent.service <<SVCEOF
+[Unit]
+Description=OpenClaw AI Agent
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+EnvironmentFile=/opt/openclaw/env
+ExecStartPre=-/usr/bin/docker pull ghcr.io/openclaw/agent:latest
+ExecStart=/usr/bin/docker run --rm --name openclaw-agent \
+  --env-file /opt/openclaw/env \
+  ghcr.io/openclaw/agent:latest
+ExecStop=/usr/bin/docker stop openclaw-agent
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+systemctl daemon-reload
+systemctl enable openclaw-agent
+systemctl start openclaw-agent
+`))
+
 type Provisioner struct {
 	pool     *pgxpool.Pool
 	registry *provider.Registry
 	logger   *slog.Logger
+	apiURL   string
 }
 
 // Execute runs through the provisioning steps for a job.
 func (p *Provisioner) Execute(ctx context.Context, job *models.ProvisioningJob) error {
 	steps := []struct {
-		step     models.ProvisioningStep
-		status   models.VpsStatus
-		fn       func(ctx context.Context, job *models.ProvisioningJob) error
+		step   models.ProvisioningStep
+		status models.VpsStatus
+		fn     func(ctx context.Context, job *models.ProvisioningJob) error
 	}{
 		{models.StepSelectProvider, models.VpsStatusProvisioning, p.stepSelectProvider},
 		{models.StepCreateServer, models.VpsStatusProvisioning, p.stepCreateServer},
@@ -66,7 +133,13 @@ func (p *Provisioner) Execute(ctx context.Context, job *models.ProvisioningJob) 
 			"instance_id", job.VpsInstanceID,
 		)
 
-		if err := s.fn(ctx, job); err != nil {
+		// Apply per-step timeout
+		timeout := stepTimeouts[s.step]
+		stepCtx, cancel := context.WithTimeout(ctx, timeout)
+		err := s.fn(stepCtx, job)
+		cancel()
+
+		if err != nil {
 			return p.handleStepError(ctx, job, s.step, err)
 		}
 	}
@@ -124,8 +197,6 @@ func (p *Provisioner) handleStepError(ctx context.Context, job *models.Provision
 }
 
 func (p *Provisioner) stepSelectProvider(ctx context.Context, job *models.ProvisioningJob) error {
-	// Provider was already selected at instance creation time via GetBestProviderMapping.
-	// This step validates it's still available.
 	inst, err := getInstanceInternal(ctx, p.pool, job.VpsInstanceID)
 	if err != nil {
 		return fmt.Errorf("get instance: %w", err)
@@ -136,8 +207,6 @@ func (p *Provisioner) stepSelectProvider(ctx context.Context, job *models.Provis
 		return fmt.Errorf("provider not available: %w", err)
 	}
 
-	// Simulate brief delay for the stub provider
-	time.Sleep(500 * time.Millisecond)
 	return nil
 }
 
@@ -152,13 +221,41 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("get provider: %w", err)
 	}
 
+	// Look up the provider plan mapping for server type and image
+	sub, err := db.GetSubscriptionByID(ctx, p.pool, inst.SubscriptionID)
+	if err != nil {
+		return fmt.Errorf("get subscription: %w", err)
+	}
+
+	mapping, err := db.GetBestProviderMapping(ctx, p.pool, sub.PlanTier, inst.Region)
+	if err != nil {
+		return fmt.Errorf("get provider mapping: %w", err)
+	}
+
+	// Generate agent token
+	agentToken, err := generateAgentToken()
+	if err != nil {
+		return fmt.Errorf("generate agent token: %w", err)
+	}
+	if err := db.UpdateInstanceAgentToken(ctx, p.pool, inst.ID, agentToken); err != nil {
+		return fmt.Errorf("store agent token: %w", err)
+	}
+
+	// Render cloud-init user data
+	userData, err := renderCloudInit(agentToken, p.apiURL, inst.ID.String())
+	if err != nil {
+		return fmt.Errorf("render cloud-init: %w", err)
+	}
+
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
 		Name:       inst.Name,
-		ServerType: "cx22", // from provider mapping in production
-		Region:     inst.Region,
-		Image:      "ubuntu-24.04",
+		ServerType: mapping.ProviderServerType,
+		Region:     mapping.ProviderRegion,
+		Image:      mapping.ProviderImage,
+		UserData:   userData,
 		Labels: map[string]string{
 			"instance_id": inst.ID.String(),
+			"user_id":     inst.UserID.String(),
 		},
 	})
 	if err != nil {
@@ -169,27 +266,86 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("update provider info: %w", err)
 	}
 
-	// Simulate delay
-	time.Sleep(1 * time.Second)
 	return nil
 }
 
 func (p *Provisioner) stepWaitServerReady(ctx context.Context, job *models.ProvisioningJob) error {
-	// In stub mode, server is immediately "ready"
-	time.Sleep(1 * time.Second)
-	return nil
+	inst, err := getInstanceInternal(ctx, p.pool, job.VpsInstanceID)
+	if err != nil {
+		return err
+	}
+
+	if inst.ProviderServerID == nil {
+		return fmt.Errorf("no provider server ID")
+	}
+
+	prov, err := p.registry.Get(inst.Provider)
+	if err != nil {
+		return fmt.Errorf("get provider: %w", err)
+	}
+
+	// Poll provider until server is running
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for server ready: %w", ctx.Err())
+		case <-ticker.C:
+			server, getErr := prov.GetServer(ctx, *inst.ProviderServerID)
+			if getErr != nil {
+				p.logger.Warn("provisioner: poll server status failed", "error", getErr)
+				continue
+			}
+			if server.Status == "running" {
+				if server.IPv4 != "" {
+					_ = db.UpdateInstanceProviderInfo(ctx, p.pool, inst.ID, server.ProviderServerID, &server.IPv4)
+				}
+				return nil
+			}
+			p.logger.Debug("provisioner: server not ready yet",
+				"server_id", *inst.ProviderServerID,
+				"status", server.Status,
+			)
+		}
+	}
 }
 
 func (p *Provisioner) stepBootstrap(ctx context.Context, job *models.ProvisioningJob) error {
-	// Simulate cloud-init running
-	time.Sleep(2 * time.Second)
-	return nil
+	// Cloud-init runs automatically. Wait for the server to finish bootstrap.
+	// The actual verification is the first heartbeat in stepInstallAgent.
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("timeout during bootstrap: %w", ctx.Err())
+	case <-time.After(30 * time.Second):
+		return nil
+	}
 }
 
 func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.ProvisioningJob) error {
-	// Simulate agent installation
-	time.Sleep(1 * time.Second)
-	return nil
+	// Wait for the first heartbeat from the agent
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for agent heartbeat: %w", ctx.Err())
+		case <-ticker.C:
+			inst, err := getInstanceInternal(ctx, p.pool, job.VpsInstanceID)
+			if err != nil {
+				return fmt.Errorf("get instance: %w", err)
+			}
+			if inst.LastHeartbeatAt != nil {
+				p.logger.Info("provisioner: agent heartbeat received",
+					"instance_id", inst.ID,
+					"heartbeat_at", inst.LastHeartbeatAt,
+				)
+				return nil
+			}
+		}
+	}
 }
 
 func (p *Provisioner) stepActivate(ctx context.Context, job *models.ProvisioningJob) error {
@@ -218,4 +374,31 @@ func getInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 		return nil, fmt.Errorf("get instance internal: %w", err)
 	}
 	return inst, nil
+}
+
+// generateAgentToken creates a cryptographically random 32-byte hex token.
+func generateAgentToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate random bytes: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// renderCloudInit generates the cloud-init user-data script.
+func renderCloudInit(agentToken, apiURL, instanceID string) (string, error) {
+	var buf bytes.Buffer
+	err := cloudInitTemplate.Execute(&buf, struct {
+		AgentToken string
+		APIURL     string
+		InstanceID string
+	}{
+		AgentToken: agentToken,
+		APIURL:     apiURL,
+		InstanceID: instanceID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("execute cloud-init template: %w", err)
+	}
+	return buf.String(), nil
 }

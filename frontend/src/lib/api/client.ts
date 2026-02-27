@@ -66,6 +66,31 @@ export async function deleteInstance(token: string, instanceId: string): Promise
 	}
 }
 
+export async function updateAgentConfig(
+	token: string,
+	instanceId: string,
+	config: Record<string, unknown>
+): Promise<{ config: Record<string, unknown>; version: number }> {
+	if (USE_MOCK) {
+		return { config, version: 1 };
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/config`, {
+		method: 'PUT',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ config })
+	});
+
+	if (!res.ok) {
+		throw new Error(`Update config failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
 export async function createPortalSession(token: string): Promise<{ url: string }> {
 	if (USE_MOCK) {
 		return { url: '/dashboard/billing' };

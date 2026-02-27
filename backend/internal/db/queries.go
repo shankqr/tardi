@@ -239,10 +239,14 @@ func CountActiveInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userI
 
 // CreateProvisioningJob inserts a new provisioning job.
 func CreateProvisioningJob(ctx context.Context, pool *pgxpool.Pool, job *models.ProvisioningJob) error {
+	maxAttempts := job.MaxAttempts
+	if maxAttempts == 0 {
+		maxAttempts = 5
+	}
 	_, err := pool.Exec(ctx, `
-		INSERT INTO provisioning_jobs (id, vps_instance_id, idempotency_key, status, step)
-		VALUES ($1, $2, $3, $4, $5)
-	`, job.ID, job.VpsInstanceID, job.IdempotencyKey, job.Status, job.Step)
+		INSERT INTO provisioning_jobs (id, vps_instance_id, idempotency_key, status, step, max_attempts)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, job.ID, job.VpsInstanceID, job.IdempotencyKey, job.Status, job.Step, maxAttempts)
 	if err != nil {
 		return fmt.Errorf("create provisioning job: %w", err)
 	}
@@ -410,6 +414,173 @@ func GetAgentConfigByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanc
 		return nil, fmt.Errorf("unmarshal agent config: %w", err)
 	}
 	return ac, nil
+}
+
+// UpdateInstanceAgentToken sets the agent token for an instance.
+func UpdateInstanceAgentToken(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, token string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET agent_token_secret_name = $1, updated_at = now() WHERE id = $2
+	`, token, instanceID)
+	if err != nil {
+		return fmt.Errorf("update agent token: %w", err)
+	}
+	return nil
+}
+
+// GetActiveInstancesByStatus returns all instances with the given status.
+func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status models.VpsStatus) ([]models.VpsInstance, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
+		       name, host(ipv4)::text, region, status,
+		       agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		FROM vps_instances
+		WHERE status = $1
+	`, status)
+	if err != nil {
+		return nil, fmt.Errorf("get instances by status: %w", err)
+	}
+	defer rows.Close()
+
+	var instances []models.VpsInstance
+	for rows.Next() {
+		var inst models.VpsInstance
+		if err := rows.Scan(
+			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
+			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
+			&inst.Region, &inst.Status,
+			&inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+			&inst.CreatedAt, &inst.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan instance: %w", err)
+		}
+		instances = append(instances, inst)
+	}
+	return instances, rows.Err()
+}
+
+// GetSubscriptionByID returns a subscription by its ID.
+func GetSubscriptionByID(ctx context.Context, pool *pgxpool.Pool, subID uuid.UUID) (*models.Subscription, error) {
+	s := &models.Subscription{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
+		       plan_tier, status, current_period_end, created_at, updated_at
+		FROM subscriptions WHERE id = $1
+	`, subID).Scan(
+		&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
+		&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get subscription by id: %w", err)
+	}
+	return s, nil
+}
+
+// GetPastDueSubscriptions returns subscriptions that have been past_due for longer than the given duration.
+func GetPastDueSubscriptions(ctx context.Context, pool *pgxpool.Pool, olderThan time.Duration) ([]models.Subscription, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
+		       plan_tier, status, current_period_end, created_at, updated_at
+		FROM subscriptions
+		WHERE status = 'past_due' AND updated_at < $1
+	`, time.Now().Add(-olderThan))
+	if err != nil {
+		return nil, fmt.Errorf("get past due subscriptions: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []models.Subscription
+	for rows.Next() {
+		var s models.Subscription
+		if err := rows.Scan(
+			&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
+			&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan subscription: %w", err)
+		}
+		subs = append(subs, s)
+	}
+	return subs, rows.Err()
+}
+
+// GetSuspendedSubscriptions returns subscriptions that have been suspended for longer than the given duration.
+func GetSuspendedSubscriptions(ctx context.Context, pool *pgxpool.Pool, olderThan time.Duration) ([]models.Subscription, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
+		       plan_tier, status, current_period_end, created_at, updated_at
+		FROM subscriptions
+		WHERE status = 'suspended' AND updated_at < $1
+	`, time.Now().Add(-olderThan))
+	if err != nil {
+		return nil, fmt.Errorf("get suspended subscriptions: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []models.Subscription
+	for rows.Next() {
+		var s models.Subscription
+		if err := rows.Scan(
+			&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
+			&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan subscription: %w", err)
+		}
+		subs = append(subs, s)
+	}
+	return subs, rows.Err()
+}
+
+// GetInstancesBySubscriptionID returns all non-terminated instances for a subscription.
+func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID uuid.UUID) ([]models.VpsInstance, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
+		       name, host(ipv4)::text, region, status,
+		       agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		FROM vps_instances
+		WHERE subscription_id = $1 AND status NOT IN ('terminated', 'terminating')
+	`, subID)
+	if err != nil {
+		return nil, fmt.Errorf("get instances by subscription: %w", err)
+	}
+	defer rows.Close()
+
+	var instances []models.VpsInstance
+	for rows.Next() {
+		var inst models.VpsInstance
+		if err := rows.Scan(
+			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
+			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
+			&inst.Region, &inst.Status,
+			&inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+			&inst.CreatedAt, &inst.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan instance: %w", err)
+		}
+		instances = append(instances, inst)
+	}
+	return instances, rows.Err()
+}
+
+// CreateAgentConfig inserts or updates an agent config for an instance.
+func CreateAgentConfig(ctx context.Context, pool *pgxpool.Pool, ac *models.AgentConfig) error {
+	configJSON, err := json.Marshal(ac.Config)
+	if err != nil {
+		return fmt.Errorf("marshal agent config: %w", err)
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO agent_configs (id, vps_instance_id, config, version)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (vps_instance_id) DO UPDATE SET
+			config = EXCLUDED.config,
+			version = agent_configs.version + 1,
+			updated_at = now()
+	`, ac.ID, ac.VpsInstanceID, configJSON, ac.Version)
+	if err != nil {
+		return fmt.Errorf("create agent config: %w", err)
+	}
+	return nil
 }
 
 // GetInstanceByAgentToken returns the instance associated with a token secret name.

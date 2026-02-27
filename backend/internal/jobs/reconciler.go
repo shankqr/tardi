@@ -5,8 +5,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
 )
 
@@ -44,6 +47,12 @@ func (r *Reconciler) Start(ctx context.Context) {
 }
 
 func (r *Reconciler) reconcile(ctx context.Context) {
+	r.reconcileActive(ctx)
+	r.reconcileStaleRestarting(ctx)
+}
+
+// reconcileActive checks active instances against provider state.
+func (r *Reconciler) reconcileActive(ctx context.Context) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, provider, provider_server_id
 		FROM vps_instances
@@ -56,9 +65,15 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	defer rows.Close()
 
 	for rows.Next() {
-		var id, providerName, serverID string
-		if err := rows.Scan(&id, &providerName, &serverID); err != nil {
+		var idStr, providerName, serverID string
+		if err := rows.Scan(&idStr, &providerName, &serverID); err != nil {
 			r.logger.Error("reconciler: scan row", "error", err)
+			continue
+		}
+
+		instanceID, err := uuid.Parse(idStr)
+		if err != nil {
+			r.logger.Error("reconciler: parse instance id", "id", idStr, "error", err)
 			continue
 		}
 
@@ -71,24 +86,86 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 		server, err := prov.GetServer(ctx, serverID)
 		if err != nil {
 			r.logger.Warn("reconciler: failed to get server from provider",
-				"instance_id", id,
+				"instance_id", idStr,
 				"server_id", serverID,
 				"error", err,
 			)
+			// Server may have been deleted externally — mark as error
+			_ = db.UpdateInstanceStatus(ctx, r.pool, instanceID, models.VpsStatusError)
 			continue
 		}
 
-		if server.Status != "running" {
-			r.logger.Warn("reconciler: drift detected",
-				"instance_id", id,
+		switch server.Status {
+		case "running":
+			// All good — update IP if changed
+			if server.IPv4 != "" {
+				_ = db.UpdateInstanceProviderInfo(ctx, r.pool, instanceID, server.ProviderServerID, &server.IPv4)
+			}
+		case "off":
+			// Server was stopped externally — try to restart it
+			r.logger.Warn("reconciler: server is off, attempting restart",
+				"instance_id", idStr,
 				"server_id", serverID,
-				"expected_status", "running",
-				"actual_status", server.Status,
+			)
+			if err := prov.StartServer(ctx, serverID); err != nil {
+				r.logger.Error("reconciler: restart failed", "instance_id", idStr, "error", err)
+				_ = db.UpdateInstanceStatus(ctx, r.pool, instanceID, models.VpsStatusError)
+			}
+		default:
+			r.logger.Warn("reconciler: unexpected server status",
+				"instance_id", idStr,
+				"server_id", serverID,
+				"status", server.Status,
 			)
 		}
 	}
 
 	if err := rows.Err(); err != nil {
 		r.logger.Error("reconciler: rows error", "error", err)
+	}
+}
+
+// reconcileStaleRestarting fixes instances stuck in "restarting" for too long.
+func (r *Reconciler) reconcileStaleRestarting(ctx context.Context) {
+	instances, err := db.GetActiveInstancesByStatus(ctx, r.pool, models.VpsStatusRestarting)
+	if err != nil {
+		r.logger.Error("reconciler: get restarting instances", "error", err)
+		return
+	}
+
+	for _, inst := range instances {
+		// If stuck in restarting for > 10 minutes, check actual status
+		if time.Since(inst.UpdatedAt) < 10*time.Minute {
+			continue
+		}
+
+		if inst.ProviderServerID == nil {
+			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+			continue
+		}
+
+		prov, err := r.registry.Get(inst.Provider)
+		if err != nil {
+			continue
+		}
+
+		server, err := prov.GetServer(ctx, *inst.ProviderServerID)
+		if err != nil {
+			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+			continue
+		}
+
+		if server.Status == "running" {
+			r.logger.Info("reconciler: stale restarting instance is actually running, fixing",
+				"instance_id", inst.ID,
+			)
+			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusActive)
+		} else {
+			r.logger.Warn("reconciler: stale restarting instance still not running",
+				"instance_id", inst.ID,
+				"actual_status", server.Status,
+			)
+			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+		}
 	}
 }

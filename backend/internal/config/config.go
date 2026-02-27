@@ -6,15 +6,16 @@ import (
 )
 
 type Config struct {
-	Port               string
-	DatabaseURL        string
-	AllowedOrigins     []string
-	FirebaseProjectID  string
-	StripeSecretKey    string
+	Port                string
+	DatabaseURL         string
+	AllowedOrigins      []string
+	FirebaseProjectID   string
+	StripeSecretKey     string
 	StripeWebhookSecret string
-	HetznerAPIToken    string
-	Environment        string
-	LogLevel           string
+	HetznerAPIToken     string
+	Environment         string
+	LogLevel            string
+	APIURL              string
 }
 
 func Load() *Config {
@@ -28,6 +29,7 @@ func Load() *Config {
 		HetznerAPIToken:    os.Getenv("HETZNER_API_TOKEN"),
 		Environment:        envOrDefault("ENVIRONMENT", "dev"),
 		LogLevel:           envOrDefault("LOG_LEVEL", "info"),
+		APIURL:             envOrDefault("API_URL", "http://localhost:8080"),
 	}
 }
 

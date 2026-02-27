@@ -21,6 +21,7 @@ import (
 	"github.com/shanq/tardi/internal/jobs"
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
+	"github.com/shanq/tardi/internal/provider/hetzner"
 	"github.com/shanq/tardi/migrations"
 )
 
@@ -83,21 +84,31 @@ func main() {
 
 	// Provider registry
 	registry := provider.NewRegistry()
-	registry.Register("hetzner", provider.NewStubProvider(logger))
+	if cfg.HetznerAPIToken != "" {
+		registry.Register("hetzner", hetzner.New(cfg.HetznerAPIToken, logger))
+		logger.Info("registered hetzner provider")
+	} else {
+		registry.Register("hetzner", provider.NewStubProvider(logger))
+		logger.Info("registered stub provider (no HETZNER_API_TOKEN)")
+	}
 
 	// Start background workers
-	worker := jobs.NewWorker(pool, registry, logger)
+	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL)
 	go worker.Start(ctx)
 
 	reconciler := jobs.NewReconciler(pool, registry, logger)
 	go reconciler.Start(ctx)
 
+	enforcer := jobs.NewEnforcer(pool, registry, logger)
+	go enforcer.Start(ctx)
+
 	// Build router with all endpoints
 	deps := api.Dependencies{
-		Pool:    pool,
-		Logger:  logger,
-		Config:  cfg,
-		Billing: stripeSvc,
+		Pool:     pool,
+		Logger:   logger,
+		Config:   cfg,
+		Billing:  stripeSvc,
+		Registry: registry,
 	}
 	handler := api.NewRouter(deps)
 

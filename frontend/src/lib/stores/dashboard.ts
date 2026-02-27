@@ -9,6 +9,10 @@ export const dashboardError = writable<string | null>(null);
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
 
+export async function refreshDashboard() {
+	return fetchDashboard();
+}
+
 async function fetchDashboard() {
 	try {
 		const token = await getIdToken();

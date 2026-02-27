@@ -19,7 +19,7 @@ type Worker struct {
 	provisioner *Provisioner
 }
 
-func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger) *Worker {
+func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL string) *Worker {
 	return &Worker{
 		pool:     pool,
 		registry: registry,
@@ -29,6 +29,7 @@ func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Log
 			pool:     pool,
 			registry: registry,
 			logger:   logger,
+			apiURL:   apiURL,
 		},
 	}
 }

@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -73,6 +75,7 @@ func CreateInstanceHandler(deps Dependencies) http.HandlerFunc {
 
 		// Create instance
 		instanceID := uuid.New()
+		now := time.Now()
 		inst := &models.VpsInstance{
 			ID:             instanceID,
 			UserID:         user.ID,
@@ -82,6 +85,7 @@ func CreateInstanceHandler(deps Dependencies) http.HandlerFunc {
 			Name:           req.Name,
 			Region:         req.Region,
 			Status:         models.VpsStatusRequested,
+			CreatedAt:      now,
 		}
 		if err := db.CreateInstance(r.Context(), deps.Pool, inst); err != nil {
 			slog.Error("create instance: insert", "error", err)
@@ -95,6 +99,7 @@ func CreateInstanceHandler(deps Dependencies) http.HandlerFunc {
 			VpsInstanceID:  instanceID,
 			IdempotencyKey: "provision-" + instanceID.String(),
 			Status:         models.JobPending,
+			MaxAttempts:    5,
 		}
 		step := models.StepSelectProvider
 		job.Step = &step
@@ -105,7 +110,7 @@ func CreateInstanceHandler(deps Dependencies) http.HandlerFunc {
 		}
 
 		// Audit log
-		db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
+		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
 			ID:           uuid.New(),
 			UserID:       user.ID,
 			Action:       "create",
@@ -114,7 +119,9 @@ func CreateInstanceHandler(deps Dependencies) http.HandlerFunc {
 		})
 
 		slog.Info("instance created", "instance_id", instanceID, "user_id", user.ID, "provider", mapping.Provider)
-		w.WriteHeader(http.StatusCreated)
+
+		// Return the created instance
+		WriteJSON(w, http.StatusCreated, models.ToInstanceResponse(*inst))
 	}
 }
 
@@ -154,8 +161,11 @@ func RestartInstanceHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
+		// Execute restart in background goroutine
+		go executeRestart(deps, inst)
+
 		// Audit log
-		db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
+		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
 			ID:           uuid.New(),
 			UserID:       user.ID,
 			Action:       "restart",
@@ -204,8 +214,11 @@ func DeleteInstanceHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
+		// Execute deletion in background goroutine
+		go executeDelete(deps, inst)
+
 		// Audit log
-		db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
+		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
 			ID:           uuid.New(),
 			UserID:       user.ID,
 			Action:       "terminate",
@@ -216,4 +229,52 @@ func DeleteInstanceHandler(deps Dependencies) http.HandlerFunc {
 		slog.Info("instance terminating", "instance_id", instanceID)
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+// executeRestart calls the provider to restart the server and updates status.
+func executeRestart(deps Dependencies, inst *models.VpsInstance) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	if inst.ProviderServerID == nil {
+		slog.Error("restart: no provider server ID", "instance_id", inst.ID)
+		_ = db.UpdateInstanceStatus(ctx, deps.Pool, inst.ID, models.VpsStatusError)
+		return
+	}
+
+	prov, err := deps.Registry.Get(inst.Provider)
+	if err != nil {
+		slog.Error("restart: provider not found", "provider", inst.Provider, "error", err)
+		_ = db.UpdateInstanceStatus(ctx, deps.Pool, inst.ID, models.VpsStatusError)
+		return
+	}
+
+	if err := prov.RestartServer(ctx, *inst.ProviderServerID); err != nil {
+		slog.Error("restart: provider call failed", "instance_id", inst.ID, "error", err)
+		_ = db.UpdateInstanceStatus(ctx, deps.Pool, inst.ID, models.VpsStatusError)
+		return
+	}
+
+	_ = db.UpdateInstanceStatus(ctx, deps.Pool, inst.ID, models.VpsStatusActive)
+	slog.Info("restart: completed", "instance_id", inst.ID)
+}
+
+// executeDelete calls the provider to delete the server and updates status.
+func executeDelete(deps Dependencies, inst *models.VpsInstance) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	if inst.ProviderServerID != nil {
+		prov, err := deps.Registry.Get(inst.Provider)
+		if err != nil {
+			slog.Error("delete: provider not found", "provider", inst.Provider, "error", err)
+			// Still mark terminated since user requested deletion
+		} else if err := prov.DeleteServer(ctx, *inst.ProviderServerID); err != nil {
+			slog.Error("delete: provider call failed", "instance_id", inst.ID, "error", err)
+			// Still mark terminated — we don't want orphaned instances in our DB
+		}
+	}
+
+	_ = db.UpdateInstanceStatus(ctx, deps.Pool, inst.ID, models.VpsStatusTerminated)
+	slog.Info("delete: completed", "instance_id", inst.ID)
 }

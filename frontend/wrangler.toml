@@ -21,7 +21,7 @@ STRIPE_PUBLISHABLE_KEY = "pk_test_51T4zbdAPpIsY1S3u2sy8FJ5ehbYHGoWfqGJ7lkO5y5y8h
 # Production environment
 [env.production.vars]
 COMING_SOON = "true"
-API_URL = "http://localhost:8080"
+API_URL = "https://PROD_API_URL_HERE"
 VITE_USE_MOCK_AUTH = "false"
 VITE_USE_MOCK = "false"
 VITE_FIREBASE_API_KEY = "AIzaSyBseyK0nQ9xiS0K7uL_x84AzTjBpUtyKoI"

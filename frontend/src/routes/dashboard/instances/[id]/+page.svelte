@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { dashboardState } from '$lib/stores/dashboard';
+	import { goto } from '$app/navigation';
+	import { dashboardState, refreshDashboard } from '$lib/stores/dashboard';
+	import { getIdToken } from '$lib/stores/auth';
+	import { restartInstance, deleteInstance } from '$lib/api/client';
 	import { mockSnapshots } from '$lib/api/mock';
 	import type { Snapshot } from '$lib/types';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -16,6 +19,12 @@
 		instance?.status === 'installing_agent'
 	);
 
+	// Action state
+	let restarting = $state(false);
+	let deleting = $state(false);
+	let confirmDelete = $state(false);
+	let actionError = $state<string | null>(null);
+
 	// Snapshots
 	let snapshots = $state<Snapshot[]>([...mockSnapshots]);
 	let snapshotName = $state('');
@@ -23,10 +32,42 @@
 	let restoringId = $state<string | null>(null);
 	let confirmRestoreId = $state<string | null>(null);
 
+	async function handleRestart() {
+		if (!instance) return;
+		restarting = true;
+		actionError = null;
+		try {
+			const token = await getIdToken();
+			if (!token) throw new Error('Not authenticated');
+			await restartInstance(token, instance.id);
+			await refreshDashboard();
+		} catch (err) {
+			actionError = err instanceof Error ? err.message : 'Restart failed';
+		} finally {
+			restarting = false;
+		}
+	}
+
+	async function handleDelete() {
+		if (!instance) return;
+		deleting = true;
+		actionError = null;
+		try {
+			const token = await getIdToken();
+			if (!token) throw new Error('Not authenticated');
+			await deleteInstance(token, instance.id);
+			await refreshDashboard();
+			goto('/dashboard');
+		} catch (err) {
+			actionError = err instanceof Error ? err.message : 'Delete failed';
+			deleting = false;
+		}
+	}
+
 	async function handleTakeSnapshot() {
 		if (!snapshotName.trim() || !instance) return;
 		takingSnapshot = true;
-		// TODO: Call backend
+		// TODO: Call backend when snapshot API is ready
 		await new Promise((r) => setTimeout(r, 1000));
 		snapshots = [
 			...snapshots,
@@ -44,11 +85,10 @@
 
 	async function handleRestore(snapshotId: string) {
 		restoringId = snapshotId;
-		// TODO: Call backend
+		// TODO: Call backend when snapshot API is ready
 		await new Promise((r) => setTimeout(r, 1500));
 		restoringId = null;
 		confirmRestoreId = null;
-		alert('Snapshot restore will be connected when the backend is ready.');
 	}
 
 	function timeAgo(dateStr: string | null): string {
@@ -88,6 +128,12 @@
 			<StatusBadge status={instance.status} />
 		</div>
 
+		{#if actionError}
+			<div class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+				{actionError}
+			</div>
+		{/if}
+
 		<div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
 			<!-- Left column -->
 			<div class="space-y-6">
@@ -119,9 +165,35 @@
 
 				{#if instance.status === 'active'}
 					<div class="flex gap-3">
-						<button class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-							Restart
+						<button
+							onclick={handleRestart}
+							disabled={restarting}
+							class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+						>
+							{restarting ? 'Restarting...' : 'Restart'}
 						</button>
+						{#if confirmDelete}
+							<button
+								onclick={handleDelete}
+								disabled={deleting}
+								class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+							>
+								{deleting ? 'Deleting...' : 'Confirm Delete'}
+							</button>
+							<button
+								onclick={() => (confirmDelete = false)}
+								class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+							>
+								Cancel
+							</button>
+						{:else}
+							<button
+								onclick={() => (confirmDelete = true)}
+								class="rounded-lg border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+							>
+								Delete
+							</button>
+						{/if}
 					</div>
 
 					<!-- Messaging links -->
