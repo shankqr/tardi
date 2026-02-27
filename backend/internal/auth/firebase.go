@@ -16,8 +16,8 @@ var Client *fbauth.Client
 // In dev mode or when no project ID is set, Client remains nil and
 // the auth middleware falls back to dev-mode behavior.
 func InitFirebase(projectID string, devMode bool) error {
-	if devMode || projectID == "" {
-		slog.Info("firebase: skipped (dev mode or no project ID)")
+	if projectID == "" {
+		slog.Info("firebase: skipped (no project ID)")
 		return nil
 	}
 
