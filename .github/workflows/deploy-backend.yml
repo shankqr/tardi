@@ -81,3 +81,4 @@ jobs:
           service: ${{ steps.tags.outputs.cloud_run_service }}
           region: ${{ secrets.GCP_REGION }}
           image: ${{ steps.tags.outputs.full_image }}:${{ steps.tags.outputs.env_tag }}
+          revision_traffic: LATEST=100
