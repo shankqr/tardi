@@ -12,6 +12,7 @@ declare global {
 				API_URL?: string;
 				STRIPE_PRICING_TABLE_ID?: string;
 				STRIPE_PUBLISHABLE_KEY?: string;
+				GOOGLE_SHEETS_WEBHOOK_URL?: string;
 			};
 		}
 	}
