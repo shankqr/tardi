@@ -88,8 +88,18 @@ func main() {
 		registry.Register("hetzner", hetzner.New(cfg.HetznerAPIToken, logger))
 		logger.Info("registered hetzner provider")
 	} else {
-		registry.Register("hetzner", provider.NewStubProvider(logger))
-		logger.Info("registered stub provider (no HETZNER_API_TOKEN)")
+		mockCfg := provider.MockConfig{
+			InitDelay:      cfg.MockInitDelay,
+			HeartbeatDelay: cfg.MockHeartbeatDelay,
+			StopDelay:      cfg.MockStopDelay,
+			StartDelay:     cfg.MockStartDelay,
+			RestartDelay:   cfg.MockRestartDelay,
+		}
+		registry.Register("hetzner", provider.NewMockProvider(pool, logger, mockCfg))
+		logger.Info("registered mock provider (no HETZNER_API_TOKEN)",
+			"init_delay", mockCfg.InitDelay,
+			"heartbeat_delay", mockCfg.HeartbeatDelay,
+		)
 	}
 
 	// Start background workers
