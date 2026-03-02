@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { setAgentConfig } from '$lib/stores/onboarding';
+	import { setAgentConfig, persistConfig } from '$lib/stores/onboarding';
 
 	let name = $state('');
 	let description = $state('');
 
 	function handleSubmit(e: Event) {
 		e.preventDefault();
-		setAgentConfig({ name, model: '', description });
+		const config = { name, model: '', description };
+		setAgentConfig(config);
+		persistConfig(config);
 		goto('/onboarding/plan');
 	}
 </script>

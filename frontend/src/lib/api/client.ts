@@ -1,4 +1,4 @@
-import type { DashboardState } from '$lib/types';
+import type { DashboardState, VpsInstance } from '$lib/types';
 import { mockDashboardState } from './mock';
 import { getApiUrl } from '$lib/stores/config';
 
@@ -23,8 +23,19 @@ export async function getDashboardState(token: string): Promise<DashboardState> 
 export async function createInstance(
 	token: string,
 	data: { name: string; region: string }
-): Promise<void> {
-	if (USE_MOCK) return;
+): Promise<VpsInstance> {
+	if (USE_MOCK) {
+		return {
+			id: 'mock-instance',
+			name: data.name,
+			status: 'requested',
+			provider: 'hetzner',
+			ipv4: null,
+			region: data.region,
+			last_heartbeat_at: null,
+			created_at: new Date().toISOString()
+		};
+	}
 
 	const res = await fetch(`${getApiUrl()}/api/instances`, {
 		method: 'POST',
@@ -38,6 +49,8 @@ export async function createInstance(
 	if (!res.ok) {
 		throw new Error(`Create instance failed: ${res.status}`);
 	}
+
+	return res.json();
 }
 
 export async function restartInstance(token: string, instanceId: string): Promise<void> {
