@@ -10,6 +10,7 @@ import (
 
 func HealthzHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Tardi-Version", "1")
 		WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	}
 }
