@@ -185,3 +185,4 @@ func seedDevData(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) {
 	}
 	logger.Info("dev data seeded", "user_id", user.ID)
 }
+
