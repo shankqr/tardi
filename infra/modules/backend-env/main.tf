@@ -1,3 +1,12 @@
+# Look up project number for computing Cloud Run URL
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
+locals {
+  api_url = "https://tardi-api-${var.environment}-${data.google_project.current.number}.${var.region}.run.app"
+}
+
 # Enable required GCP APIs
 resource "google_project_service" "apis" {
   for_each = toset([

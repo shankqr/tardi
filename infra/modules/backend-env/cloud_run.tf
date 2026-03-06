@@ -26,6 +26,10 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "LOG_LEVEL"
         value = var.environment == "prod" ? "info" : "debug"
       }
+      env {
+        name  = "API_URL"
+        value = local.api_url
+      }
 
       # Secrets as env vars
       env {
