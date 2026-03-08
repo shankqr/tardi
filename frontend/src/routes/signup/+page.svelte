@@ -20,7 +20,7 @@
 		submitting = true;
 		try {
 			await signUp(email, password);
-			goto('/onboarding/configure');
+			goto('/onboarding/checkout');
 		} catch {
 			// error handled by store
 		} finally {
