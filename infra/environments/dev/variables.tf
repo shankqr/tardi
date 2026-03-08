@@ -26,3 +26,8 @@ variable "docker_image_tag" {
   type        = string
   default     = "latest"
 }
+
+variable "api_url" {
+  description = "Cloud Run service URL"
+  type        = string
+}

@@ -36,6 +36,8 @@ npm run build        # Production build
 npm run check        # Type check
 ```
 
+Always commit and push to main branch after any changes to code
+
 ### Conventions
 
 - UI labels say "Agent" (not "Instance") for user-facing text
@@ -97,22 +99,22 @@ GitHub Actions with two branches as source of truth:
 
 ### Workflows (`.github/workflows/`)
 
-| File | Trigger | Purpose |
-|------|---------|---------|
-| `ci-gate.yml` | PR to `dev`/`main` | Path-based change detection, calls reusable CI workflows, single required status check |
-| `ci-frontend.yml` | Reusable + PR | `npm run check` + `npm run build` |
-| `ci-backend.yml` | Reusable + PR | `golangci-lint` + `go test` + `go build` (3 parallel jobs) |
-| `ci-infra.yml` | Reusable + PR | `terraform fmt -check` + `validate` + `plan` (posts plan as PR comment) |
-| `deploy-frontend.yml` | Push to `dev`/`main` (frontend/**) | Build + Wrangler deploy to Cloudflare Pages |
-| `deploy-backend.yml` | Push to `dev`/`main` (backend/**) | Docker build → Artifact Registry → Cloud Run deploy |
-| `deploy-infra.yml` | Push to `main` only (infra/**) | `terraform apply` (dev then prod, separate roots) |
+| File                  | Trigger                              | Purpose                                                                                |
+| --------------------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
+| `ci-gate.yml`         | PR to `dev`/`main`                   | Path-based change detection, calls reusable CI workflows, single required status check |
+| `ci-frontend.yml`     | Reusable + PR                        | `npm run check` + `npm run build`                                                      |
+| `ci-backend.yml`      | Reusable + PR                        | `golangci-lint` + `go test` + `go build` (3 parallel jobs)                             |
+| `ci-infra.yml`        | Reusable + PR                        | `terraform fmt -check` + `validate` + `plan` (posts plan as PR comment)                |
+| `deploy-frontend.yml` | Push to `dev`/`main` (frontend/\*\*) | Build + Wrangler deploy to Cloudflare Pages                                            |
+| `deploy-backend.yml`  | Push to `dev`/`main` (backend/\*\*)  | Docker build → Artifact Registry → Cloud Run deploy                                    |
+| `deploy-infra.yml`    | Push to `main` only (infra/\*\*)     | `terraform apply` (dev then prod, separate roots)                                      |
 
 ### Branch-to-Environment Mapping
 
-| Branch | Frontend | Backend | Image Tags |
-|--------|----------|---------|------------|
-| `dev` | dev.tardi-18e.pages.dev | tardi-api-dev | `dev-{sha7}` + `latest` |
-| `main` | tardi-18e.pages.dev | tardi-api-prod | `prod-{sha7}` + `stable` |
+| Branch | Frontend                | Backend        | Image Tags               |
+| ------ | ----------------------- | -------------- | ------------------------ |
+| `dev`  | dev.tardi-18e.pages.dev | tardi-api-dev  | `dev-{sha7}` + `latest`  |
+| `main` | tardi-18e.pages.dev     | tardi-api-prod | `prod-{sha7}` + `stable` |
 
 ### Key Design Decisions
 

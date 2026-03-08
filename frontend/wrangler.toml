@@ -22,7 +22,7 @@ GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwLtsPQeta-
 # Production environment
 [env.production.vars]
 COMING_SOON = "true"
-API_URL = "https://tardi-api-prod-1043193293599.us-central1.run.app"
+API_URL = "https://tardi-api-prod-vyqbffpjya-uc.a.run.app"
 VITE_USE_MOCK_AUTH = "false"
 VITE_USE_MOCK = "false"
 VITE_FIREBASE_API_KEY = "AIzaSyBseyK0nQ9xiS0K7uL_x84AzTjBpUtyKoI"

@@ -44,3 +44,8 @@ variable "alert_email" {
   type        = string
   default     = "alerts@tardi.dev"
 }
+
+variable "api_url" {
+  description = "Cloud Run service URL (for agent phone-home)"
+  type        = string
+}

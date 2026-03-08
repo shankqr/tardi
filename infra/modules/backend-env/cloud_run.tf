@@ -6,6 +6,15 @@ resource "google_cloud_run_v2_service" "api" {
   template {
     service_account = google_service_account.api.email
 
+    # Direct VPC egress so Cloud SQL Auth Proxy can reach private IP
+    vpc_access {
+      network_interfaces {
+        network    = google_compute_network.vpc.id
+        subnetwork = google_compute_subnetwork.default.id
+      }
+      egress = "PRIVATE_RANGES_ONLY"
+    }
+
     containers {
       image = var.docker_image
 
@@ -89,9 +98,9 @@ resource "google_cloud_run_v2_service" "api" {
         http_get {
           path = "/readyz"
         }
-        initial_delay_seconds = 5
+        initial_delay_seconds = 10
         period_seconds        = 5
-        failure_threshold     = 3
+        failure_threshold     = 6
       }
 
       liveness_probe {

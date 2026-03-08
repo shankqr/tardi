@@ -32,4 +32,5 @@ module "env" {
   docker_image = "${var.region}-docker.pkg.dev/${var.project_id}/tardi/api:${var.docker_image_tag}"
   frontend_url = var.frontend_url
   db_tier      = var.db_tier
+  api_url      = var.api_url
 }
