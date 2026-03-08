@@ -71,10 +71,14 @@ func handleCheckoutCompleted(r *http.Request, deps Dependencies, event *stripe.E
 		return
 	}
 
-	// Look up user by Firebase UID
-	user, err := db.GetUserByFirebaseUID(r.Context(), deps.Pool, firebaseUID)
+	// Upsert user — they may not have hit an authenticated endpoint yet
+	email := ""
+	if session.CustomerDetails != nil {
+		email = session.CustomerDetails.Email
+	}
+	user, err := db.UpsertUser(r.Context(), deps.Pool, firebaseUID, email, nil)
 	if err != nil {
-		slog.Error("stripe webhook: user not found", "firebase_uid", firebaseUID, "error", err)
+		slog.Error("stripe webhook: upsert user failed", "firebase_uid", firebaseUID, "error", err)
 		return
 	}
 
