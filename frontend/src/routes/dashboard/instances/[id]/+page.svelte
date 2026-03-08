@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
-	import { dashboardState, refreshDashboard } from '$lib/stores/dashboard';
+	import { dashboardState, dashboardLoading, refreshDashboard } from '$lib/stores/dashboard';
 	import { getIdToken } from '$lib/stores/auth';
-	import { restartInstance, deleteInstance } from '$lib/api/client';
+	import { restartInstance } from '$lib/api/client';
 	import { mockSnapshots } from '$lib/api/mock';
 	import type { Snapshot } from '$lib/types';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -21,8 +20,6 @@
 
 	// Action state
 	let restarting = $state(false);
-	let deleting = $state(false);
-	let confirmDelete = $state(false);
 	let actionError = $state<string | null>(null);
 
 	// Snapshots
@@ -45,22 +42,6 @@
 			actionError = err instanceof Error ? err.message : 'Restart failed';
 		} finally {
 			restarting = false;
-		}
-	}
-
-	async function handleDelete() {
-		if (!instance) return;
-		deleting = true;
-		actionError = null;
-		try {
-			const token = await getIdToken();
-			if (!token) throw new Error('Not authenticated');
-			await deleteInstance(token, instance.id);
-			await refreshDashboard();
-			goto('/dashboard');
-		} catch (err) {
-			actionError = err instanceof Error ? err.message : 'Delete failed';
-			deleting = false;
 		}
 	}
 
@@ -111,7 +92,11 @@
 	}
 </script>
 
-{#if !instance}
+{#if $dashboardLoading}
+	<div class="flex items-center justify-center py-20">
+		<p class="text-gray-400">Loading...</p>
+	</div>
+{:else if !instance}
 	<div class="py-10 text-center">
 		<p class="text-gray-500">Agent not found</p>
 		<a href="/dashboard" class="mt-2 inline-block text-sm text-gray-900 hover:underline">Back to dashboard</a>
@@ -123,7 +108,7 @@
 		<div class="mt-4 flex items-start justify-between">
 			<div>
 				<h2 class="text-xl font-bold text-gray-900">{instance.name}</h2>
-				<p class="mt-0.5 text-sm text-gray-500">{instance.provider} &middot; {instance.region}</p>
+				<p class="mt-0.5 text-sm text-gray-500">Dedicated Agent</p>
 			</div>
 			<StatusBadge status={instance.status} />
 		</div>
@@ -145,14 +130,6 @@
 							<dd class="font-mono text-gray-900">{instance.ipv4 ?? '—'}</dd>
 						</div>
 						<div class="flex justify-between">
-							<dt class="text-gray-500">Provider</dt>
-							<dd class="text-gray-900 capitalize">{instance.provider}</dd>
-						</div>
-						<div class="flex justify-between">
-							<dt class="text-gray-500">Region</dt>
-							<dd class="text-gray-900">{instance.region}</dd>
-						</div>
-						<div class="flex justify-between">
 							<dt class="text-gray-500">Last Heartbeat</dt>
 							<dd class="text-gray-900">{timeAgo(instance.last_heartbeat_at)}</dd>
 						</div>
@@ -172,28 +149,6 @@
 						>
 							{restarting ? 'Restarting...' : 'Restart'}
 						</button>
-						{#if confirmDelete}
-							<button
-								onclick={handleDelete}
-								disabled={deleting}
-								class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-							>
-								{deleting ? 'Deleting...' : 'Confirm Delete'}
-							</button>
-							<button
-								onclick={() => (confirmDelete = false)}
-								class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-							>
-								Cancel
-							</button>
-						{:else}
-							<button
-								onclick={() => (confirmDelete = true)}
-								class="rounded-lg border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-							>
-								Delete
-							</button>
-						{/if}
 					</div>
 
 					<!-- Messaging links -->
