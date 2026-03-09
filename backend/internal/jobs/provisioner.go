@@ -199,10 +199,19 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 		reverse_proxy openclaw-gateway:18789
 	}
 
-	@authenticated {
+	@auth_header {
 		header Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
 	}
-	handle @authenticated {
+	@auth_query {
+		query token={env.OPENCLAW_AUTH_TOKEN}
+	}
+	handle @auth_header {
+		reverse_proxy openclaw-gateway:18789 {
+			header_up Connection {header.Connection}
+			header_up Upgrade {header.Upgrade}
+		}
+	}
+	handle @auth_query {
 		reverse_proxy openclaw-gateway:18789 {
 			header_up Connection {header.Connection}
 			header_up Upgrade {header.Upgrade}
