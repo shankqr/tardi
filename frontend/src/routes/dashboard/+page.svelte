@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { dashboardState, dashboardLoading, dashboardError } from '$lib/stores/dashboard';
+	import { dashboardState, dashboardLoading, dashboardError, refreshDashboard } from '$lib/stores/dashboard';
 	import { getIdToken } from '$lib/stores/auth';
 	import { createInstance } from '$lib/api/client';
 	import InstanceCard from '$lib/components/InstanceCard.svelte';
@@ -21,6 +21,7 @@
 				name: agentName,
 				region: 'eu-central'
 			});
+			await refreshDashboard();
 			goto(`/dashboard/instances/${instance.id}`);
 		} catch (err) {
 			deployError = err instanceof Error ? err.message : 'Failed to deploy agent';
