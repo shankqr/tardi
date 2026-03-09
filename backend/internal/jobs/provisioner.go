@@ -46,13 +46,43 @@ type CloudInitData struct {
 // with OpenClaw via Docker Compose + Caddy reverse proxy.
 var cloudInitTemplate = template.Must(template.New("cloudinit").Parse(`#!/bin/bash
 set -euo pipefail
+exec > >(tee -a /var/log/openclaw-init.log) 2>&1
+
+STATUS_FILE=/opt/openclaw/.init-status
+mkdir -p /opt/openclaw
+log_status() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1" | tee -a "$STATUS_FILE"; }
+
+log_status "STARTED"
+
+# --- Swap (prevents OOM on small instances during image pull) ---
+if [ ! -f /swapfile ]; then
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    log_status "SWAP_CREATED"
+fi
 
 # --- System setup ---
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq ca-certificates curl jq
+for i in 1 2 3; do
+    apt-get update -qq && break
+    log_status "APT_UPDATE_RETRY_$i"
+    sleep 5
+done
+apt-get install -y -qq ca-certificates curl jq ufw
 
-# Install Docker from official repository (includes compose plugin)
+# --- Firewall ---
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+log_status "FIREWALL_CONFIGURED"
+
+# --- Install Docker from official repository ---
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 chmod a+r /etc/apt/keyrings/docker.asc
@@ -62,6 +92,7 @@ apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plug
 
 systemctl enable docker
 systemctl start docker
+log_status "DOCKER_INSTALLED"
 
 # --- Create openclaw user (UID 1000) for container security ---
 useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
@@ -70,11 +101,17 @@ useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
 mkdir -p /opt/openclaw/data/openclaw
 chown -R 1000:1000 /opt/openclaw/data
 
-# --- OpenClaw config (bind to all interfaces for Docker networking) ---
-cat > /opt/openclaw/data/openclaw/openclaw.json <<'CFGEOF'
+# --- OpenClaw config ---
+# bind=lan: listen on 0.0.0.0 so Caddy can reach the gateway via Docker network
+# auth token: pre-set so OpenClaw doesn't auto-generate a different one
+cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
 {
   "gateway": {
-    "bind": "lan"
+    "bind": "lan",
+    "auth": {
+      "mode": "token",
+      "token": "{{.OpenClawAuthToken}}"
+    }
   }
 }
 CFGEOF
@@ -185,6 +222,15 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	}
 }
 CADDYEOF
+log_status "FILES_WRITTEN"
+
+# --- Pre-pull images (retry on failure) ---
+for i in 1 2 3; do
+    docker compose -f /opt/openclaw/docker-compose.yml pull && break
+    log_status "DOCKER_PULL_RETRY_$i"
+    sleep 10
+done
+log_status "IMAGES_PULLED"
 
 # --- Systemd service for Docker Compose stack ---
 cat > /etc/systemd/system/openclaw-stack.service <<'SVCEOF'
@@ -197,7 +243,6 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/openclaw
-ExecStartPre=/usr/bin/docker compose pull
 ExecStart=/usr/bin/docker compose up -d --remove-orphans
 ExecStop=/usr/bin/docker compose down
 Restart=on-failure
@@ -211,8 +256,7 @@ SVCEOF
 cat > /opt/openclaw/heartbeat.sh <<'HBEOF'
 #!/bin/bash
 source /opt/openclaw/.env
-HEALTH=$(curl -sf http://localhost:18789/health 2>/dev/null)
-if [ $? -eq 0 ]; then
+if curl -sf http://localhost:18789/health > /dev/null 2>&1; then
     curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
         -H "Authorization: Bearer ${AGENT_TOKEN}" \
         -H "Content-Type: application/json" \
@@ -250,6 +294,8 @@ systemctl enable openclaw-stack
 systemctl start openclaw-stack
 systemctl enable openclaw-heartbeat.timer
 systemctl start openclaw-heartbeat.timer
+
+log_status "COMPLETED"
 `))
 
 type Provisioner struct {
