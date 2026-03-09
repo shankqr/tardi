@@ -90,7 +90,7 @@ func (h *HetznerProvider) GetServer(ctx context.Context, providerServerID string
 		return nil, fmt.Errorf("hetzner get server: %w", err)
 	}
 	if server == nil {
-		return nil, fmt.Errorf("hetzner server %s not found", providerServerID)
+		return nil, fmt.Errorf("hetzner server %s: %w", providerServerID, provider.ErrServerNotFound)
 	}
 
 	ipv4 := ""

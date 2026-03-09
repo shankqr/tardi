@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -91,13 +92,22 @@ func (r *Reconciler) reconcileActive(ctx context.Context) {
 
 		server, err := prov.GetServer(ctx, serverID)
 		if err != nil {
-			r.logger.Warn("reconciler: failed to get server from provider",
-				"instance_id", idStr,
-				"server_id", serverID,
-				"error", err,
-			)
-			// Server may have been deleted externally — mark as error
-			_ = db.UpdateInstanceStatus(ctx, r.pool, instanceID, models.VpsStatusError)
+			if errors.Is(err, provider.ErrServerNotFound) {
+				// Server confirmed deleted at provider — terminate the instance
+				r.logger.Warn("reconciler: server deleted externally, terminating instance",
+					"instance_id", idStr,
+					"server_id", serverID,
+				)
+				_ = db.ClearInstanceProviderInfo(ctx, r.pool, instanceID)
+				_ = db.UpdateInstanceStatus(ctx, r.pool, instanceID, models.VpsStatusTerminated)
+			} else {
+				// Transient error — log but don't mark as error immediately
+				r.logger.Warn("reconciler: transient error getting server from provider",
+					"instance_id", idStr,
+					"server_id", serverID,
+					"error", err,
+				)
+			}
 			continue
 		}
 
@@ -215,7 +225,15 @@ func (r *Reconciler) reconcileStaleRestarting(ctx context.Context) {
 
 		server, err := prov.GetServer(ctx, *inst.ProviderServerID)
 		if err != nil {
-			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+			if errors.Is(err, provider.ErrServerNotFound) {
+				r.logger.Warn("reconciler: restarting server deleted externally, terminating",
+					"instance_id", inst.ID,
+				)
+				_ = db.ClearInstanceProviderInfo(ctx, r.pool, inst.ID)
+				_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusTerminated)
+			} else {
+				_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+			}
 			continue
 		}
 
@@ -263,7 +281,15 @@ func (r *Reconciler) reconcileStaleResuming(ctx context.Context) {
 
 		server, err := prov.GetServer(ctx, *inst.ProviderServerID)
 		if err != nil {
-			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+			if errors.Is(err, provider.ErrServerNotFound) {
+				r.logger.Warn("reconciler: resuming server deleted externally, terminating",
+					"instance_id", inst.ID,
+				)
+				_ = db.ClearInstanceProviderInfo(ctx, r.pool, inst.ID)
+				_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusTerminated)
+			} else {
+				_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+			}
 			continue
 		}
 

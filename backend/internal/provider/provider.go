@@ -1,6 +1,12 @@
 package provider
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrServerNotFound is returned when a server no longer exists at the provider.
+var ErrServerNotFound = errors.New("server not found")
 
 type CreateServerRequest struct {
 	Name       string
