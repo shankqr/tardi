@@ -36,7 +36,7 @@ npm run build        # Production build
 npm run check        # Type check
 ```
 
-Always commit and push to main branch after any changes to code
+Always commit and push to dev branch after any changes to code
 
 ### Conventions
 

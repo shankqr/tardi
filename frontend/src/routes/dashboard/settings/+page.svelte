@@ -20,14 +20,4 @@
 			</div>
 		</dl>
 	</div>
-
-	<div class="rounded-xl border border-red-100 p-5">
-		<h3 class="text-sm font-semibold text-red-600">Danger Zone</h3>
-		<p class="mt-2 text-sm text-gray-500">
-			Deleting your account will terminate all agents and cancel your subscription.
-		</p>
-		<button class="mt-4 rounded-lg border border-red-200 px-4 py-2 text-sm text-red-600 hover:bg-red-50">
-			Delete Account
-		</button>
-	</div>
 </div>
