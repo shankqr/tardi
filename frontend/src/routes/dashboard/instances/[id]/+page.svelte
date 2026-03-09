@@ -92,7 +92,7 @@
 	}
 </script>
 
-{#if $dashboardLoading}
+{#if $dashboardLoading || !$dashboardState}
 	<div class="flex items-center justify-center py-20">
 		<p class="text-gray-400">Loading...</p>
 	</div>
