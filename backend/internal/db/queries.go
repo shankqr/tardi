@@ -143,7 +143,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running') LIMIT 1),
-		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, agent_status, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances v
 		WHERE user_id = $1 AND status != 'terminated'
 		ORDER BY created_at DESC
@@ -160,7 +160,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status, &inst.Step,
-			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.AgentStatus, &inst.LastHeartbeatAt,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -177,14 +177,14 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running') LIMIT 1),
-		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, agent_status, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances v
 		WHERE id = $1 AND user_id = $2
 	`, instanceID, userID).Scan(
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status, &inst.Step,
-		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.AgentStatus, &inst.LastHeartbeatAt,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -231,11 +231,11 @@ func UpdateInstanceProviderInfo(ctx context.Context, pool *pgxpool.Pool, instanc
 	return nil
 }
 
-// UpdateInstanceHeartbeat records the latest heartbeat.
-func UpdateInstanceHeartbeat(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) error {
+// UpdateInstanceHeartbeat records the latest heartbeat and optional agent status.
+func UpdateInstanceHeartbeat(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, agentStatus *string) error {
 	_, err := pool.Exec(ctx, `
-		UPDATE vps_instances SET last_heartbeat_at = now(), updated_at = now() WHERE id = $1
-	`, instanceID)
+		UPDATE vps_instances SET last_heartbeat_at = now(), agent_status = COALESCE($2, agent_status), updated_at = now() WHERE id = $1
+	`, instanceID, agentStatus)
 	if err != nil {
 		return fmt.Errorf("update heartbeat: %w", err)
 	}
@@ -472,7 +472,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, agent_status, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances
 		WHERE status = $1
 	`, status)
@@ -488,7 +488,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
-			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.AgentStatus, &inst.LastHeartbeatAt,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -631,7 +631,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, agent_status, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances
 		WHERE subscription_id = $1 AND status NOT IN ('terminated', 'terminating')
 	`, subID)
@@ -647,7 +647,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
-			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.AgentStatus, &inst.LastHeartbeatAt,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -854,14 +854,14 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, agent_status, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances
 		WHERE agent_token_secret_name = $1
 	`, tokenSecretName).Scan(
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
-		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.AgentStatus, &inst.LastHeartbeatAt,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

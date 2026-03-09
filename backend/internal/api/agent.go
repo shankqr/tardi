@@ -64,11 +64,18 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Parse optional metrics from body
-		var body map[string]any
+		// Parse optional status from body
+		var body struct {
+			Status string `json:"status"`
+		}
 		json.NewDecoder(r.Body).Decode(&body)
 
-		if err := db.UpdateInstanceHeartbeat(r.Context(), deps.Pool, inst.ID); err != nil {
+		var agentStatus *string
+		if body.Status != "" {
+			agentStatus = &body.Status
+		}
+
+		if err := db.UpdateInstanceHeartbeat(r.Context(), deps.Pool, inst.ID, agentStatus); err != nil {
 			slog.Error("agent heartbeat: update", "error", err)
 			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to record heartbeat")
 			return

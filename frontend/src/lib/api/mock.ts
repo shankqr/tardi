@@ -28,6 +28,7 @@ export const mockDashboardState: DashboardState = {
 			provider: 'hetzner',
 			ipv4: '203.0.113.10',
 			region: 'eu-central',
+			agent_status: 'running',
 			last_heartbeat_at: new Date(Date.now() - 15000).toISOString(),
 			created_at: '2026-01-15T10:30:00Z'
 		}

@@ -35,6 +35,7 @@ export interface VpsInstance {
 	ipv4: string | null;
 	root_password?: string | null;
 	region: string;
+	agent_status: string | null;
 	last_heartbeat_at: string | null;
 	created_at: string;
 }

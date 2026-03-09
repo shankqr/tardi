@@ -256,16 +256,31 @@ SVCEOF
 cat > /opt/openclaw/heartbeat.sh <<'HBEOF'
 #!/bin/bash
 source /opt/openclaw/.env
-if curl -sf http://localhost:18789/health > /dev/null 2>&1; then
-    curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
-        -H "Authorization: Bearer ${AGENT_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "{\"status\":\"healthy\"}" > /dev/null 2>&1
+
+# Check OpenClaw gateway health
+HEALTH=$(curl -sf http://localhost:18789/health 2>/dev/null)
+if [ $? -eq 0 ]; then
+    STATUS="running"
+else
+    # Check if container exists but is unhealthy
+    CONTAINER_STATE=$(docker inspect -f '{{.State.Status}}' openclaw-gateway 2>/dev/null)
+    if [ "$CONTAINER_STATE" = "running" ]; then
+        STATUS="unhealthy"
+    elif [ -n "$CONTAINER_STATE" ]; then
+        STATUS="stopped"
+    else
+        STATUS="not_found"
+    fi
 fi
+
+curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
+    -H "Authorization: Bearer ${AGENT_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{\"status\":\"${STATUS}\"}" > /dev/null 2>&1
 HBEOF
 chmod +x /opt/openclaw/heartbeat.sh
 
-# --- Heartbeat systemd timer (every 60s) ---
+# --- Heartbeat systemd timer (every 5 minutes) ---
 cat > /etc/systemd/system/openclaw-heartbeat.service <<'HBSVCEOF'
 [Unit]
 Description=OpenClaw Heartbeat
@@ -281,8 +296,8 @@ Description=OpenClaw Heartbeat Timer
 
 [Timer]
 OnBootSec=90s
-OnUnitActiveSec=60s
-AccuracySec=5s
+OnUnitActiveSec=300s
+AccuracySec=10s
 
 [Install]
 WantedBy=timers.target
@@ -611,7 +626,7 @@ func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.Provisio
 			resp.Body.Close()
 			if resp.StatusCode == 200 {
 				p.logger.Info("provisioner: agent health check passed", "instance_id", job.VpsInstanceID)
-				_ = db.UpdateInstanceHeartbeat(ctx, p.pool, inst.ID)
+				_ = db.UpdateInstanceHeartbeat(ctx, p.pool, inst.ID, nil)
 				return nil
 			}
 			p.logger.Debug("provisioner: agent health non-200", "status", resp.StatusCode, "instance_id", job.VpsInstanceID)
@@ -632,13 +647,13 @@ func GetInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, agent_status, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances WHERE id = $1
 	`, instanceID).Scan(
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
-		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.AgentStatus, &inst.LastHeartbeatAt,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if err != nil {

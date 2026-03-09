@@ -290,6 +290,29 @@
 							<dd class="font-mono text-gray-900">{instance.ipv4 ?? '—'}</dd>
 						</div>
 						<div class="flex justify-between">
+							<dt class="text-gray-500">OpenClaw</dt>
+							<dd>
+								{#if instance.agent_status === 'running'}
+									<span class="inline-flex items-center gap-1.5 text-green-700">
+										<span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+										Running
+									</span>
+								{:else if instance.agent_status === 'unhealthy'}
+									<span class="inline-flex items-center gap-1.5 text-yellow-700">
+										<span class="h-1.5 w-1.5 rounded-full bg-yellow-500"></span>
+										Unhealthy
+									</span>
+								{:else if instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
+									<span class="inline-flex items-center gap-1.5 text-red-700">
+										<span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+										Stopped
+									</span>
+								{:else}
+									<span class="text-gray-400">—</span>
+								{/if}
+							</dd>
+						</div>
+						<div class="flex justify-between">
 							<dt class="text-gray-500">Last Heartbeat</dt>
 							<dd class="text-gray-900">{timeAgo(instance.last_heartbeat_at)}</dd>
 						</div>
