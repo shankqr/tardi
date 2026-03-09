@@ -19,17 +19,18 @@ type Worker struct {
 	provisioner *Provisioner
 }
 
-func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL string) *Worker {
+func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag string) *Worker {
 	return &Worker{
 		pool:     pool,
 		registry: registry,
 		logger:   logger,
 		interval: 2 * time.Second,
 		provisioner: &Provisioner{
-			pool:     pool,
-			registry: registry,
-			logger:   logger,
-			apiURL:   apiURL,
+			pool:             pool,
+			registry:         registry,
+			logger:           logger,
+			apiURL:           apiURL,
+			openClawImageTag: openClawImageTag,
 		},
 	}
 }

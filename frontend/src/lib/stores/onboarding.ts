@@ -5,6 +5,9 @@ export interface AgentConfiguration {
 	name: string;
 	model: string;
 	description: string;
+	openrouter_api_key: string;
+	anthropic_api_key?: string;
+	openai_api_key?: string;
 }
 
 export interface OnboardingState {

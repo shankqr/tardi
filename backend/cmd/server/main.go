@@ -103,7 +103,7 @@ func main() {
 	}
 
 	// Start background workers
-	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL)
+	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag)
 	go worker.Start(ctx)
 
 	reconciler := jobs.NewReconciler(pool, registry, logger)
@@ -112,7 +112,7 @@ func main() {
 	enforcer := jobs.NewEnforcer(pool, registry, logger)
 	go enforcer.Start(ctx)
 
-	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL)
+	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag)
 
 	// Build router with all endpoints
 	deps := api.Dependencies{

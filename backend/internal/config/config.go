@@ -17,6 +17,7 @@ type Config struct {
 	Environment         string
 	LogLevel            string
 	APIURL              string
+	OpenClawImageTag    string
 
 	// Mock provider delays (dev only)
 	MockInitDelay      time.Duration
@@ -38,6 +39,7 @@ func Load() *Config {
 		Environment:        envOrDefault("ENVIRONMENT", "dev"),
 		LogLevel:           envOrDefault("LOG_LEVEL", "info"),
 		APIURL:             envOrDefault("API_URL", "http://localhost:8080"),
+		OpenClawImageTag:   envOrDefault("OPENCLAW_IMAGE_TAG", "latest"),
 
 		MockInitDelay:      parseDuration("MOCK_INIT_DELAY", 12*time.Second),
 		MockHeartbeatDelay: parseDuration("MOCK_HEARTBEAT_DELAY", 18*time.Second),

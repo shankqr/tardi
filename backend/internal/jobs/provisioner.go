@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"text/template"
 	"time"
 
@@ -19,6 +21,15 @@ import (
 	"github.com/shanq/tardi/internal/provider"
 )
 
+// insecureHTTPClient is used to check health of VPS instances
+// running Caddy with self-signed TLS certificates.
+var insecureHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Self-signed certs on our own VPS
+	},
+}
+
 // Per-step timeouts per the architecture spec.
 var stepTimeouts = map[models.ProvisioningStep]time.Duration{
 	models.StepSelectProvider:  2 * time.Minute,
@@ -29,63 +40,213 @@ var stepTimeouts = map[models.ProvisioningStep]time.Duration{
 	models.StepActivate:        1 * time.Minute,
 }
 
-// cloudInitTemplate is the user-data script for bootstrapping a new VPS.
+// CloudInitData holds all template variables for cloud-init rendering.
+type CloudInitData struct {
+	AgentToken        string // Tardi API auth token
+	APIURL            string // Tardi backend URL
+	InstanceID        string // VPS instance UUID
+	OpenRouterAPIKey  string // Default LLM provider (required)
+	AnthropicAPIKey   string // Optional direct Anthropic access
+	OpenAIAPIKey      string // Optional direct OpenAI access
+	OpenClawAuthToken string // Auto-generated, for OpenClaw's own auth
+	OpenClawImageTag  string // e.g. "latest" or "v1.2.3"
+}
+
+// cloudInitTemplate is the user-data script for bootstrapping a new VPS
+// with OpenClaw via Docker Compose + Caddy reverse proxy.
 var cloudInitTemplate = template.Must(template.New("cloudinit").Parse(`#!/bin/bash
 set -euo pipefail
 
 # --- System setup ---
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq docker.io curl jq
+apt-get install -y -qq docker.io docker-compose-plugin curl jq
 
 systemctl enable docker
 systemctl start docker
 
-# --- Agent configuration ---
-AGENT_TOKEN="{{.AgentToken}}"
-API_URL="{{.APIURL}}"
-INSTANCE_ID="{{.InstanceID}}"
+# --- Create openclaw user (UID 1000) for container security ---
+useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
 
-# --- Create agent config ---
-mkdir -p /opt/openclaw
-cat > /opt/openclaw/env <<ENVEOF
-AGENT_TOKEN=${AGENT_TOKEN}
-API_URL=${API_URL}
-INSTANCE_ID=${INSTANCE_ID}
+# --- Directory structure ---
+mkdir -p /opt/openclaw/data/{config,workspace,state,credentials}
+chown -R 1000:1000 /opt/openclaw/data
+
+# --- Environment file ---
+cat > /opt/openclaw/.env <<'ENVEOF'
+AGENT_TOKEN={{.AgentToken}}
+API_URL={{.APIURL}}
+INSTANCE_ID={{.InstanceID}}
+OPENCLAW_AUTH_TOKEN={{.OpenClawAuthToken}}
+OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
+NODE_ENV=production
 ENVEOF
+{{- if .AnthropicAPIKey}}
+echo "ANTHROPIC_API_KEY={{.AnthropicAPIKey}}" >> /opt/openclaw/.env
+{{- end}}
+{{- if .OpenAIAPIKey}}
+echo "OPENAI_API_KEY={{.OpenAIAPIKey}}" >> /opt/openclaw/.env
+{{- end}}
+chmod 600 /opt/openclaw/.env
 
-# --- Create systemd service ---
-cat > /etc/systemd/system/openclaw-agent.service <<SVCEOF
+# --- Docker Compose ---
+cat > /opt/openclaw/docker-compose.yml <<'COMPOSEEOF'
+services:
+  openclaw-gateway:
+    image: openclaw/openclaw:{{.OpenClawImageTag}}
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - openclaw-net
+    volumes:
+      - ./data/config:/root/.openclaw/config:rw
+      - ./data/workspace:/root/.openclaw/workspace:rw
+      - ./data/state:/root/.openclaw/state:rw
+      - ./data/credentials:/root/.openclaw/credentials:rw
+    ports:
+      - "127.0.0.1:18789:18789"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:18789/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: openclaw-caddy
+    restart: unless-stopped
+    networks:
+      - openclaw-net
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    env_file:
+      - .env
+    depends_on:
+      openclaw-gateway:
+        condition: service_healthy
+
+networks:
+  openclaw-net:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
+COMPOSEEOF
+
+# --- Caddyfile ---
+cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
+:443 {
+	tls internal
+
+	@health path /health
+	handle @health {
+		reverse_proxy openclaw-gateway:18789
+	}
+
+	@authenticated {
+		header Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
+	}
+	handle @authenticated {
+		reverse_proxy openclaw-gateway:18789 {
+			header_up Connection {header.Connection}
+			header_up Upgrade {header.Upgrade}
+		}
+	}
+
+	respond 401
+}
+
+:80 {
+	redir https://{host}{uri} permanent
+}
+CADDYEOF
+
+# --- Systemd service for Docker Compose stack ---
+cat > /etc/systemd/system/openclaw-stack.service <<'SVCEOF'
 [Unit]
-Description=OpenClaw AI Agent
+Description=OpenClaw Agent Stack
 After=docker.service
 Requires=docker.service
 
 [Service]
-Type=simple
-Restart=always
-RestartSec=10
-EnvironmentFile=/opt/openclaw/env
-ExecStartPre=-/usr/bin/docker pull ghcr.io/openclaw/agent:latest
-ExecStart=/usr/bin/docker run --rm --name openclaw-agent \
-  --env-file /opt/openclaw/env \
-  ghcr.io/openclaw/agent:latest
-ExecStop=/usr/bin/docker stop openclaw-agent
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/openclaw
+ExecStartPre=/usr/bin/docker compose pull
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+Restart=on-failure
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
 SVCEOF
 
+# --- Heartbeat script ---
+cat > /opt/openclaw/heartbeat.sh <<'HBEOF'
+#!/bin/bash
+source /opt/openclaw/.env
+HEALTH=$(curl -sf http://localhost:18789/health 2>/dev/null)
+if [ $? -eq 0 ]; then
+    curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
+        -H "Authorization: Bearer ${AGENT_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"status\":\"healthy\"}" > /dev/null 2>&1
+fi
+HBEOF
+chmod +x /opt/openclaw/heartbeat.sh
+
+# --- Heartbeat systemd timer (every 60s) ---
+cat > /etc/systemd/system/openclaw-heartbeat.service <<'HBSVCEOF'
+[Unit]
+Description=OpenClaw Heartbeat
+
+[Service]
+Type=oneshot
+ExecStart=/opt/openclaw/heartbeat.sh
+HBSVCEOF
+
+cat > /etc/systemd/system/openclaw-heartbeat.timer <<'HBTEOF'
+[Unit]
+Description=OpenClaw Heartbeat Timer
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+HBTEOF
+
+# --- Start everything ---
 systemctl daemon-reload
-systemctl enable openclaw-agent
-systemctl start openclaw-agent
+systemctl enable openclaw-stack
+systemctl start openclaw-stack
+systemctl enable openclaw-heartbeat.timer
+systemctl start openclaw-heartbeat.timer
 `))
 
 type Provisioner struct {
-	pool     *pgxpool.Pool
-	registry *provider.Registry
-	logger   *slog.Logger
-	apiURL   string
+	pool             *pgxpool.Pool
+	registry         *provider.Registry
+	logger           *slog.Logger
+	apiURL           string
+	openClawImageTag string
 }
 
 // Execute runs through the provisioning steps for a job.
@@ -241,8 +402,38 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("store agent token: %w", err)
 	}
 
+	// Generate OpenClaw auth token
+	openClawAuthToken, err := GenerateAgentToken()
+	if err != nil {
+		return fmt.Errorf("generate openclaw auth token: %w", err)
+	}
+
+	// Fetch API keys from agent config
+	ciData := CloudInitData{
+		AgentToken:        agentToken,
+		APIURL:            p.apiURL,
+		InstanceID:        inst.ID.String(),
+		OpenClawAuthToken: openClawAuthToken,
+		OpenClawImageTag:  p.openClawImageTag,
+	}
+	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, p.pool, inst.ID)
+	if err != nil {
+		return fmt.Errorf("get agent config: %w", err)
+	}
+	if agentCfg != nil {
+		if v, ok := agentCfg.Config["openrouter_api_key"].(string); ok {
+			ciData.OpenRouterAPIKey = v
+		}
+		if v, ok := agentCfg.Config["anthropic_api_key"].(string); ok {
+			ciData.AnthropicAPIKey = v
+		}
+		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
+			ciData.OpenAIAPIKey = v
+		}
+	}
+
 	// Render cloud-init user data
-	userData, err := RenderCloudInit(agentToken, p.apiURL, inst.ID.String())
+	userData, err := RenderCloudInit(ciData)
 	if err != nil {
 		return fmt.Errorf("render cloud-init: %w", err)
 	}
@@ -337,12 +528,38 @@ func (p *Provisioner) stepBootstrap(ctx context.Context, job *models.Provisionin
 }
 
 func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.ProvisioningJob) error {
-	// TODO: Wait for the first heartbeat from the agent once the agent image is deployed.
-	// For now, skip this step since there's no agent image yet.
-	p.logger.Info("provisioner: skipping agent install check (no agent image yet)",
-		"instance_id", job.VpsInstanceID,
-	)
-	return nil
+	inst, err := GetInstanceInternal(ctx, p.pool, job.VpsInstanceID)
+	if err != nil {
+		return err
+	}
+	if inst.IPv4 == nil {
+		return fmt.Errorf("no IPv4 address available")
+	}
+
+	healthURL := fmt.Sprintf("https://%s/health", *inst.IPv4)
+
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for agent health: %w", ctx.Err())
+		case <-ticker.C:
+			resp, err := insecureHTTPClient.Get(healthURL)
+			if err != nil {
+				p.logger.Debug("provisioner: agent not ready yet", "error", err, "instance_id", job.VpsInstanceID)
+				continue
+			}
+			resp.Body.Close()
+			if resp.StatusCode == 200 {
+				p.logger.Info("provisioner: agent health check passed", "instance_id", job.VpsInstanceID)
+				_ = db.UpdateInstanceHeartbeat(ctx, p.pool, inst.ID)
+				return nil
+			}
+			p.logger.Debug("provisioner: agent health non-200", "status", resp.StatusCode, "instance_id", job.VpsInstanceID)
+		}
+	}
 }
 
 func (p *Provisioner) stepActivate(ctx context.Context, job *models.ProvisioningJob) error {
@@ -414,19 +631,13 @@ func GenerateAgentToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// renderCloudInit generates the cloud-init user-data script.
-func RenderCloudInit(agentToken, apiURL, instanceID string) (string, error) {
+// RenderCloudInit generates the cloud-init user-data script.
+func RenderCloudInit(data CloudInitData) (string, error) {
+	if data.OpenClawImageTag == "" {
+		data.OpenClawImageTag = "latest"
+	}
 	var buf bytes.Buffer
-	err := cloudInitTemplate.Execute(&buf, struct {
-		AgentToken string
-		APIURL     string
-		InstanceID string
-	}{
-		AgentToken: agentToken,
-		APIURL:     apiURL,
-		InstanceID: instanceID,
-	})
-	if err != nil {
+	if err := cloudInitTemplate.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("execute cloud-init template: %w", err)
 	}
 	return buf.String(), nil

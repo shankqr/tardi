@@ -20,18 +20,20 @@ const (
 
 // Resumer handles re-provisioning suspended instances from their system snapshots.
 type Resumer struct {
-	pool     *pgxpool.Pool
-	registry *provider.Registry
-	logger   *slog.Logger
-	apiURL   string
+	pool             *pgxpool.Pool
+	registry         *provider.Registry
+	logger           *slog.Logger
+	apiURL           string
+	openClawImageTag string
 }
 
-func NewResumer(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL string) *Resumer {
+func NewResumer(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag string) *Resumer {
 	return &Resumer{
-		pool:     pool,
-		registry: registry,
-		logger:   logger,
-		apiURL:   apiURL,
+		pool:             pool,
+		registry:         registry,
+		logger:           logger,
+		apiURL:           apiURL,
+		openClawImageTag: openClawImageTag,
 	}
 }
 
@@ -101,8 +103,42 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		return
 	}
 
+	// Generate OpenClaw auth token
+	openClawAuthToken, err := GenerateAgentToken()
+	if err != nil {
+		r.logger.Error("resumer: generate openclaw auth token", "error", err)
+		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+		return
+	}
+
+	// Build cloud-init data with API keys from agent config
+	ciData := CloudInitData{
+		AgentToken:        agentToken,
+		APIURL:            r.apiURL,
+		InstanceID:        inst.ID.String(),
+		OpenClawAuthToken: openClawAuthToken,
+		OpenClawImageTag:  r.openClawImageTag,
+	}
+	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, r.pool, inst.ID)
+	if err != nil {
+		r.logger.Error("resumer: get agent config", "error", err)
+		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+		return
+	}
+	if agentCfg != nil {
+		if v, ok := agentCfg.Config["openrouter_api_key"].(string); ok {
+			ciData.OpenRouterAPIKey = v
+		}
+		if v, ok := agentCfg.Config["anthropic_api_key"].(string); ok {
+			ciData.AnthropicAPIKey = v
+		}
+		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
+			ciData.OpenAIAPIKey = v
+		}
+	}
+
 	// Render cloud-init
-	userData, err := RenderCloudInit(agentToken, r.apiURL, inst.ID.String())
+	userData, err := RenderCloudInit(ciData)
 	if err != nil {
 		r.logger.Error("resumer: render cloud-init", "error", err)
 		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
