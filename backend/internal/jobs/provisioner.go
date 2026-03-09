@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -20,15 +19,6 @@ import (
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
 )
-
-// insecureHTTPClient is used to check health of VPS instances
-// running Caddy with self-signed TLS certificates.
-var insecureHTTPClient = &http.Client{
-	Timeout: 10 * time.Second,
-	Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Self-signed certs on our own VPS
-	},
-}
 
 // Per-step timeouts per the architecture spec.
 var stepTimeouts = map[models.ProvisioningStep]time.Duration{
@@ -77,8 +67,18 @@ systemctl start docker
 useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
 
 # --- Directory structure ---
-mkdir -p /opt/openclaw/data/{config,workspace,state,credentials}
+mkdir -p /opt/openclaw/data/openclaw
 chown -R 1000:1000 /opt/openclaw/data
+
+# --- OpenClaw config (bind to all interfaces for Docker networking) ---
+cat > /opt/openclaw/data/openclaw/openclaw.json <<'CFGEOF'
+{
+  "gateway": {
+    "bind": "lan"
+  }
+}
+CFGEOF
+chown 1000:1000 /opt/openclaw/data/openclaw/openclaw.json
 
 # --- Environment file ---
 cat > /opt/openclaw/.env <<'ENVEOF'
@@ -101,7 +101,7 @@ chmod 600 /opt/openclaw/.env
 cat > /opt/openclaw/docker-compose.yml <<'COMPOSEEOF'
 services:
   openclaw-gateway:
-    image: openclaw/openclaw:{{.OpenClawImageTag}}
+    image: ghcr.io/openclaw/openclaw:{{.OpenClawImageTag}}
     container_name: openclaw-gateway
     restart: unless-stopped
     user: "1000:1000"
@@ -112,10 +112,7 @@ services:
     networks:
       - openclaw-net
     volumes:
-      - ./data/config:/root/.openclaw/config:rw
-      - ./data/workspace:/root/.openclaw/workspace:rw
-      - ./data/state:/root/.openclaw/state:rw
-      - ./data/credentials:/root/.openclaw/credentials:rw
+      - ./data/openclaw:/home/node/.openclaw:rw
     ports:
       - "127.0.0.1:18789:18789"
     env_file:
@@ -179,7 +176,13 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 }
 
 :80 {
-	redir https://{host}{uri} permanent
+	@health path /health
+	handle @health {
+		reverse_proxy openclaw-gateway:18789
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
 }
 CADDYEOF
 
@@ -544,7 +547,7 @@ func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("no IPv4 address available")
 	}
 
-	healthURL := fmt.Sprintf("https://%s/health", *inst.IPv4)
+	healthURL := fmt.Sprintf("http://%s/health", *inst.IPv4)
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -554,7 +557,7 @@ func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.Provisio
 		case <-ctx.Done():
 			return fmt.Errorf("timeout waiting for agent health: %w", ctx.Err())
 		case <-ticker.C:
-			resp, err := insecureHTTPClient.Get(healthURL)
+			resp, err := http.Get(healthURL) //nolint:gosec // Health check URL is constructed from our own DB
 			if err != nil {
 				p.logger.Debug("provisioner: agent not ready yet", "error", err, "instance_id", job.VpsInstanceID)
 				continue
