@@ -6,7 +6,8 @@ type CreateServerRequest struct {
 	Name       string
 	ServerType string
 	Region     string
-	Image      string
+	Image      string // OS image name (e.g., "ubuntu-24.04")
+	ImageID    string // Provider snapshot/image ID — takes precedence over Image if set
 	UserData   string
 	Labels     map[string]string
 }

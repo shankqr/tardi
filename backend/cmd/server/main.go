@@ -112,6 +112,8 @@ func main() {
 	enforcer := jobs.NewEnforcer(pool, registry, logger)
 	go enforcer.Start(ctx)
 
+	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL)
+
 	// Build router with all endpoints
 	deps := api.Dependencies{
 		Pool:     pool,
@@ -119,6 +121,7 @@ func main() {
 		Config:   cfg,
 		Billing:  stripeSvc,
 		Registry: registry,
+		Resumer:  resumer,
 	}
 	handler := api.NewRouter(deps)
 

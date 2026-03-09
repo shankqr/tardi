@@ -9,6 +9,7 @@ import (
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/billing"
 	"github.com/shanq/tardi/internal/config"
+	"github.com/shanq/tardi/internal/jobs"
 	"github.com/shanq/tardi/internal/provider"
 )
 
@@ -18,6 +19,7 @@ type Dependencies struct {
 	Config   *config.Config
 	Billing  *billing.StripeService
 	Registry *provider.Registry
+	Resumer  *jobs.Resumer
 }
 
 func NewRouter(deps Dependencies) http.Handler {

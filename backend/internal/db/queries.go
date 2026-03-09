@@ -603,9 +603,9 @@ func GetCanceledSubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]models
 func GetSnapshotsByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) ([]models.Snapshot, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, vps_instance_id, provider_image_id, name, status,
-		       size_gb, error_message, created_at, updated_at
+		       size_gb, error_message, is_system, created_at, updated_at
 		FROM snapshots
-		WHERE vps_instance_id = $1 AND status != 'deleted'
+		WHERE vps_instance_id = $1 AND status != 'deleted' AND is_system = false
 	`, instanceID)
 	if err != nil {
 		return nil, fmt.Errorf("get snapshots by instance: %w", err)
@@ -617,7 +617,7 @@ func GetSnapshotsByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanceI
 		var s models.Snapshot
 		if err := rows.Scan(
 			&s.ID, &s.VpsInstanceID, &s.ProviderImageID, &s.Name, &s.Status,
-			&s.SizeGB, &s.ErrorMessage, &s.CreatedAt, &s.UpdatedAt,
+			&s.SizeGB, &s.ErrorMessage, &s.IsSystem, &s.CreatedAt, &s.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan snapshot: %w", err)
 		}
@@ -680,9 +680,9 @@ func CreateAgentConfig(ctx context.Context, pool *pgxpool.Pool, ac *models.Agent
 // CreateSnapshot inserts a new snapshot record.
 func CreateSnapshot(ctx context.Context, pool *pgxpool.Pool, snap *models.Snapshot) error {
 	_, err := pool.Exec(ctx, `
-		INSERT INTO snapshots (id, vps_instance_id, name, status)
-		VALUES ($1, $2, $3, $4)
-	`, snap.ID, snap.VpsInstanceID, snap.Name, snap.Status)
+		INSERT INTO snapshots (id, vps_instance_id, name, status, is_system)
+		VALUES ($1, $2, $3, $4, $5)
+	`, snap.ID, snap.VpsInstanceID, snap.Name, snap.Status, snap.IsSystem)
 	if err != nil {
 		return fmt.Errorf("create snapshot: %w", err)
 	}
@@ -694,13 +694,13 @@ func GetSnapshotByID(ctx context.Context, pool *pgxpool.Pool, snapshotID uuid.UU
 	s := &models.Snapshot{}
 	err := pool.QueryRow(ctx, `
 		SELECT s.id, s.vps_instance_id, s.provider_image_id, s.name, s.status,
-		       s.size_gb, s.error_message, s.created_at, s.updated_at
+		       s.size_gb, s.error_message, s.is_system, s.created_at, s.updated_at
 		FROM snapshots s
 		JOIN vps_instances i ON s.vps_instance_id = i.id
 		WHERE s.id = $1 AND i.user_id = $2
 	`, snapshotID, userID).Scan(
 		&s.ID, &s.VpsInstanceID, &s.ProviderImageID, &s.Name, &s.Status,
-		&s.SizeGB, &s.ErrorMessage, &s.CreatedAt, &s.UpdatedAt,
+		&s.SizeGB, &s.ErrorMessage, &s.IsSystem, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -715,10 +715,10 @@ func GetSnapshotByID(ctx context.Context, pool *pgxpool.Pool, snapshotID uuid.UU
 func GetSnapshotsByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) ([]models.Snapshot, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT s.id, s.vps_instance_id, s.provider_image_id, s.name, s.status,
-		       s.size_gb, s.error_message, s.created_at, s.updated_at
+		       s.size_gb, s.error_message, s.is_system, s.created_at, s.updated_at
 		FROM snapshots s
 		JOIN vps_instances i ON s.vps_instance_id = i.id
-		WHERE i.user_id = $1 AND s.status != 'deleted'
+		WHERE i.user_id = $1 AND s.status != 'deleted' AND s.is_system = false
 		ORDER BY s.created_at DESC
 	`, userID)
 	if err != nil {
@@ -731,7 +731,7 @@ func GetSnapshotsByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 		var s models.Snapshot
 		if err := rows.Scan(
 			&s.ID, &s.VpsInstanceID, &s.ProviderImageID, &s.Name, &s.Status,
-			&s.SizeGB, &s.ErrorMessage, &s.CreatedAt, &s.UpdatedAt,
+			&s.SizeGB, &s.ErrorMessage, &s.IsSystem, &s.CreatedAt, &s.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan snapshot: %w", err)
 		}
@@ -745,7 +745,7 @@ func CountActiveSnapshotsByInstanceID(ctx context.Context, pool *pgxpool.Pool, i
 	var count int
 	err := pool.QueryRow(ctx, `
 		SELECT count(*) FROM snapshots
-		WHERE vps_instance_id = $1 AND status NOT IN ('deleted', 'error', 'deleting')
+		WHERE vps_instance_id = $1 AND status NOT IN ('deleted', 'error', 'deleting') AND is_system = false
 	`, instanceID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count active snapshots: %w", err)
@@ -785,6 +785,67 @@ func UpdateSnapshotError(ctx context.Context, pool *pgxpool.Pool, snapshotID uui
 		return fmt.Errorf("update snapshot error: %w", err)
 	}
 	return nil
+}
+
+// GetSystemSnapshotByInstanceID returns the latest ready system snapshot for an instance.
+func GetSystemSnapshotByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) (*models.Snapshot, error) {
+	s := &models.Snapshot{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, vps_instance_id, provider_image_id, name, status,
+		       size_gb, error_message, is_system, created_at, updated_at
+		FROM snapshots
+		WHERE vps_instance_id = $1 AND is_system = true AND status = 'ready'
+		ORDER BY created_at DESC LIMIT 1
+	`, instanceID).Scan(
+		&s.ID, &s.VpsInstanceID, &s.ProviderImageID, &s.Name, &s.Status,
+		&s.SizeGB, &s.ErrorMessage, &s.IsSystem, &s.CreatedAt, &s.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get system snapshot by instance: %w", err)
+	}
+	return s, nil
+}
+
+// ClearInstanceProviderInfo nulls out the provider server ID and IP for an instance.
+func ClearInstanceProviderInfo(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET provider_server_id = NULL, ipv4 = NULL, updated_at = now()
+		WHERE id = $1
+	`, instanceID)
+	if err != nil {
+		return fmt.Errorf("clear instance provider info: %w", err)
+	}
+	return nil
+}
+
+// GetAllSnapshotsByInstanceID returns all non-deleted snapshots (including system) for an instance.
+func GetAllSnapshotsByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) ([]models.Snapshot, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, vps_instance_id, provider_image_id, name, status,
+		       size_gb, error_message, is_system, created_at, updated_at
+		FROM snapshots
+		WHERE vps_instance_id = $1 AND status != 'deleted'
+	`, instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("get all snapshots by instance: %w", err)
+	}
+	defer rows.Close()
+
+	var snapshots []models.Snapshot
+	for rows.Next() {
+		var s models.Snapshot
+		if err := rows.Scan(
+			&s.ID, &s.VpsInstanceID, &s.ProviderImageID, &s.Name, &s.Status,
+			&s.SizeGB, &s.ErrorMessage, &s.IsSystem, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan snapshot: %w", err)
+		}
+		snapshots = append(snapshots, s)
+	}
+	return snapshots, rows.Err()
 }
 
 // GetInstanceByAgentToken returns the instance associated with a token secret name.

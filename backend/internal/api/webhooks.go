@@ -138,9 +138,33 @@ func handleSubscriptionUpdated(r *http.Request, deps Dependencies, event *stripe
 	periodEnd := getSubscriptionPeriodEnd(&sub)
 	cancelAtPeriodEnd := sub.CancelAtPeriodEnd
 
+	// Check if this is a reactivation from suspended — must query BEFORE updating status
+	var wasSuspended bool
+	if status == models.SubStatusActive {
+		prevSub, _ := db.GetSubscriptionByStripeSubID(r.Context(), deps.Pool, sub.ID)
+		if prevSub != nil && prevSub.Status == models.SubStatusSuspended {
+			wasSuspended = true
+		}
+	}
+
 	if err := db.UpdateSubscriptionStatus(r.Context(), deps.Pool, sub.ID, status, periodEnd, cancelAtPeriodEnd); err != nil {
 		slog.Error("stripe webhook: update subscription", "stripe_sub", sub.ID, "error", err)
 		return
+	}
+
+	// Trigger resume for suspended instances when subscription reactivates
+	if wasSuspended {
+		prevSub, _ := db.GetSubscriptionByStripeSubID(r.Context(), deps.Pool, sub.ID)
+		if prevSub != nil {
+			instances, _ := db.GetInstancesBySubscriptionID(r.Context(), deps.Pool, prevSub.ID)
+			for i := range instances {
+				if instances[i].Status == models.VpsStatusSuspended {
+					slog.Info("stripe webhook: triggering resume for suspended instance",
+						"instance_id", instances[i].ID, "stripe_sub", sub.ID)
+					deps.Resumer.ResumeInstance(&instances[i])
+				}
+			}
+		}
 	}
 
 	slog.Info("stripe webhook: subscription updated",

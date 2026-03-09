@@ -158,6 +158,7 @@ type Snapshot struct {
 	Status          SnapshotStatus
 	SizeGB          *float32
 	ErrorMessage    *string
+	IsSystem        bool
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

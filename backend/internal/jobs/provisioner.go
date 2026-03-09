@@ -197,7 +197,7 @@ func (p *Provisioner) handleStepError(ctx context.Context, job *models.Provision
 }
 
 func (p *Provisioner) stepSelectProvider(ctx context.Context, job *models.ProvisioningJob) error {
-	inst, err := getInstanceInternal(ctx, p.pool, job.VpsInstanceID)
+	inst, err := GetInstanceInternal(ctx, p.pool, job.VpsInstanceID)
 	if err != nil {
 		return fmt.Errorf("get instance: %w", err)
 	}
@@ -211,7 +211,7 @@ func (p *Provisioner) stepSelectProvider(ctx context.Context, job *models.Provis
 }
 
 func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.ProvisioningJob) error {
-	inst, err := getInstanceInternal(ctx, p.pool, job.VpsInstanceID)
+	inst, err := GetInstanceInternal(ctx, p.pool, job.VpsInstanceID)
 	if err != nil {
 		return err
 	}
@@ -233,7 +233,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	// Generate agent token
-	agentToken, err := generateAgentToken()
+	agentToken, err := GenerateAgentToken()
 	if err != nil {
 		return fmt.Errorf("generate agent token: %w", err)
 	}
@@ -242,7 +242,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	// Render cloud-init user data
-	userData, err := renderCloudInit(agentToken, p.apiURL, inst.ID.String())
+	userData, err := RenderCloudInit(agentToken, p.apiURL, inst.ID.String())
 	if err != nil {
 		return fmt.Errorf("render cloud-init: %w", err)
 	}
@@ -262,7 +262,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		Labels: map[string]string{
 			"instance_id": inst.ID.String(),
 			"user_id":     inst.UserID.String(),
-			"email":       sanitizeLabelValue(user.Email),
+			"email":       SanitizeLabelValue(user.Email),
 		},
 	})
 	if err != nil {
@@ -283,7 +283,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 }
 
 func (p *Provisioner) stepWaitServerReady(ctx context.Context, job *models.ProvisioningJob) error {
-	inst, err := getInstanceInternal(ctx, p.pool, job.VpsInstanceID)
+	inst, err := GetInstanceInternal(ctx, p.pool, job.VpsInstanceID)
 	if err != nil {
 		return err
 	}
@@ -353,7 +353,7 @@ func (p *Provisioner) stepActivate(ctx context.Context, job *models.Provisioning
 }
 
 // getInstanceInternal fetches an instance without user scoping (for internal worker use).
-func getInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) (*models.VpsInstance, error) {
+func GetInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) (*models.VpsInstance, error) {
 	inst := &models.VpsInstance{}
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
@@ -375,7 +375,7 @@ func getInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 
 // sanitizeLabelValue makes a string safe for use as a Hetzner label value.
 // Labels must be ≤63 chars, start/end with alphanumeric, and only contain alphanumerics, dashes, dots.
-func sanitizeLabelValue(s string) string {
+func SanitizeLabelValue(s string) string {
 	var result []byte
 	for _, c := range []byte(s) {
 		switch {
@@ -406,7 +406,7 @@ func isAlphaNum(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
-func generateAgentToken() (string, error) {
+func GenerateAgentToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generate random bytes: %w", err)
@@ -415,7 +415,7 @@ func generateAgentToken() (string, error) {
 }
 
 // renderCloudInit generates the cloud-init user-data script.
-func renderCloudInit(agentToken, apiURL, instanceID string) (string, error) {
+func RenderCloudInit(agentToken, apiURL, instanceID string) (string, error) {
 	var buf bytes.Buffer
 	err := cloudInitTemplate.Execute(&buf, struct {
 		AgentToken string

@@ -27,7 +27,16 @@ func New(apiToken string, logger *slog.Logger) *HetznerProvider {
 
 func (h *HetznerProvider) CreateServer(ctx context.Context, req provider.CreateServerRequest) (*provider.Server, error) {
 	serverType := &hcloud.ServerType{Name: req.ServerType}
-	image := &hcloud.Image{Name: req.Image}
+	var image *hcloud.Image
+	if req.ImageID != "" {
+		id, err := strconv.ParseInt(req.ImageID, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid image id %q: %w", req.ImageID, err)
+		}
+		image = &hcloud.Image{ID: id}
+	} else {
+		image = &hcloud.Image{Name: req.Image}
+	}
 	location := &hcloud.Location{Name: req.Region}
 
 	labels := req.Labels

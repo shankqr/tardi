@@ -54,6 +54,7 @@ func (r *Reconciler) reconcile(ctx context.Context) {
 	r.reconcileActive(ctx)
 	r.reconcileStaleRestarting(ctx)
 	r.reconcileStaleProvisioning(ctx)
+	r.reconcileStaleResuming(ctx)
 }
 
 // reconcileActive checks active instances against provider state.
@@ -225,6 +226,54 @@ func (r *Reconciler) reconcileStaleRestarting(ctx context.Context) {
 			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusActive)
 		} else {
 			r.logger.Warn("reconciler: stale restarting instance still not running",
+				"instance_id", inst.ID,
+				"actual_status", server.Status,
+			)
+			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+		}
+	}
+}
+
+// reconcileStaleResuming fixes instances stuck in "resuming" for too long.
+func (r *Reconciler) reconcileStaleResuming(ctx context.Context) {
+	instances, err := db.GetActiveInstancesByStatus(ctx, r.pool, models.VpsStatusResuming)
+	if err != nil {
+		r.logger.Error("reconciler: get resuming instances", "error", err)
+		return
+	}
+
+	for _, inst := range instances {
+		// If stuck in resuming for > 20 minutes, check actual status
+		if time.Since(inst.UpdatedAt) < 20*time.Minute {
+			continue
+		}
+
+		if inst.ProviderServerID == nil {
+			r.logger.Warn("reconciler: stale resuming instance has no server ID, marking error",
+				"instance_id", inst.ID,
+			)
+			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+			continue
+		}
+
+		prov, err := r.registry.Get(inst.Provider)
+		if err != nil {
+			continue
+		}
+
+		server, err := prov.GetServer(ctx, *inst.ProviderServerID)
+		if err != nil {
+			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+			continue
+		}
+
+		if server.Status == "running" {
+			r.logger.Info("reconciler: stale resuming instance is actually running, activating",
+				"instance_id", inst.ID,
+			)
+			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusActive)
+		} else {
+			r.logger.Warn("reconciler: stale resuming instance still not running",
 				"instance_id", inst.ID,
 				"actual_status", server.Status,
 			)
