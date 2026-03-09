@@ -323,8 +323,30 @@ func executeRestart(deps Dependencies, inst *models.VpsInstance) {
 		return
 	}
 
-	_ = db.UpdateInstanceStatus(ctx, deps.Pool, inst.ID, models.VpsStatusActive)
-	slog.Info("restart: completed", "instance_id", inst.ID)
+	// Wait for server to come back up (poll every 5s, up to 2 minutes)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	deadline := time.After(2 * time.Minute)
+
+	for {
+		select {
+		case <-deadline:
+			slog.Warn("restart: timeout waiting for server to come back", "instance_id", inst.ID)
+			_ = db.UpdateInstanceStatus(ctx, deps.Pool, inst.ID, models.VpsStatusActive)
+			return
+		case <-ticker.C:
+			server, err := prov.GetServer(ctx, *inst.ProviderServerID)
+			if err != nil {
+				slog.Warn("restart: poll failed", "instance_id", inst.ID, "error", err)
+				continue
+			}
+			if server.Status == "running" {
+				_ = db.UpdateInstanceStatus(ctx, deps.Pool, inst.ID, models.VpsStatusActive)
+				slog.Info("restart: completed", "instance_id", inst.ID)
+				return
+			}
+		}
+	}
 }
 
 // executeDelete calls the provider to delete the server and updates status.

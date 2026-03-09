@@ -3,8 +3,6 @@
 	import { dashboardState, dashboardLoading, refreshDashboard } from '$lib/stores/dashboard';
 	import { getIdToken } from '$lib/stores/auth';
 	import { restartInstance, resetPassword } from '$lib/api/client';
-	import { mockSnapshots } from '$lib/api/mock';
-	import type { Snapshot } from '$lib/types';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
 
@@ -23,13 +21,6 @@
 	let resettingPassword = $state(false);
 	let actionError = $state<string | null>(null);
 	let showPassword = $state(false);
-
-	// Snapshots
-	let snapshots = $state<Snapshot[]>([...mockSnapshots]);
-	let snapshotName = $state('');
-	let takingSnapshot = $state(false);
-	let restoringId = $state<string | null>(null);
-	let confirmRestoreId = $state<string | null>(null);
 
 	async function handleRestart() {
 		if (!instance) return;
@@ -64,33 +55,6 @@
 		}
 	}
 
-	async function handleTakeSnapshot() {
-		if (!snapshotName.trim() || !instance) return;
-		takingSnapshot = true;
-		// TODO: Call backend when snapshot API is ready
-		await new Promise((r) => setTimeout(r, 1000));
-		snapshots = [
-			...snapshots,
-			{
-				id: `snap-${Date.now()}`,
-				instance_id: instance.id,
-				name: snapshotName.trim(),
-				created_at: new Date().toISOString(),
-				size_gb: +(Math.random() * 3 + 1).toFixed(1)
-			}
-		];
-		snapshotName = '';
-		takingSnapshot = false;
-	}
-
-	async function handleRestore(snapshotId: string) {
-		restoringId = snapshotId;
-		// TODO: Call backend when snapshot API is ready
-		await new Promise((r) => setTimeout(r, 1500));
-		restoringId = null;
-		confirmRestoreId = null;
-	}
-
 	function timeAgo(dateStr: string | null): string {
 		if (!dateStr) return 'Never';
 		const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
@@ -98,16 +62,6 @@
 		if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
 		if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
 		return `${Math.floor(seconds / 86400)}d ago`;
-	}
-
-	function formatDate(dateStr: string): string {
-		return new Date(dateStr).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
 	}
 </script>
 
@@ -159,8 +113,8 @@
 					</dl>
 				</div>
 
-				{#if instance.status === 'active'}
-					{#if instance.ipv4 && instance.root_password}
+				{#if instance.status === 'active' || instance.status === 'restarting'}
+					{#if instance.ipv4}
 						<div class="rounded-xl border border-gray-200 p-5">
 							<h3 class="text-sm font-semibold text-gray-900">SSH Access</h3>
 							<p class="mt-1 text-xs text-gray-400">Connect to your agent's server via SSH</p>
@@ -177,31 +131,38 @@
 										</button>
 									</dd>
 								</div>
-								<div>
-									<dt class="text-gray-500">Root Password</dt>
-									<dd class="mt-1 flex items-center gap-2">
-										<code class="flex-1 rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">
-											{showPassword ? instance.root_password : '••••••••••••'}
-										</code>
-										<button
-											onclick={() => (showPassword = !showPassword)}
-											class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-										>
-											{showPassword ? 'Hide' : 'Show'}
-										</button>
-										<button
-											onclick={() => navigator.clipboard.writeText(instance.root_password ?? '')}
-											class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-										>
-											Copy
-										</button>
-									</dd>
-								</div>
+								{#if instance.root_password}
+									<div>
+										<dt class="text-gray-500">Root Password</dt>
+										<dd class="mt-1 flex items-center gap-2">
+											<code class="flex-1 rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">
+												{showPassword ? instance.root_password : '••••••••••••'}
+											</code>
+											<button
+												onclick={() => (showPassword = !showPassword)}
+												class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+											>
+												{showPassword ? 'Hide' : 'Show'}
+											</button>
+											<button
+												onclick={() => navigator.clipboard.writeText(instance.root_password ?? '')}
+												class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+											>
+												Copy
+											</button>
+										</dd>
+									</div>
+								{:else}
+									<div>
+										<dt class="text-gray-500">Root Password</dt>
+										<dd class="mt-1 text-xs text-gray-400">No password stored. Use Reset Password to generate one.</dd>
+									</div>
+								{/if}
 							</dl>
 							<div class="mt-4 border-t border-gray-100 pt-3">
 								<button
 									onclick={handleResetPassword}
-									disabled={resettingPassword}
+									disabled={resettingPassword || instance.status !== 'active'}
 									class="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
 								>
 									{resettingPassword ? 'Resetting...' : 'Reset Password'}
@@ -213,10 +174,10 @@
 					<div class="flex gap-3">
 						<button
 							onclick={handleRestart}
-							disabled={restarting}
+							disabled={restarting || instance.status === 'restarting'}
 							class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
 						>
-							{restarting ? 'Restarting...' : 'Restart'}
+							{instance.status === 'restarting' ? 'Restarting...' : restarting ? 'Restarting...' : 'Restart'}
 						</button>
 					</div>
 				{/if}
@@ -230,76 +191,6 @@
 						<div class="mt-4">
 							<ProvisioningProgress currentStep={instance.step} />
 						</div>
-					</div>
-				{:else if instance.status === 'active'}
-					<div class="rounded-xl border border-gray-200 p-5">
-						<h3 class="text-sm font-semibold text-gray-900">Snapshots</h3>
-						<p class="mt-1 text-xs text-gray-400">Save and restore your agent's state</p>
-
-						<!-- Take snapshot -->
-						<form
-							onsubmit={(e) => { e.preventDefault(); handleTakeSnapshot(); }}
-							class="mt-4 flex gap-2"
-						>
-							<input
-								type="text"
-								bind:value={snapshotName}
-								placeholder="Snapshot name"
-								required
-								class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
-							/>
-							<button
-								type="submit"
-								disabled={takingSnapshot}
-								class="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-							>
-								{takingSnapshot ? 'Saving...' : 'Take'}
-							</button>
-						</form>
-
-						<!-- Snapshot list -->
-						{#if snapshots.length === 0}
-							<p class="mt-6 text-center text-sm text-gray-400">No snapshots yet</p>
-						{:else}
-							<ul class="mt-4 space-y-3">
-								{#each snapshots as snapshot (snapshot.id)}
-									<li class="rounded-lg border border-gray-100 bg-gray-50 p-3">
-										<div class="flex items-start justify-between">
-											<div>
-												<p class="text-sm font-medium text-gray-900">{snapshot.name}</p>
-												<p class="mt-0.5 text-xs text-gray-400">
-													{formatDate(snapshot.created_at)} &middot; {snapshot.size_gb} GB
-												</p>
-											</div>
-											{#if confirmRestoreId === snapshot.id}
-												<div class="flex gap-2">
-													<button
-														onclick={() => handleRestore(snapshot.id)}
-														disabled={restoringId === snapshot.id}
-														class="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-													>
-														{restoringId === snapshot.id ? 'Restoring...' : 'Confirm'}
-													</button>
-													<button
-														onclick={() => (confirmRestoreId = null)}
-														class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100"
-													>
-														Cancel
-													</button>
-												</div>
-											{:else}
-												<button
-													onclick={() => (confirmRestoreId = snapshot.id)}
-													class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100"
-												>
-													Restore
-												</button>
-											{/if}
-										</div>
-									</li>
-								{/each}
-							</ul>
-						{/if}
 					</div>
 				{/if}
 			</div>
