@@ -34,6 +34,7 @@ export async function createInstance(
 			region: data.region,
 			agent_status: null,
 			last_heartbeat_at: null,
+			dashboard_url: null,
 			created_at: new Date().toISOString()
 		};
 	}
@@ -86,7 +87,7 @@ export async function renameInstance(
 	name: string
 ): Promise<VpsInstance> {
 	if (USE_MOCK) {
-		return { id: instanceId, name, status: 'active', provider: 'hetzner', ipv4: null, region: 'eu', agent_status: null, last_heartbeat_at: null, created_at: new Date().toISOString() };
+		return { id: instanceId, name, status: 'active', provider: 'hetzner', ipv4: null, region: 'eu', agent_status: null, last_heartbeat_at: null, dashboard_url: null, created_at: new Date().toISOString() };
 	}
 
 	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}`, {

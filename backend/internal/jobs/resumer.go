@@ -110,6 +110,11 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
 		return
 	}
+	if err := db.UpdateInstanceOpenClawAuthToken(ctx, r.pool, inst.ID, openClawAuthToken); err != nil {
+		r.logger.Error("resumer: store openclaw auth token", "error", err)
+		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+		return
+	}
 
 	// Build cloud-init data with API keys from agent config
 	ciData := CloudInitData{

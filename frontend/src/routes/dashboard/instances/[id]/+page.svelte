@@ -32,6 +32,7 @@
 	let resettingPassword = $state(false);
 	let actionError = $state<string | null>(null);
 	let showPassword = $state(false);
+	let showAuthToken = $state(false);
 
 	// Rename state
 	let editing = $state(false);
@@ -324,6 +325,58 @@
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
+					{#if instance.dashboard_url}
+						<div class="rounded-xl border border-gray-200 p-5">
+							<h3 class="text-sm font-semibold text-gray-900">Dashboard Access</h3>
+							<p class="mt-1 text-xs text-gray-400">Connect to your agent's OpenClaw dashboard</p>
+							<dl class="mt-4 space-y-3 text-sm">
+								<div>
+									<dt class="text-gray-500">URL</dt>
+									<dd class="mt-1 flex items-center gap-2">
+										<code class="flex-1 truncate rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">{instance.dashboard_url}</code>
+										<a
+											href={instance.dashboard_url}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+										>
+											Open
+										</a>
+										<button
+											onclick={() => navigator.clipboard.writeText(instance.dashboard_url ?? '')}
+											class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+										>
+											Copy
+										</button>
+									</dd>
+								</div>
+								{#if instance.openclaw_auth_token}
+									<div>
+										<dt class="text-gray-500">Auth Token</dt>
+										<dd class="mt-1 flex items-center gap-2">
+											<code class="flex-1 truncate rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">
+												{showAuthToken ? instance.openclaw_auth_token : '••••••••••••••••••••••••••••••••'}
+											</code>
+											<button
+												onclick={() => (showAuthToken = !showAuthToken)}
+												class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+											>
+												{showAuthToken ? 'Hide' : 'Show'}
+											</button>
+											<button
+												onclick={() => navigator.clipboard.writeText(instance.openclaw_auth_token ?? '')}
+												class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+											>
+												Copy
+											</button>
+										</dd>
+										<p class="mt-1.5 text-xs text-gray-400">Use as <code class="text-gray-500">Authorization: Bearer &lt;token&gt;</code> header</p>
+									</div>
+								{/if}
+							</dl>
+						</div>
+					{/if}
+
 					{#if instance.ipv4}
 						<div class="rounded-xl border border-gray-200 p-5">
 							<h3 class="text-sm font-semibold text-gray-900">SSH Access</h3>

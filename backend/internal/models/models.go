@@ -97,6 +97,7 @@ type VpsInstance struct {
 	Step                 *ProvisioningStep
 	RootPassword         *string
 	AgentTokenSecretName *string
+	OpenClawAuthToken    *string
 	AgentStatus          *string
 	LastHeartbeatAt      *time.Time
 	CreatedAt            time.Time

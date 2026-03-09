@@ -479,6 +479,9 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	if err != nil {
 		return fmt.Errorf("generate openclaw auth token: %w", err)
 	}
+	if err := db.UpdateInstanceOpenClawAuthToken(ctx, p.pool, inst.ID, openClawAuthToken); err != nil {
+		return fmt.Errorf("store openclaw auth token: %w", err)
+	}
 
 	// Fetch API keys from agent config
 	ciData := CloudInitData{
@@ -647,13 +650,13 @@ func GetInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, agent_status, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances WHERE id = $1
 	`, instanceID).Scan(
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
-		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.AgentStatus, &inst.LastHeartbeatAt,
+		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if err != nil {

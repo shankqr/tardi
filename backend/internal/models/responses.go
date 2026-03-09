@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // DashboardStateResponse matches frontend's DashboardState type.
 type DashboardStateResponse struct {
@@ -19,10 +22,12 @@ type InstanceResponse struct {
 	Provider        string  `json:"provider"`
 	IPv4            *string `json:"ipv4"`
 	Region          string  `json:"region"`
-	RootPassword    *string `json:"root_password,omitempty"`
-	AgentStatus     *string `json:"agent_status"`
-	LastHeartbeatAt *string `json:"last_heartbeat_at"`
-	CreatedAt       string  `json:"created_at"`
+	RootPassword      *string `json:"root_password,omitempty"`
+	AgentStatus       *string `json:"agent_status"`
+	LastHeartbeatAt   *string `json:"last_heartbeat_at"`
+	DashboardURL      *string `json:"dashboard_url"`
+	OpenClawAuthToken *string `json:"openclaw_auth_token,omitempty"`
+	CreatedAt         string  `json:"created_at"`
 }
 
 // SubscriptionResponse matches frontend's Subscription type.
@@ -52,6 +57,11 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 	}
 	r.RootPassword = inst.RootPassword
 	r.AgentStatus = inst.AgentStatus
+	r.OpenClawAuthToken = inst.OpenClawAuthToken
+	if inst.IPv4 != nil && *inst.IPv4 != "" {
+		url := fmt.Sprintf("https://%s", *inst.IPv4)
+		r.DashboardURL = &url
+	}
 	if inst.Step != nil {
 		s := string(*inst.Step)
 		r.Step = &s
