@@ -78,6 +78,7 @@ type Subscription struct {
 	PlanTier             PlanTier
 	Status               SubscriptionStatus
 	CurrentPeriodEnd     *time.Time
+	CancelAtPeriodEnd    bool
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 }

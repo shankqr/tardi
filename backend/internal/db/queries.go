@@ -76,12 +76,12 @@ func GetSubscriptionByUserID(ctx context.Context, pool *pgxpool.Pool, userID uui
 	s := &models.Subscription{}
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
-		       plan_tier, status, current_period_end, created_at, updated_at
+		       plan_tier, status, current_period_end, cancel_at_period_end, created_at, updated_at
 		FROM subscriptions WHERE user_id = $1
 		ORDER BY created_at DESC LIMIT 1
 	`, userID).Scan(
 		&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
-		&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+		&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -106,11 +106,11 @@ func CreateSubscription(ctx context.Context, pool *pgxpool.Pool, sub *models.Sub
 }
 
 // UpdateSubscriptionStatus updates a subscription's status and period end.
-func UpdateSubscriptionStatus(ctx context.Context, pool *pgxpool.Pool, stripeSubID string, status models.SubscriptionStatus, periodEnd *time.Time) error {
+func UpdateSubscriptionStatus(ctx context.Context, pool *pgxpool.Pool, stripeSubID string, status models.SubscriptionStatus, periodEnd *time.Time, cancelAtPeriodEnd bool) error {
 	_, err := pool.Exec(ctx, `
-		UPDATE subscriptions SET status = $1, current_period_end = $2, updated_at = now()
-		WHERE stripe_subscription_id = $3
-	`, status, periodEnd, stripeSubID)
+		UPDATE subscriptions SET status = $1, current_period_end = $2, cancel_at_period_end = $3, updated_at = now()
+		WHERE stripe_subscription_id = $4
+	`, status, periodEnd, cancelAtPeriodEnd, stripeSubID)
 	if err != nil {
 		return fmt.Errorf("update subscription status: %w", err)
 	}
@@ -122,11 +122,11 @@ func GetSubscriptionByStripeSubID(ctx context.Context, pool *pgxpool.Pool, strip
 	s := &models.Subscription{}
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
-		       plan_tier, status, current_period_end, created_at, updated_at
+		       plan_tier, status, current_period_end, cancel_at_period_end, created_at, updated_at
 		FROM subscriptions WHERE stripe_subscription_id = $1
 	`, stripeSubID).Scan(
 		&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
-		&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+		&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -503,11 +503,11 @@ func GetSubscriptionByID(ctx context.Context, pool *pgxpool.Pool, subID uuid.UUI
 	s := &models.Subscription{}
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
-		       plan_tier, status, current_period_end, created_at, updated_at
+		       plan_tier, status, current_period_end, cancel_at_period_end, created_at, updated_at
 		FROM subscriptions WHERE id = $1
 	`, subID).Scan(
 		&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
-		&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+		&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -522,7 +522,7 @@ func GetSubscriptionByID(ctx context.Context, pool *pgxpool.Pool, subID uuid.UUI
 func GetPastDueSubscriptions(ctx context.Context, pool *pgxpool.Pool, olderThan time.Duration) ([]models.Subscription, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
-		       plan_tier, status, current_period_end, created_at, updated_at
+		       plan_tier, status, current_period_end, cancel_at_period_end, created_at, updated_at
 		FROM subscriptions
 		WHERE status = 'past_due' AND updated_at < $1
 	`, time.Now().Add(-olderThan))
@@ -536,7 +536,7 @@ func GetPastDueSubscriptions(ctx context.Context, pool *pgxpool.Pool, olderThan 
 		var s models.Subscription
 		if err := rows.Scan(
 			&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
-			&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+			&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan subscription: %w", err)
 		}
@@ -549,7 +549,7 @@ func GetPastDueSubscriptions(ctx context.Context, pool *pgxpool.Pool, olderThan 
 func GetSuspendedSubscriptions(ctx context.Context, pool *pgxpool.Pool, olderThan time.Duration) ([]models.Subscription, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
-		       plan_tier, status, current_period_end, created_at, updated_at
+		       plan_tier, status, current_period_end, cancel_at_period_end, created_at, updated_at
 		FROM subscriptions
 		WHERE status = 'suspended' AND updated_at < $1
 	`, time.Now().Add(-olderThan))
@@ -563,13 +563,67 @@ func GetSuspendedSubscriptions(ctx context.Context, pool *pgxpool.Pool, olderTha
 		var s models.Subscription
 		if err := rows.Scan(
 			&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
-			&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+			&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan subscription: %w", err)
 		}
 		subs = append(subs, s)
 	}
 	return subs, rows.Err()
+}
+
+// GetCanceledSubscriptions returns subscriptions with status 'canceled' that still have resources to clean up.
+func GetCanceledSubscriptions(ctx context.Context, pool *pgxpool.Pool) ([]models.Subscription, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, user_id, stripe_subscription_id, stripe_customer_id,
+		       plan_tier, status, current_period_end, cancel_at_period_end, created_at, updated_at
+		FROM subscriptions
+		WHERE status = 'canceled'
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("get canceled subscriptions: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []models.Subscription
+	for rows.Next() {
+		var s models.Subscription
+		if err := rows.Scan(
+			&s.ID, &s.UserID, &s.StripeSubscriptionID, &s.StripeCustomerID,
+			&s.PlanTier, &s.Status, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan subscription: %w", err)
+		}
+		subs = append(subs, s)
+	}
+	return subs, rows.Err()
+}
+
+// GetSnapshotsByInstanceID returns all non-deleted snapshots for an instance.
+func GetSnapshotsByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) ([]models.Snapshot, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, vps_instance_id, provider_image_id, name, status,
+		       size_gb, error_message, created_at, updated_at
+		FROM snapshots
+		WHERE vps_instance_id = $1 AND status != 'deleted'
+	`, instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("get snapshots by instance: %w", err)
+	}
+	defer rows.Close()
+
+	var snapshots []models.Snapshot
+	for rows.Next() {
+		var s models.Snapshot
+		if err := rows.Scan(
+			&s.ID, &s.VpsInstanceID, &s.ProviderImageID, &s.Name, &s.Status,
+			&s.SizeGB, &s.ErrorMessage, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan snapshot: %w", err)
+		}
+		snapshots = append(snapshots, s)
+	}
+	return snapshots, rows.Err()
 }
 
 // GetInstancesBySubscriptionID returns all non-terminated instances for a subscription.

@@ -26,9 +26,10 @@ type InstanceResponse struct {
 
 // SubscriptionResponse matches frontend's Subscription type.
 type SubscriptionResponse struct {
-	Plan             string `json:"plan"`
-	Status           string `json:"status"`
-	CurrentPeriodEnd string `json:"current_period_end"`
+	Plan              string `json:"plan"`
+	Status            string `json:"status"`
+	CurrentPeriodEnd  string `json:"current_period_end"`
+	CancelAtPeriodEnd bool   `json:"cancel_at_period_end"`
 }
 
 // CreateInstanceRequest matches frontend's POST /api/instances body.
@@ -88,8 +89,9 @@ func ToSubscriptionResponse(sub *Subscription) *SubscriptionResponse {
 		return nil
 	}
 	r := &SubscriptionResponse{
-		Plan:   string(sub.PlanTier),
-		Status: string(sub.Status),
+		Plan:              string(sub.PlanTier),
+		Status:            string(sub.Status),
+		CancelAtPeriodEnd: sub.CancelAtPeriodEnd,
 	}
 	if sub.CurrentPeriodEnd != nil {
 		r.CurrentPeriodEnd = sub.CurrentPeriodEnd.Format(time.RFC3339)

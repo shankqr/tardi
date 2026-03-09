@@ -35,7 +35,8 @@ export const mockDashboardState: DashboardState = {
 	subscription: {
 		plan: 'standard',
 		status: 'active',
-		current_period_end: '2026-03-21T00:00:00Z'
+		current_period_end: '2026-03-21T00:00:00Z',
+		cancel_at_period_end: false
 	},
 	pending_jobs: 0,
 	snapshots: mockSnapshots

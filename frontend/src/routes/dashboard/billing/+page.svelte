@@ -34,21 +34,35 @@
 				<p class="mt-1 text-2xl font-bold text-gray-900">{plan.name} — ${plan.price_monthly}/mo</p>
 			</div>
 			<span
-				class="rounded-full px-3 py-1 text-sm font-medium {subscription.status === 'active'
-					? 'bg-green-100 text-green-700'
-					: subscription.status === 'canceled'
-						? 'bg-gray-100 text-gray-600'
-						: 'bg-orange-100 text-orange-700'}"
+				class="rounded-full px-3 py-1 text-sm font-medium {subscription.cancel_at_period_end
+					? 'bg-orange-100 text-orange-700'
+					: subscription.status === 'active'
+						? 'bg-green-100 text-green-700'
+						: subscription.status === 'canceled'
+							? 'bg-gray-100 text-gray-600'
+							: 'bg-orange-100 text-orange-700'}"
 			>
-				{subscription.status === 'canceled' ? 'Canceling' : subscription.status}
+				{subscription.cancel_at_period_end ? 'Canceling' : subscription.status === 'canceled' ? 'Canceled' : subscription.status}
 			</span>
 		</div>
 		<p class="mt-4 text-sm text-gray-500">
-			{subscription.status === 'canceled'
+			{subscription.cancel_at_period_end || subscription.status === 'canceled'
 				? `Access until ${new Date(subscription.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`
 				: `Renews ${new Date(subscription.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`}
 		</p>
 	</div>
+
+	{#if subscription.cancel_at_period_end}
+		<div class="mt-6 rounded-lg border border-orange-200 bg-orange-50 p-4">
+			<p class="text-sm font-medium text-orange-800">
+				Your subscription will cancel on {new Date(subscription.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+				Your agent and all snapshots will be permanently deleted.
+			</p>
+			<p class="mt-2 text-sm text-orange-700">
+				You can undo this through the billing portal below.
+			</p>
+		</div>
+	{/if}
 
 	<!-- Manage subscription via Stripe Customer Portal -->
 	<div class="mt-6 rounded-xl border border-gray-200 p-6">

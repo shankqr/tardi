@@ -136,14 +136,15 @@ func handleSubscriptionUpdated(r *http.Request, deps Dependencies, event *stripe
 
 	status := mapStripeSubStatus(sub.Status)
 	periodEnd := getSubscriptionPeriodEnd(&sub)
+	cancelAtPeriodEnd := sub.CancelAtPeriodEnd
 
-	if err := db.UpdateSubscriptionStatus(r.Context(), deps.Pool, sub.ID, status, periodEnd); err != nil {
+	if err := db.UpdateSubscriptionStatus(r.Context(), deps.Pool, sub.ID, status, periodEnd, cancelAtPeriodEnd); err != nil {
 		slog.Error("stripe webhook: update subscription", "stripe_sub", sub.ID, "error", err)
 		return
 	}
 
 	slog.Info("stripe webhook: subscription updated",
-		"stripe_sub", sub.ID, "status", status, "period_end", periodEnd)
+		"stripe_sub", sub.ID, "status", status, "cancel_at_period_end", cancelAtPeriodEnd)
 }
 
 func handleSubscriptionDeleted(r *http.Request, deps Dependencies, event *stripe.Event) {
@@ -154,7 +155,7 @@ func handleSubscriptionDeleted(r *http.Request, deps Dependencies, event *stripe
 	}
 
 	periodEnd := getSubscriptionPeriodEnd(&sub)
-	if err := db.UpdateSubscriptionStatus(r.Context(), deps.Pool, sub.ID, models.SubStatusCanceled, periodEnd); err != nil {
+	if err := db.UpdateSubscriptionStatus(r.Context(), deps.Pool, sub.ID, models.SubStatusCanceled, periodEnd, false); err != nil {
 		slog.Error("stripe webhook: delete subscription", "stripe_sub", sub.ID, "error", err)
 		return
 	}
@@ -186,7 +187,7 @@ func handleInvoicePaymentFailed(r *http.Request, deps Dependencies, event *strip
 		return
 	}
 
-	if err := db.UpdateSubscriptionStatus(r.Context(), deps.Pool, subID, models.SubStatusPastDue, nil); err != nil {
+	if err := db.UpdateSubscriptionStatus(r.Context(), deps.Pool, subID, models.SubStatusPastDue, nil, false); err != nil {
 		slog.Error("stripe webhook: mark past_due", "stripe_sub", subID, "error", err)
 		return
 	}

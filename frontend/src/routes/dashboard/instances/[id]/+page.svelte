@@ -46,6 +46,24 @@
 	let deletingSnapshotId = $state<string | null>(null);
 	let confirmRestoreId = $state<string | null>(null);
 
+	// Busy state — disables all actions during non-active statuses
+	const isBusy = $derived(instance != null && instance.status !== 'active');
+
+	// Status transition tracking for result notifications
+	let previousStatus = $state<string | null>(null);
+	let restoreResult = $state<'success' | 'failed' | null>(null);
+	let snapshotResult = $state<'success' | 'failed' | null>(null);
+
+	$effect(() => {
+		if (!instance) return;
+		const current = instance.status;
+		if (previousStatus === 'restoring' && current === 'active') restoreResult = 'success';
+		if (previousStatus === 'restoring' && current === 'error') restoreResult = 'failed';
+		if (previousStatus === 'snapshotting' && current === 'active') snapshotResult = 'success';
+		if (previousStatus === 'snapshotting' && current === 'error') snapshotResult = 'failed';
+		previousStatus = current;
+	});
+
 	function startEditing() {
 		if (!instance) return;
 		editName = instance.name;
@@ -223,9 +241,41 @@
 			<StatusBadge status={instance.status} />
 		</div>
 
+		{#if $dashboardState?.subscription?.cancel_at_period_end}
+			<div class="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-700">
+				Your subscription is canceling. This agent and all snapshots will be deleted on
+				{new Date($dashboardState.subscription.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
+				<a href="/dashboard/billing" class="font-medium underline">Manage billing</a> to undo.
+			</div>
+		{/if}
+
 		{#if actionError}
 			<div class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
 				{actionError}
+			</div>
+		{/if}
+
+		{#if restoreResult === 'success'}
+			<div class="mt-4 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+				<span>Snapshot restored successfully. A new root password has been generated.</span>
+				<button onclick={() => (restoreResult = null)} class="ml-3 text-green-500 hover:text-green-700">&times;</button>
+			</div>
+		{:else if restoreResult === 'failed'}
+			<div class="mt-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+				<span>Snapshot restore failed. Your agent may need attention.</span>
+				<button onclick={() => (restoreResult = null)} class="ml-3 text-red-500 hover:text-red-700">&times;</button>
+			</div>
+		{/if}
+
+		{#if snapshotResult === 'success'}
+			<div class="mt-4 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+				<span>Snapshot created successfully.</span>
+				<button onclick={() => (snapshotResult = null)} class="ml-3 text-green-500 hover:text-green-700">&times;</button>
+			</div>
+		{:else if snapshotResult === 'failed'}
+			<div class="mt-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+				<span>Snapshot creation failed.</span>
+				<button onclick={() => (snapshotResult = null)} class="ml-3 text-red-500 hover:text-red-700">&times;</button>
 			</div>
 		{/if}
 
@@ -331,6 +381,36 @@
 					</div>
 				{/if}
 
+				{#if instance.status === 'restoring'}
+					<div class="rounded-xl border border-blue-300 bg-blue-50 p-5">
+						<div class="flex items-center gap-3">
+							<svg class="h-5 w-5 animate-spin text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+							</svg>
+							<div>
+								<h3 class="text-sm font-semibold text-blue-900">Restoring from Snapshot</h3>
+								<p class="mt-1 text-xs text-blue-700">Your agent is being rebuilt from a snapshot. This may take a few minutes. A new root password will be generated.</p>
+							</div>
+						</div>
+					</div>
+				{/if}
+
+				{#if instance.status === 'snapshotting'}
+					<div class="rounded-xl border border-blue-300 bg-blue-50 p-5">
+						<div class="flex items-center gap-3">
+							<svg class="h-5 w-5 animate-spin text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+							</svg>
+							<div>
+								<h3 class="text-sm font-semibold text-blue-900">Creating Snapshot</h3>
+								<p class="mt-1 text-xs text-blue-700">A snapshot of your agent's current state is being created. This may take a few minutes.</p>
+							</div>
+						</div>
+					</div>
+				{/if}
+
 				{#if instance.status === 'active' || instance.status === 'snapshotting' || instance.status === 'restoring' || instance.status === 'restarting'}
 					<div class="rounded-xl border border-gray-200 p-5">
 						<div class="flex items-center justify-between">
@@ -387,7 +467,7 @@
 													</button>
 													<button
 														onclick={() => handleDeleteSnapshot(snap.id)}
-														disabled={deletingSnapshotId === snap.id}
+														disabled={deletingSnapshotId === snap.id || isBusy}
 														class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
 														title="Delete this snapshot"
 													>
