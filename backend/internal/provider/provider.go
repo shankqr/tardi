@@ -19,6 +19,11 @@ type Server struct {
 	RootPassword     string // Only set on initial creation
 }
 
+type SnapshotResult struct {
+	ProviderImageID string
+	SizeGB          float32
+}
+
 type InfraProvider interface {
 	CreateServer(ctx context.Context, req CreateServerRequest) (*Server, error)
 	GetServer(ctx context.Context, providerServerID string) (*Server, error)
@@ -27,4 +32,7 @@ type InfraProvider interface {
 	DeleteServer(ctx context.Context, providerServerID string) error
 	RestartServer(ctx context.Context, providerServerID string) error
 	ResetPassword(ctx context.Context, providerServerID string) (string, error)
+	CreateSnapshot(ctx context.Context, providerServerID string, description string) (*SnapshotResult, error)
+	DeleteSnapshot(ctx context.Context, providerImageID string) error
+	RebuildServer(ctx context.Context, providerServerID string, providerImageID string) (string, error)
 }

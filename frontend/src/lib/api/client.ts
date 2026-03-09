@@ -1,4 +1,4 @@
-import type { DashboardState, VpsInstance } from '$lib/types';
+import type { DashboardState, Snapshot, VpsInstance } from '$lib/types';
 import { mockDashboardState } from './mock';
 import { getApiUrl } from '$lib/stores/config';
 
@@ -147,6 +147,63 @@ export async function updateAgentConfig(
 	}
 
 	return res.json();
+}
+
+export async function createSnapshot(
+	token: string,
+	instanceId: string,
+	name: string
+): Promise<Snapshot> {
+	if (USE_MOCK) {
+		return {
+			id: 'mock-snap',
+			instance_id: instanceId,
+			name,
+			status: 'creating',
+			created_at: new Date().toISOString()
+		};
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/snapshots`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ name })
+	});
+
+	if (!res.ok) {
+		throw new Error(`Create snapshot failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
+export async function restoreSnapshot(token: string, snapshotId: string): Promise<void> {
+	if (USE_MOCK) return;
+
+	const res = await fetch(`${getApiUrl()}/api/snapshots/${snapshotId}/restore`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${token}` }
+	});
+
+	if (!res.ok) {
+		throw new Error(`Restore failed: ${res.status}`);
+	}
+}
+
+export async function deleteSnapshot(token: string, snapshotId: string): Promise<void> {
+	if (USE_MOCK) return;
+
+	const res = await fetch(`${getApiUrl()}/api/snapshots/${snapshotId}`, {
+		method: 'DELETE',
+		headers: { Authorization: `Bearer ${token}` }
+	});
+
+	if (!res.ok) {
+		throw new Error(`Delete snapshot failed: ${res.status}`);
+	}
 }
 
 export async function createPortalSession(token: string): Promise<{ url: string }> {

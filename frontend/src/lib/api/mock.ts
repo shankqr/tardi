@@ -1,5 +1,24 @@
 import type { DashboardState, PlanInfo, Snapshot } from '$lib/types';
 
+export const mockSnapshots: Snapshot[] = [
+	{
+		id: 'snap-001',
+		instance_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+		name: 'before-config-update',
+		status: 'ready',
+		created_at: '2026-02-10T14:30:00Z',
+		size_gb: 2.4
+	},
+	{
+		id: 'snap-002',
+		instance_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+		name: 'stable-v1',
+		status: 'ready',
+		created_at: '2026-02-18T09:15:00Z',
+		size_gb: 2.6
+	}
+];
+
 export const mockDashboardState: DashboardState = {
 	instances: [
 		{
@@ -18,25 +37,9 @@ export const mockDashboardState: DashboardState = {
 		status: 'active',
 		current_period_end: '2026-03-21T00:00:00Z'
 	},
-	pending_jobs: 0
+	pending_jobs: 0,
+	snapshots: mockSnapshots
 };
-
-export const mockSnapshots: Snapshot[] = [
-	{
-		id: 'snap-001',
-		instance_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-		name: 'before-config-update',
-		created_at: '2026-02-10T14:30:00Z',
-		size_gb: 2.4
-	},
-	{
-		id: 'snap-002',
-		instance_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-		name: 'stable-v1',
-		created_at: '2026-02-18T09:15:00Z',
-		size_gb: 2.6
-	}
-];
 
 export const plan: PlanInfo = {
 	tier: 'standard',

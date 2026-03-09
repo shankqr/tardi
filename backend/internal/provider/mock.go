@@ -291,6 +291,34 @@ func (m *MockProvider) ResetPassword(ctx context.Context, providerServerID strin
 	return newPassword, nil
 }
 
+func (m *MockProvider) CreateSnapshot(ctx context.Context, providerServerID string, description string) (*SnapshotResult, error) {
+	_, err := m.getState(providerServerID)
+	if err != nil {
+		return nil, err
+	}
+	imageID := fmt.Sprintf("mock-snap-%d", rand.IntN(999999))
+	m.logger.Info("mock: snapshot created", "server_id", providerServerID, "image_id", imageID)
+	return &SnapshotResult{
+		ProviderImageID: imageID,
+		SizeGB:          2.5,
+	}, nil
+}
+
+func (m *MockProvider) DeleteSnapshot(ctx context.Context, providerImageID string) error {
+	m.logger.Info("mock: snapshot deleted", "image_id", providerImageID)
+	return nil
+}
+
+func (m *MockProvider) RebuildServer(ctx context.Context, providerServerID string, providerImageID string) (string, error) {
+	_, err := m.getState(providerServerID)
+	if err != nil {
+		return "", err
+	}
+	newPassword := fmt.Sprintf("mock-rebuild-%d", rand.IntN(99999))
+	m.logger.Info("mock: server rebuilt", "server_id", providerServerID, "image_id", providerImageID)
+	return newPassword, nil
+}
+
 func (m *MockProvider) getState(providerServerID string) (*mockServerState, error) {
 	m.mu.RLock()
 	state, ok := m.servers[providerServerID]

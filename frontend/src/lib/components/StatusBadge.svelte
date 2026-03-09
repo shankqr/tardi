@@ -14,6 +14,8 @@
 		installing_agent: 'bg-yellow-100 text-yellow-700',
 		active: 'bg-green-100 text-green-700',
 		restarting: 'bg-blue-100 text-blue-700',
+		snapshotting: 'bg-blue-100 text-blue-700',
+		restoring: 'bg-yellow-100 text-yellow-700',
 		suspending: 'bg-orange-100 text-orange-700',
 		suspended: 'bg-orange-100 text-orange-700',
 		resuming: 'bg-blue-100 text-blue-700',
@@ -29,6 +31,8 @@
 		installing_agent: 'Installing',
 		active: 'Active',
 		restarting: 'Restarting',
+		snapshotting: 'Snapshotting',
+		restoring: 'Restoring',
 		suspending: 'Suspending',
 		suspended: 'Suspended',
 		resuming: 'Resuming',
@@ -39,7 +43,7 @@
 </script>
 
 <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {colors[status]}">
-	{#if ['provisioning', 'bootstrapping', 'installing_agent', 'restarting', 'resuming', 'suspending', 'terminating'].includes(status)}
+	{#if ['provisioning', 'bootstrapping', 'installing_agent', 'restarting', 'snapshotting', 'restoring', 'resuming', 'suspending', 'terminating'].includes(status)}
 		<svg class="mr-1 h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
 			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>

@@ -20,6 +20,8 @@ const (
 	VpsStatusResuming        VpsStatus = "resuming"
 	VpsStatusTerminating     VpsStatus = "terminating"
 	VpsStatusTerminated      VpsStatus = "terminated"
+	VpsStatusSnapshotting    VpsStatus = "snapshotting"
+	VpsStatusRestoring       VpsStatus = "restoring"
 	VpsStatusError           VpsStatus = "error"
 )
 
@@ -135,6 +137,28 @@ type AgentConfig struct {
 	Version       int
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
+}
+
+type SnapshotStatus string
+
+const (
+	SnapshotStatusCreating SnapshotStatus = "creating"
+	SnapshotStatusReady    SnapshotStatus = "ready"
+	SnapshotStatusDeleting SnapshotStatus = "deleting"
+	SnapshotStatusError    SnapshotStatus = "error"
+	SnapshotStatusDeleted  SnapshotStatus = "deleted"
+)
+
+type Snapshot struct {
+	ID              uuid.UUID
+	VpsInstanceID   uuid.UUID
+	ProviderImageID *string
+	Name            string
+	Status          SnapshotStatus
+	SizeGB          *float32
+	ErrorMessage    *string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type AuditLogEntry struct {

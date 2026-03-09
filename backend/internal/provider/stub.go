@@ -68,3 +68,18 @@ func (s *StubProvider) RestartServer(ctx context.Context, providerServerID strin
 	s.logger.Info("stub: restart server", "server_id", providerServerID)
 	return nil
 }
+
+func (s *StubProvider) CreateSnapshot(ctx context.Context, providerServerID string, description string) (*SnapshotResult, error) {
+	s.logger.Info("stub: create snapshot", "server_id", providerServerID)
+	return &SnapshotResult{ProviderImageID: "stub-snap-1", SizeGB: 1.0}, nil
+}
+
+func (s *StubProvider) DeleteSnapshot(ctx context.Context, providerImageID string) error {
+	s.logger.Info("stub: delete snapshot", "image_id", providerImageID)
+	return nil
+}
+
+func (s *StubProvider) RebuildServer(ctx context.Context, providerServerID string, providerImageID string) (string, error) {
+	s.logger.Info("stub: rebuild server", "server_id", providerServerID, "image_id", providerImageID)
+	return "stub-password-12345", nil
+}

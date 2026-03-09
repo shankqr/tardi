@@ -7,6 +7,7 @@ type DashboardStateResponse struct {
 	Instances    []InstanceResponse    `json:"instances"`
 	Subscription *SubscriptionResponse `json:"subscription"`
 	PendingJobs  int                   `json:"pending_jobs"`
+	Snapshots    []SnapshotResponse    `json:"snapshots"`
 }
 
 // InstanceResponse matches frontend's VpsInstance type.
@@ -57,6 +58,28 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 		r.LastHeartbeatAt = &t
 	}
 	return r
+}
+
+// SnapshotResponse matches frontend's Snapshot type.
+type SnapshotResponse struct {
+	ID         string   `json:"id"`
+	InstanceID string   `json:"instance_id"`
+	Name       string   `json:"name"`
+	Status     string   `json:"status"`
+	SizeGB     *float32 `json:"size_gb,omitempty"`
+	CreatedAt  string   `json:"created_at"`
+}
+
+// ToSnapshotResponse converts a Snapshot model to the API response type.
+func ToSnapshotResponse(s Snapshot) SnapshotResponse {
+	return SnapshotResponse{
+		ID:         s.ID.String(),
+		InstanceID: s.VpsInstanceID.String(),
+		Name:       s.Name,
+		Status:     string(s.Status),
+		SizeGB:     s.SizeGB,
+		CreatedAt:  s.CreatedAt.Format(time.RFC3339),
+	}
 }
 
 // ToSubscriptionResponse converts a Subscription model to the API response type.

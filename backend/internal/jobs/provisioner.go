@@ -247,6 +247,12 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("render cloud-init: %w", err)
 	}
 
+	// Fetch user email for server labels
+	user, err := db.GetUserByID(ctx, p.pool, inst.UserID)
+	if err != nil {
+		return fmt.Errorf("get user for labels: %w", err)
+	}
+
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
 		Name:       "openclaw",
 		ServerType: mapping.ProviderServerType,
@@ -256,6 +262,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		Labels: map[string]string{
 			"instance_id": inst.ID.String(),
 			"user_id":     inst.UserID.String(),
+			"email":       sanitizeLabelValue(user.Email),
 		},
 	})
 	if err != nil {
@@ -364,6 +371,39 @@ func getInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 		return nil, fmt.Errorf("get instance internal: %w", err)
 	}
 	return inst, nil
+}
+
+// sanitizeLabelValue makes a string safe for use as a Hetzner label value.
+// Labels must be ≤63 chars, start/end with alphanumeric, and only contain alphanumerics, dashes, dots.
+func sanitizeLabelValue(s string) string {
+	var result []byte
+	for _, c := range []byte(s) {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+			result = append(result, c)
+		case c == '-', c == '.':
+			result = append(result, c)
+		case c == '@':
+			result = append(result, '.') // email @ → dot
+		default:
+			result = append(result, '-')
+		}
+	}
+	if len(result) > 63 {
+		result = result[:63]
+	}
+	// Trim non-alphanumeric from start and end
+	for len(result) > 0 && !isAlphaNum(result[0]) {
+		result = result[1:]
+	}
+	for len(result) > 0 && !isAlphaNum(result[len(result)-1]) {
+		result = result[:len(result)-1]
+	}
+	return string(result)
+}
+
+func isAlphaNum(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }
 
 func generateAgentToken() (string, error) {

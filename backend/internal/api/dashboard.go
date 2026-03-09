@@ -38,15 +38,28 @@ func DashboardHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
+		snapshots, err := db.GetSnapshotsByUserID(r.Context(), deps.Pool, user.ID)
+		if err != nil {
+			slog.Error("dashboard: get snapshots", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to load snapshots")
+			return
+		}
+
 		instanceResponses := make([]models.InstanceResponse, 0, len(instances))
 		for _, inst := range instances {
 			instanceResponses = append(instanceResponses, models.ToInstanceResponse(inst))
+		}
+
+		snapshotResponses := make([]models.SnapshotResponse, 0, len(snapshots))
+		for _, s := range snapshots {
+			snapshotResponses = append(snapshotResponses, models.ToSnapshotResponse(s))
 		}
 
 		resp := models.DashboardStateResponse{
 			Instances:    instanceResponses,
 			Subscription: models.ToSubscriptionResponse(subscription),
 			PendingJobs:  pendingJobs,
+			Snapshots:    snapshotResponses,
 		}
 
 		WriteJSON(w, http.StatusOK, resp)

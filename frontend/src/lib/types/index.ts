@@ -5,6 +5,8 @@ export type VpsStatus =
 	| 'installing_agent'
 	| 'active'
 	| 'restarting'
+	| 'snapshotting'
+	| 'restoring'
 	| 'suspending'
 	| 'suspended'
 	| 'resuming'
@@ -47,6 +49,7 @@ export interface DashboardState {
 	instances: VpsInstance[];
 	subscription: Subscription | null;
 	pending_jobs: number;
+	snapshots: Snapshot[];
 }
 
 export interface AgentConfig {
@@ -60,8 +63,9 @@ export interface Snapshot {
 	id: string;
 	instance_id: string;
 	name: string;
+	status: 'creating' | 'ready' | 'deleting' | 'error';
 	created_at: string;
-	size_gb: number;
+	size_gb?: number;
 }
 
 export interface PlanInfo {

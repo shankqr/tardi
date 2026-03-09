@@ -35,6 +35,24 @@ func UpsertUser(ctx context.Context, pool *pgxpool.Pool, firebaseUID, email stri
 	return u, nil
 }
 
+// GetUserByID returns a user by their internal ID.
+func GetUserByID(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) (*models.User, error) {
+	u := &models.User{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, firebase_uid, email, name, created_at, updated_at
+		FROM users WHERE id = $1
+	`, userID).Scan(
+		&u.ID, &u.FirebaseUID, &u.Email, &u.Name, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get user by id: %w", err)
+	}
+	return u, nil
+}
+
 // GetUserByFirebaseUID returns a user by their Firebase UID.
 func GetUserByFirebaseUID(ctx context.Context, pool *pgxpool.Pool, firebaseUID string) (*models.User, error) {
 	u := &models.User{}
@@ -601,6 +619,116 @@ func CreateAgentConfig(ctx context.Context, pool *pgxpool.Pool, ac *models.Agent
 	`, ac.ID, ac.VpsInstanceID, configJSON, ac.Version)
 	if err != nil {
 		return fmt.Errorf("create agent config: %w", err)
+	}
+	return nil
+}
+
+// CreateSnapshot inserts a new snapshot record.
+func CreateSnapshot(ctx context.Context, pool *pgxpool.Pool, snap *models.Snapshot) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO snapshots (id, vps_instance_id, name, status)
+		VALUES ($1, $2, $3, $4)
+	`, snap.ID, snap.VpsInstanceID, snap.Name, snap.Status)
+	if err != nil {
+		return fmt.Errorf("create snapshot: %w", err)
+	}
+	return nil
+}
+
+// GetSnapshotByID returns a snapshot by ID, scoped to a user via JOIN.
+func GetSnapshotByID(ctx context.Context, pool *pgxpool.Pool, snapshotID uuid.UUID, userID uuid.UUID) (*models.Snapshot, error) {
+	s := &models.Snapshot{}
+	err := pool.QueryRow(ctx, `
+		SELECT s.id, s.vps_instance_id, s.provider_image_id, s.name, s.status,
+		       s.size_gb, s.error_message, s.created_at, s.updated_at
+		FROM snapshots s
+		JOIN vps_instances i ON s.vps_instance_id = i.id
+		WHERE s.id = $1 AND i.user_id = $2
+	`, snapshotID, userID).Scan(
+		&s.ID, &s.VpsInstanceID, &s.ProviderImageID, &s.Name, &s.Status,
+		&s.SizeGB, &s.ErrorMessage, &s.CreatedAt, &s.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get snapshot by id: %w", err)
+	}
+	return s, nil
+}
+
+// GetSnapshotsByUserID returns all non-deleted snapshots for a user.
+func GetSnapshotsByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) ([]models.Snapshot, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT s.id, s.vps_instance_id, s.provider_image_id, s.name, s.status,
+		       s.size_gb, s.error_message, s.created_at, s.updated_at
+		FROM snapshots s
+		JOIN vps_instances i ON s.vps_instance_id = i.id
+		WHERE i.user_id = $1 AND s.status != 'deleted'
+		ORDER BY s.created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get snapshots by user: %w", err)
+	}
+	defer rows.Close()
+
+	var snapshots []models.Snapshot
+	for rows.Next() {
+		var s models.Snapshot
+		if err := rows.Scan(
+			&s.ID, &s.VpsInstanceID, &s.ProviderImageID, &s.Name, &s.Status,
+			&s.SizeGB, &s.ErrorMessage, &s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan snapshot: %w", err)
+		}
+		snapshots = append(snapshots, s)
+	}
+	return snapshots, rows.Err()
+}
+
+// CountActiveSnapshotsByInstanceID returns the count of non-deleted/non-error snapshots.
+func CountActiveSnapshotsByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) (int, error) {
+	var count int
+	err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM snapshots
+		WHERE vps_instance_id = $1 AND status NOT IN ('deleted', 'error', 'deleting')
+	`, instanceID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count active snapshots: %w", err)
+	}
+	return count, nil
+}
+
+// UpdateSnapshotReady marks a snapshot as ready with provider info.
+func UpdateSnapshotReady(ctx context.Context, pool *pgxpool.Pool, snapshotID uuid.UUID, providerImageID string, sizeGB float32) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE snapshots SET status = 'ready', provider_image_id = $1, size_gb = $2, updated_at = now()
+		WHERE id = $3
+	`, providerImageID, sizeGB, snapshotID)
+	if err != nil {
+		return fmt.Errorf("update snapshot ready: %w", err)
+	}
+	return nil
+}
+
+// UpdateSnapshotStatus sets the status of a snapshot.
+func UpdateSnapshotStatus(ctx context.Context, pool *pgxpool.Pool, snapshotID uuid.UUID, status models.SnapshotStatus) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE snapshots SET status = $1, updated_at = now() WHERE id = $2
+	`, status, snapshotID)
+	if err != nil {
+		return fmt.Errorf("update snapshot status: %w", err)
+	}
+	return nil
+}
+
+// UpdateSnapshotError marks a snapshot as error with a message.
+func UpdateSnapshotError(ctx context.Context, pool *pgxpool.Pool, snapshotID uuid.UUID, errMsg string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE snapshots SET status = 'error', error_message = $1, updated_at = now() WHERE id = $2
+	`, errMsg, snapshotID)
+	if err != nil {
+		return fmt.Errorf("update snapshot error: %w", err)
 	}
 	return nil
 }
