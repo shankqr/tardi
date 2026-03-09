@@ -79,6 +79,26 @@ export async function deleteInstance(token: string, instanceId: string): Promise
 	}
 }
 
+export async function resetPassword(
+	token: string,
+	instanceId: string
+): Promise<{ root_password: string }> {
+	if (USE_MOCK) {
+		return { root_password: 'mock-reset-password-12345' };
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/reset-password`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${token}` }
+	});
+
+	if (!res.ok) {
+		throw new Error(`Reset password failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
 export async function updateAgentConfig(
 	token: string,
 	instanceId: string,

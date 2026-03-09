@@ -26,4 +26,5 @@ type InfraProvider interface {
 	StopServer(ctx context.Context, providerServerID string) error
 	DeleteServer(ctx context.Context, providerServerID string) error
 	RestartServer(ctx context.Context, providerServerID string) error
+	ResetPassword(ctx context.Context, providerServerID string) (string, error)
 }

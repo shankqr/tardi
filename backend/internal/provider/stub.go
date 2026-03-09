@@ -59,6 +59,11 @@ func (s *StubProvider) DeleteServer(ctx context.Context, providerServerID string
 	return nil
 }
 
+func (s *StubProvider) ResetPassword(ctx context.Context, providerServerID string) (string, error) {
+	s.logger.Info("stub: reset password", "server_id", providerServerID)
+	return "stub-password-12345", nil
+}
+
 func (s *StubProvider) RestartServer(ctx context.Context, providerServerID string) error {
 	s.logger.Info("stub: restart server", "server_id", providerServerID)
 	return nil

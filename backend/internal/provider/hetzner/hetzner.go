@@ -145,6 +145,22 @@ func (h *HetznerProvider) DeleteServer(ctx context.Context, providerServerID str
 	return nil
 }
 
+func (h *HetznerProvider) ResetPassword(ctx context.Context, providerServerID string) (string, error) {
+	id, err := strconv.ParseInt(providerServerID, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid server id: %w", err)
+	}
+
+	server := &hcloud.Server{ID: id}
+	result, _, err := h.client.Server.ResetPassword(ctx, server)
+	if err != nil {
+		return "", fmt.Errorf("hetzner reset password: %w", err)
+	}
+
+	h.logger.Info("hetzner: password reset", "server_id", providerServerID)
+	return result.RootPassword, nil
+}
+
 func (h *HetznerProvider) RestartServer(ctx context.Context, providerServerID string) error {
 	id, err := strconv.ParseInt(providerServerID, 10, 64)
 	if err != nil {

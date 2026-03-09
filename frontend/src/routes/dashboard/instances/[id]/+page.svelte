@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { dashboardState, dashboardLoading, refreshDashboard } from '$lib/stores/dashboard';
 	import { getIdToken } from '$lib/stores/auth';
-	import { restartInstance } from '$lib/api/client';
+	import { restartInstance, resetPassword } from '$lib/api/client';
 	import { mockSnapshots } from '$lib/api/mock';
 	import type { Snapshot } from '$lib/types';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -20,6 +20,7 @@
 
 	// Action state
 	let restarting = $state(false);
+	let resettingPassword = $state(false);
 	let actionError = $state<string | null>(null);
 	let showPassword = $state(false);
 
@@ -43,6 +44,23 @@
 			actionError = err instanceof Error ? err.message : 'Restart failed';
 		} finally {
 			restarting = false;
+		}
+	}
+
+	async function handleResetPassword() {
+		if (!instance) return;
+		resettingPassword = true;
+		actionError = null;
+		try {
+			const token = await getIdToken();
+			if (!token) throw new Error('Not authenticated');
+			await resetPassword(token, instance.id);
+			await refreshDashboard();
+			showPassword = true;
+		} catch (err) {
+			actionError = err instanceof Error ? err.message : 'Password reset failed';
+		} finally {
+			resettingPassword = false;
 		}
 	}
 
@@ -180,6 +198,15 @@
 									</dd>
 								</div>
 							</dl>
+							<div class="mt-4 border-t border-gray-100 pt-3">
+								<button
+									onclick={handleResetPassword}
+									disabled={resettingPassword}
+									class="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+								>
+									{resettingPassword ? 'Resetting...' : 'Reset Password'}
+								</button>
+							</div>
 						</div>
 					{/if}
 

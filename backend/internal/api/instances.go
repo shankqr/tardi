@@ -231,6 +231,74 @@ func DeleteInstanceHandler(deps Dependencies) http.HandlerFunc {
 	}
 }
 
+func ResetPasswordHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := middleware.UserFromContext(r.Context())
+		if user == nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+			return
+		}
+
+		instanceID, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid instance id")
+			return
+		}
+
+		inst, err := db.GetInstanceByID(r.Context(), deps.Pool, instanceID, user.ID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				WriteError(w, http.StatusNotFound, "not_found", "instance not found")
+				return
+			}
+			slog.Error("reset password: get instance", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to get instance")
+			return
+		}
+
+		if inst.Status != models.VpsStatusActive {
+			WriteError(w, http.StatusConflict, "invalid_state", "instance must be active to reset password")
+			return
+		}
+
+		if inst.ProviderServerID == nil {
+			WriteError(w, http.StatusConflict, "invalid_state", "instance has no provider server")
+			return
+		}
+
+		prov, err := deps.Registry.Get(inst.Provider)
+		if err != nil {
+			slog.Error("reset password: provider not found", "provider", inst.Provider, "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "provider unavailable")
+			return
+		}
+
+		newPassword, err := prov.ResetPassword(r.Context(), *inst.ProviderServerID)
+		if err != nil {
+			slog.Error("reset password: provider call failed", "instance_id", inst.ID, "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to reset password")
+			return
+		}
+
+		if err := db.UpdateInstanceRootPassword(r.Context(), deps.Pool, instanceID, newPassword); err != nil {
+			slog.Error("reset password: store password", "instance_id", inst.ID, "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to store new password")
+			return
+		}
+
+		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
+			ID:           uuid.New(),
+			UserID:       user.ID,
+			Action:       "reset_password",
+			ResourceType: "instance",
+			ResourceID:   &instanceID,
+		})
+
+		slog.Info("password reset", "instance_id", instanceID)
+		WriteJSON(w, http.StatusOK, map[string]string{"root_password": newPassword})
+	}
+}
+
 // executeRestart calls the provider to restart the server and updates status.
 func executeRestart(deps Dependencies, inst *models.VpsInstance) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

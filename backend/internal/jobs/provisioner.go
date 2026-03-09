@@ -332,28 +332,12 @@ func (p *Provisioner) stepBootstrap(ctx context.Context, job *models.Provisionin
 }
 
 func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.ProvisioningJob) error {
-	// Wait for the first heartbeat from the agent
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for agent heartbeat: %w", ctx.Err())
-		case <-ticker.C:
-			inst, err := getInstanceInternal(ctx, p.pool, job.VpsInstanceID)
-			if err != nil {
-				return fmt.Errorf("get instance: %w", err)
-			}
-			if inst.LastHeartbeatAt != nil {
-				p.logger.Info("provisioner: agent heartbeat received",
-					"instance_id", inst.ID,
-					"heartbeat_at", inst.LastHeartbeatAt,
-				)
-				return nil
-			}
-		}
-	}
+	// TODO: Wait for the first heartbeat from the agent once the agent image is deployed.
+	// For now, skip this step since there's no agent image yet.
+	p.logger.Info("provisioner: skipping agent install check (no agent image yet)",
+		"instance_id", job.VpsInstanceID,
+	)
+	return nil
 }
 
 func (p *Provisioner) stepActivate(ctx context.Context, job *models.ProvisioningJob) error {

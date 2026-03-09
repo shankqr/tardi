@@ -281,6 +281,16 @@ func (m *MockProvider) RestartServer(ctx context.Context, providerServerID strin
 	return nil
 }
 
+func (m *MockProvider) ResetPassword(ctx context.Context, providerServerID string) (string, error) {
+	_, err := m.getState(providerServerID)
+	if err != nil {
+		return "", err
+	}
+	newPassword := fmt.Sprintf("mock-reset-%d", rand.IntN(99999))
+	m.logger.Info("mock: password reset", "server_id", providerServerID)
+	return newPassword, nil
+}
+
 func (m *MockProvider) getState(providerServerID string) (*mockServerState, error) {
 	m.mu.RLock()
 	state, ok := m.servers[providerServerID]
