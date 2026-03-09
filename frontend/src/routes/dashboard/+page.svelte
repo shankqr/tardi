@@ -6,6 +6,12 @@
 	import InstanceCard from '$lib/components/InstanceCard.svelte';
 	import SubscriptionCard from '$lib/components/SubscriptionCard.svelte';
 
+	const activeInstance = $derived(
+		$dashboardState?.instances.find(
+			(i) => i.status !== 'error' && i.status !== 'terminated'
+		) ?? null
+	);
+
 	let agentName = $state('');
 	let deploying = $state(false);
 	let deployError = $state('');
@@ -43,8 +49,8 @@
 		<div class="lg:col-span-2 space-y-6">
 			<h2 class="text-lg font-semibold text-gray-900">Your Agent</h2>
 
-			{#if $dashboardState.instances.length > 0}
-				<InstanceCard instance={$dashboardState.instances[0]} />
+			{#if activeInstance}
+				<InstanceCard instance={activeInstance} />
 			{:else if $dashboardState.subscription}
 				<!-- Has subscription but no instance — show deploy card -->
 				<div class="rounded-xl border border-gray-200 p-6">
