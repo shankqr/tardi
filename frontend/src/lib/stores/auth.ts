@@ -115,6 +115,25 @@ export async function signOut() {
 	await firebaseSignOut(auth);
 }
 
+export async function resetPassword(email: string) {
+	authState.update((s) => ({ ...s, error: null }));
+
+	if (USE_MOCK_AUTH) {
+		return;
+	}
+
+	const { getFirebaseAuth } = await import('$lib/firebase');
+	const { sendPasswordResetEmail } = await import('firebase/auth');
+	const auth = getFirebaseAuth();
+	try {
+		await sendPasswordResetEmail(auth, email);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Password reset failed';
+		authState.update((s) => ({ ...s, error: message }));
+		throw err;
+	}
+}
+
 export async function getIdToken(): Promise<string | null> {
 	if (USE_MOCK_AUTH) {
 		return 'mock-token';
