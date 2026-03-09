@@ -231,6 +231,55 @@ func DeleteInstanceHandler(deps Dependencies) http.HandlerFunc {
 	}
 }
 
+func RenameInstanceHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := middleware.UserFromContext(r.Context())
+		if user == nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+			return
+		}
+
+		instanceID, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid instance id")
+			return
+		}
+
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+			return
+		}
+		if req.Name == "" {
+			WriteError(w, http.StatusBadRequest, "bad_request", "name is required")
+			return
+		}
+
+		inst, err := db.GetInstanceByID(r.Context(), deps.Pool, instanceID, user.ID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				WriteError(w, http.StatusNotFound, "not_found", "instance not found")
+				return
+			}
+			slog.Error("rename instance: get", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to get instance")
+			return
+		}
+
+		if err := db.UpdateInstanceName(r.Context(), deps.Pool, instanceID, req.Name); err != nil {
+			slog.Error("rename instance: update", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to rename instance")
+			return
+		}
+
+		inst.Name = req.Name
+		slog.Info("instance renamed", "instance_id", instanceID, "name", req.Name)
+		WriteJSON(w, http.StatusOK, models.ToInstanceResponse(*inst))
+	}
+}
+
 func ResetPasswordHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := middleware.UserFromContext(r.Context())

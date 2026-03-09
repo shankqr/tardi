@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"regexp"
-	"strings"
 	"text/template"
 	"time"
 
@@ -250,7 +248,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
-		Name:       sanitizeServerName(inst.Name),
+		Name:       "openclaw",
 		ServerType: mapping.ProviderServerType,
 		Region:     mapping.ProviderRegion,
 		Image:      mapping.ProviderImage,
@@ -366,23 +364,6 @@ func getInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 		return nil, fmt.Errorf("get instance internal: %w", err)
 	}
 	return inst, nil
-}
-
-// generateAgentToken creates a cryptographically random 32-byte hex token.
-// sanitizeServerName converts a user-provided name into a valid Hetzner server
-// name (lowercase alphanumeric and hyphens, starting with a letter).
-func sanitizeServerName(name string) string {
-	s := strings.ToLower(name)
-	s = regexp.MustCompile(`[^a-z0-9-]`).ReplaceAllString(s, "-")
-	s = regexp.MustCompile(`-+`).ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	if s == "" || s[0] < 'a' || s[0] > 'z' {
-		s = "agent-" + s
-	}
-	if len(s) > 63 {
-		s = s[:63]
-	}
-	return s
 }
 
 func generateAgentToken() (string, error) {

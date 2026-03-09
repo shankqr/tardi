@@ -427,6 +427,17 @@ func UpdateInstanceRootPassword(ctx context.Context, pool *pgxpool.Pool, instanc
 	return nil
 }
 
+// UpdateInstanceName sets the display name for an instance.
+func UpdateInstanceName(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, name string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET name = $1, updated_at = now() WHERE id = $2
+	`, name, instanceID)
+	if err != nil {
+		return fmt.Errorf("update instance name: %w", err)
+	}
+	return nil
+}
+
 // UpdateInstanceAgentToken sets the agent token for an instance.
 func UpdateInstanceAgentToken(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, token string) error {
 	_, err := pool.Exec(ctx, `

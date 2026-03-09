@@ -79,6 +79,31 @@ export async function deleteInstance(token: string, instanceId: string): Promise
 	}
 }
 
+export async function renameInstance(
+	token: string,
+	instanceId: string,
+	name: string
+): Promise<VpsInstance> {
+	if (USE_MOCK) {
+		return { id: instanceId, name, status: 'active', provider: 'hetzner', ipv4: null, region: 'eu', last_heartbeat_at: null, created_at: new Date().toISOString() };
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}`, {
+		method: 'PATCH',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ name })
+	});
+
+	if (!res.ok) {
+		throw new Error(`Rename failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
 export async function resetPassword(
 	token: string,
 	instanceId: string

@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { dashboardState, dashboardLoading, refreshDashboard } from '$lib/stores/dashboard';
 	import { getIdToken } from '$lib/stores/auth';
-	import { restartInstance, resetPassword } from '$lib/api/client';
+	import { restartInstance, resetPassword, renameInstance } from '$lib/api/client';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
 
@@ -21,6 +21,37 @@
 	let resettingPassword = $state(false);
 	let actionError = $state<string | null>(null);
 	let showPassword = $state(false);
+
+	// Rename state
+	let editing = $state(false);
+	let editName = $state('');
+	let saving = $state(false);
+
+	function startEditing() {
+		if (!instance) return;
+		editName = instance.name;
+		editing = true;
+	}
+
+	async function handleRename() {
+		if (!instance || !editName.trim() || editName.trim() === instance.name) {
+			editing = false;
+			return;
+		}
+		saving = true;
+		actionError = null;
+		try {
+			const token = await getIdToken();
+			if (!token) throw new Error('Not authenticated');
+			await renameInstance(token, instance.id, editName.trim());
+			await refreshDashboard();
+			editing = false;
+		} catch (err) {
+			actionError = err instanceof Error ? err.message : 'Rename failed';
+		} finally {
+			saving = false;
+		}
+	}
 
 	async function handleRestart() {
 		if (!instance) return;
@@ -80,7 +111,44 @@
 
 		<div class="mt-4 flex items-start justify-between">
 			<div>
-				<h2 class="text-xl font-bold text-gray-900">{instance.name}</h2>
+				{#if editing}
+					<form onsubmit={(e) => { e.preventDefault(); handleRename(); }} class="flex items-center gap-2">
+						<input
+							type="text"
+							bind:value={editName}
+							class="rounded-md border border-gray-300 px-2 py-1 text-xl font-bold text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+							autofocus
+							onkeydown={(e) => { if (e.key === 'Escape') editing = false; }}
+						/>
+						<button
+							type="submit"
+							disabled={saving}
+							class="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+						>
+							{saving ? 'Saving...' : 'Save'}
+						</button>
+						<button
+							type="button"
+							onclick={() => (editing = false)}
+							class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+						>
+							Cancel
+						</button>
+					</form>
+				{:else}
+					<div class="flex items-center gap-2">
+						<h2 class="text-xl font-bold text-gray-900">{instance.name}</h2>
+						<button
+							onclick={startEditing}
+							class="rounded-md p-1 text-gray-400 hover:text-gray-600"
+							title="Rename agent"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
+								<path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+							</svg>
+						</button>
+					</div>
+				{/if}
 				<p class="mt-0.5 text-sm text-gray-500">Dedicated Agent</p>
 			</div>
 			<StatusBadge status={instance.status} />
