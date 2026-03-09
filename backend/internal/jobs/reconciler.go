@@ -32,6 +32,10 @@ func NewReconciler(pool *pgxpool.Pool, registry *provider.Registry, logger *slog
 // Start runs the reconciliation loop. Blocks until ctx is canceled.
 func (r *Reconciler) Start(ctx context.Context) {
 	r.logger.Info("reconciler started", "interval", r.interval)
+
+	// Run once immediately on startup to fix any stuck instances
+	r.reconcile(ctx)
+
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 
@@ -49,6 +53,7 @@ func (r *Reconciler) Start(ctx context.Context) {
 func (r *Reconciler) reconcile(ctx context.Context) {
 	r.reconcileActive(ctx)
 	r.reconcileStaleRestarting(ctx)
+	r.reconcileStaleProvisioning(ctx)
 }
 
 // reconcileActive checks active instances against provider state.
@@ -122,6 +127,64 @@ func (r *Reconciler) reconcileActive(ctx context.Context) {
 
 	if err := rows.Err(); err != nil {
 		r.logger.Error("reconciler: rows error", "error", err)
+	}
+}
+
+// reconcileStaleProvisioning fixes instances stuck in provisioning states
+// (bootstrapping, installing_agent) by checking the actual provider server status.
+func (r *Reconciler) reconcileStaleProvisioning(ctx context.Context) {
+	staleStatuses := []models.VpsStatus{
+		models.VpsStatusBootstrapping,
+		models.VpsStatusInstallingAgent,
+	}
+
+	for _, status := range staleStatuses {
+		instances, err := db.GetActiveInstancesByStatus(ctx, r.pool, status)
+		if err != nil {
+			r.logger.Error("reconciler: get provisioning instances", "status", status, "error", err)
+			continue
+		}
+
+		for _, inst := range instances {
+			// Only reconcile if stuck for > 5 minutes
+			if time.Since(inst.UpdatedAt) < 5*time.Minute {
+				continue
+			}
+
+			if inst.ProviderServerID == nil {
+				continue
+			}
+
+			prov, err := r.registry.Get(inst.Provider)
+			if err != nil {
+				continue
+			}
+
+			server, err := prov.GetServer(ctx, *inst.ProviderServerID)
+			if err != nil {
+				r.logger.Warn("reconciler: failed to get provisioning server",
+					"instance_id", inst.ID, "error", err)
+				continue
+			}
+
+			if server.Status == "running" {
+				r.logger.Info("reconciler: stuck provisioning instance is actually running, activating",
+					"instance_id", inst.ID, "was_status", status,
+				)
+				_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusActive)
+
+				// Update IP if available
+				if server.IPv4 != "" {
+					_ = db.UpdateInstanceProviderInfo(ctx, r.pool, inst.ID, server.ProviderServerID, &server.IPv4)
+				}
+
+				// Kill any stuck provisioning jobs
+				_, _ = r.pool.Exec(ctx, `
+					UPDATE provisioning_jobs SET status = 'completed', updated_at = NOW()
+					WHERE vps_instance_id = $1 AND status IN ('pending', 'running')
+				`, inst.ID)
+			}
+		}
 	}
 }
 
