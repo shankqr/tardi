@@ -66,6 +66,7 @@ func (h *HetznerProvider) CreateServer(ctx context.Context, req provider.CreateS
 		Name:             server.Name,
 		Status:           string(server.Status),
 		IPv4:             ipv4,
+		RootPassword:     result.RootPassword,
 	}, nil
 }
 

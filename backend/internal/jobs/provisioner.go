@@ -268,6 +268,12 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("update provider info: %w", err)
 	}
 
+	if server.RootPassword != "" {
+		if err := db.UpdateInstanceRootPassword(ctx, p.pool, inst.ID, server.RootPassword); err != nil {
+			return fmt.Errorf("store root password: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -363,13 +369,13 @@ func getInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances WHERE id = $1
 	`, instanceID).Scan(
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
-		&inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if err != nil {

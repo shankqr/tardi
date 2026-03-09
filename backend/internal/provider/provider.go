@@ -16,6 +16,7 @@ type Server struct {
 	Name             string
 	Status           string // "initializing", "running", "off"
 	IPv4             string
+	RootPassword     string // Only set on initial creation
 }
 
 type InfraProvider interface {

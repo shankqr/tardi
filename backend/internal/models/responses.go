@@ -18,6 +18,7 @@ type InstanceResponse struct {
 	Provider        string  `json:"provider"`
 	IPv4            *string `json:"ipv4"`
 	Region          string  `json:"region"`
+	RootPassword    *string `json:"root_password,omitempty"`
 	LastHeartbeatAt *string `json:"last_heartbeat_at"`
 	CreatedAt       string  `json:"created_at"`
 }
@@ -46,6 +47,7 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 		Region:    inst.Region,
 		CreatedAt: inst.CreatedAt.Format(time.RFC3339),
 	}
+	r.RootPassword = inst.RootPassword
 	if inst.Step != nil {
 		s := string(*inst.Step)
 		r.Step = &s

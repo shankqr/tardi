@@ -31,6 +31,7 @@ export interface VpsInstance {
 	step?: ProvisioningStep;
 	provider: string;
 	ipv4: string | null;
+	root_password?: string | null;
 	region: string;
 	last_heartbeat_at: string | null;
 	created_at: string;

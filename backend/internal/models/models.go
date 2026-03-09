@@ -92,6 +92,7 @@ type VpsInstance struct {
 	Region               string
 	Status               VpsStatus
 	Step                 *ProvisioningStep
+	RootPassword         *string
 	AgentTokenSecretName *string
 	LastHeartbeatAt      *time.Time
 	CreatedAt            time.Time

@@ -68,6 +68,7 @@ func (m *MockProvider) CreateServer(ctx context.Context, req CreateServerRequest
 		Name:             req.Name,
 		Status:           "initializing",
 		IPv4:             ip,
+		RootPassword:     "mock-password-12345",
 	}
 
 	state := &mockServerState{

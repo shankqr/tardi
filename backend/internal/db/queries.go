@@ -125,7 +125,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running') LIMIT 1),
-		       agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances v
 		WHERE user_id = $1 AND status != 'terminated'
 		ORDER BY created_at DESC
@@ -142,7 +142,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status, &inst.Step,
-			&inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -159,14 +159,14 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running') LIMIT 1),
-		       agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances v
 		WHERE id = $1 AND user_id = $2
 	`, instanceID, userID).Scan(
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status, &inst.Step,
-		&inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -416,6 +416,17 @@ func GetAgentConfigByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanc
 	return ac, nil
 }
 
+// UpdateInstanceRootPassword stores the root password for an instance.
+func UpdateInstanceRootPassword(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, password string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET root_password = $1, updated_at = now() WHERE id = $2
+	`, password, instanceID)
+	if err != nil {
+		return fmt.Errorf("update root password: %w", err)
+	}
+	return nil
+}
+
 // UpdateInstanceAgentToken sets the agent token for an instance.
 func UpdateInstanceAgentToken(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, token string) error {
 	_, err := pool.Exec(ctx, `
@@ -432,7 +443,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances
 		WHERE status = $1
 	`, status)
@@ -448,7 +459,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
-			&inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -537,7 +548,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances
 		WHERE subscription_id = $1 AND status NOT IN ('terminated', 'terminating')
 	`, subID)
@@ -553,7 +564,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
-			&inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -589,14 +600,14 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       agent_token_secret_name, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, last_heartbeat_at, created_at, updated_at
 		FROM vps_instances
 		WHERE agent_token_secret_name = $1
 	`, tokenSecretName).Scan(
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
-		&inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
+		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.LastHeartbeatAt,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
