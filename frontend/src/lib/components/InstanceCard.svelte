@@ -25,7 +25,7 @@
 	<div class="flex items-start justify-between">
 		<div>
 			<h3 class="font-semibold text-gray-900">{instance.name}</h3>
-			<p class="mt-0.5 text-xs text-gray-400">{instance.provider} &middot; {instance.region}</p>
+			<p class="mt-0.5 text-xs text-gray-400">{instance.plan ?? 'Standard'}</p>
 		</div>
 		<StatusBadge status={instance.status} />
 	</div>
