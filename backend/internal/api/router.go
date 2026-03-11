@@ -37,6 +37,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("POST /api/instances/{id}/reset-password", ResetPasswordHandler(deps))
 	authedMux.HandleFunc("PATCH /api/instances/{id}", RenameInstanceHandler(deps))
 	authedMux.HandleFunc("DELETE /api/instances/{id}", DeleteInstanceHandler(deps))
+	authedMux.HandleFunc("GET /api/instances/{id}/config", GetAgentConfigHandler(deps))
 	authedMux.HandleFunc("PUT /api/instances/{id}/config", UpdateAgentConfigHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/snapshots", CreateSnapshotHandler(deps))
 	authedMux.HandleFunc("POST /api/snapshots/{snapshot_id}/restore", RestoreSnapshotHandler(deps))

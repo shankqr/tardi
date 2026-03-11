@@ -12,6 +12,7 @@
 	} from '$lib/api/client';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
+	import AIProviderConfig from '$lib/components/AIProviderConfig.svelte';
 
 	const instance = $derived(
 		$dashboardState?.instances.find((i) => i.id === page.params.id) ?? null
@@ -325,6 +326,8 @@
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
+					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} />
+
 					{#if instance.openclaw_auth_token && instance.ipv4}
 						<div class="rounded-xl border border-gray-200 p-5">
 							<h3 class="text-sm font-semibold text-gray-900">WhatsApp</h3>

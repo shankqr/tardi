@@ -301,7 +301,7 @@ RestartSec=30
 WantedBy=multi-user.target
 SVCEOF
 
-# --- Heartbeat script ---
+# --- Heartbeat script (with config sync) ---
 cat > /opt/openclaw/heartbeat.sh <<'HBEOF'
 #!/bin/bash
 source /opt/openclaw/.env
@@ -322,10 +322,39 @@ else
     fi
 fi
 
-curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
+# Send heartbeat and capture response
+RESPONSE=$(curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
     -H "Authorization: Bearer ${AGENT_TOKEN}" \
     -H "Content-Type: application/json" \
-    -d "{\"status\":\"${STATUS}\"}" > /dev/null 2>&1
+    -d "{\"status\":\"${STATUS}\"}" 2>/dev/null)
+
+# Check for config changes
+REMOTE_VERSION=$(echo "$RESPONSE" | jq -r '.config_version // 0' 2>/dev/null)
+LOCAL_VERSION=$(cat /opt/openclaw/.config_version 2>/dev/null || echo "0")
+
+if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; then
+    CONFIG=$(curl -sf "${API_URL}/api/agent/config" \
+        -H "Authorization: Bearer ${AGENT_TOKEN}" 2>/dev/null)
+
+    if [ $? -eq 0 ]; then
+        NEW_OR_KEY=$(echo "$CONFIG" | jq -r '.config.openrouter_api_key // empty')
+        NEW_AN_KEY=$(echo "$CONFIG" | jq -r '.config.anthropic_api_key // empty')
+        NEW_OA_KEY=$(echo "$CONFIG" | jq -r '.config.openai_api_key // empty')
+
+        # Rebuild .env preserving non-key vars
+        grep -v '_API_KEY=' /opt/openclaw/.env > /opt/openclaw/.env.tmp
+        [ -n "$NEW_OR_KEY" ] && echo "OPENROUTER_API_KEY=$NEW_OR_KEY" >> /opt/openclaw/.env.tmp
+        [ -n "$NEW_AN_KEY" ] && echo "ANTHROPIC_API_KEY=$NEW_AN_KEY" >> /opt/openclaw/.env.tmp
+        [ -n "$NEW_OA_KEY" ] && echo "OPENAI_API_KEY=$NEW_OA_KEY" >> /opt/openclaw/.env.tmp
+        mv /opt/openclaw/.env.tmp /opt/openclaw/.env
+        chmod 600 /opt/openclaw/.env
+
+        # Restart OpenClaw to pick up new env
+        cd /opt/openclaw && docker compose restart openclaw-gateway
+
+        echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
+    fi
+fi
 HBEOF
 chmod +x /opt/openclaw/heartbeat.sh
 

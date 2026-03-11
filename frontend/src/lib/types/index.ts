@@ -72,6 +72,16 @@ export interface Snapshot {
 	size_gb?: number;
 }
 
+export type AIProvider = 'openrouter' | 'anthropic' | 'openai';
+
+export interface AIProviderConfig {
+	provider: AIProvider;
+	model: string;
+	openrouter_api_key?: string;
+	anthropic_api_key?: string;
+	openai_api_key?: string;
+}
+
 export interface PlanInfo {
 	tier: PlanTier;
 	name: string;

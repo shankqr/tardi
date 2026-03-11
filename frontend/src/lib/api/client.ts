@@ -126,6 +126,32 @@ export async function resetPassword(
 	return res.json();
 }
 
+export async function getAgentConfig(
+	token: string,
+	instanceId: string
+): Promise<{ config: Record<string, unknown>; version: number }> {
+	if (USE_MOCK) {
+		return {
+			config: {
+				provider: 'openrouter',
+				model: 'anthropic/claude-sonnet-4',
+				openrouter_api_key: 'sk-or-...1234'
+			},
+			version: 1
+		};
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/config`, {
+		headers: { Authorization: `Bearer ${token}` }
+	});
+
+	if (!res.ok) {
+		throw new Error(`Get config failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
 export async function updateAgentConfig(
 	token: string,
 	instanceId: string,

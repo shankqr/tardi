@@ -81,7 +81,73 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
+		// Return current config version so agent can detect changes
+		var configVersion int
+		config, err := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
+		if err == nil && config != nil {
+			configVersion = config.Version
+		}
+
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"config_version": configVersion,
+		})
+	}
+}
+
+// GetAgentConfigHandler returns the agent configuration for a user's instance.
+// Authenticated by Firebase JWT. API keys are masked for display.
+func GetAgentConfigHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := middleware.UserFromContext(r.Context())
+		if user == nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+			return
+		}
+
+		instanceID, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid instance id")
+			return
+		}
+
+		_, err = db.GetInstanceByID(r.Context(), deps.Pool, instanceID, user.ID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				WriteError(w, http.StatusNotFound, "not_found", "instance not found")
+				return
+			}
+			slog.Error("get agent config: get instance", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to get instance")
+			return
+		}
+
+		config, err := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, instanceID)
+		if err != nil {
+			slog.Error("get agent config: get config", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to get config")
+			return
+		}
+
+		if config == nil {
+			WriteJSON(w, http.StatusOK, map[string]any{"config": map[string]any{}, "version": 0})
+			return
+		}
+
+		// Mask API keys for display
+		masked := make(map[string]any, len(config.Config))
+		for k, v := range config.Config {
+			masked[k] = v
+		}
+		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key"} {
+			if v, ok := masked[keyField].(string); ok && len(v) > 4 {
+				masked[keyField] = v[:3] + "..." + v[len(v)-4:]
+			}
+		}
+
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"config":  masked,
+			"version": config.Version,
+		})
 	}
 }
 
@@ -122,6 +188,16 @@ func UpdateAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 		if body.Config == nil {
 			WriteError(w, http.StatusBadRequest, "bad_request", "config is required")
 			return
+		}
+
+		// Preserve existing API keys when frontend sends null (unchanged)
+		existing, _ := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
+		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key"} {
+			if body.Config[keyField] == nil && existing != nil {
+				if v, ok := existing.Config[keyField].(string); ok && v != "" {
+					body.Config[keyField] = v
+				}
+			}
 		}
 
 		ac := &models.AgentConfig{
