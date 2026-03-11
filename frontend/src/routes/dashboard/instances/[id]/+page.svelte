@@ -39,6 +39,7 @@
 	let saving = $state(false);
 
 	// Snapshot state
+	let powerUserOpen = $state(false);
 	let showSnapshotForm = $state(false);
 	let snapshotName = $state('');
 	let creatingSnapshot = $state(false);
@@ -324,28 +325,6 @@
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
-					{#if instance.dashboard_url && instance.openclaw_auth_token}
-						<div class="rounded-xl border border-gray-200 p-5">
-							<h3 class="text-sm font-semibold text-gray-900">Dashboard</h3>
-							<p class="mt-1 text-xs text-gray-400">Access your agent's OpenClaw control panel</p>
-							<div class="mt-4">
-								<a
-									href="{instance.dashboard_url}/?token={instance.openclaw_auth_token}"
-									target="_blank"
-									rel="noopener noreferrer"
-									class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
-								>
-									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
-										<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
-										<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
-									</svg>
-									Open Dashboard
-								</a>
-								<p class="mt-2 text-xs text-gray-400">You may need to accept the security certificate on first visit.</p>
-							</div>
-						</div>
-					{/if}
-
 					{#if instance.openclaw_auth_token && instance.ipv4}
 						<div class="rounded-xl border border-gray-200 p-5">
 							<h3 class="text-sm font-semibold text-gray-900">WhatsApp</h3>
@@ -370,60 +349,108 @@
 						</div>
 					{/if}
 
-					{#if instance.ipv4}
-						<div class="rounded-xl border border-gray-200 p-5">
-							<h3 class="text-sm font-semibold text-gray-900">SSH Access</h3>
-							<p class="mt-1 text-xs text-gray-400">Connect to your agent's server via SSH</p>
-							<dl class="mt-4 space-y-3 text-sm">
-								<div>
-									<dt class="text-gray-500">Command</dt>
-									<dd class="mt-1 flex items-center gap-2">
-										<code class="flex-1 rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">ssh root@{instance.ipv4}</code>
-										<button
-											onclick={() => navigator.clipboard.writeText(`ssh root@${instance.ipv4}`)}
-											class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-										>
-											Copy
-										</button>
-									</dd>
+					{#if (instance.dashboard_url && instance.openclaw_auth_token) || instance.ipv4}
+						<div class="rounded-xl border border-gray-200">
+							<button
+								onclick={() => (powerUserOpen = !powerUserOpen)}
+								class="flex w-full items-center justify-between p-5"
+							>
+								<div class="text-left">
+									<h3 class="text-sm font-semibold text-gray-900">Power User</h3>
+									<p class="mt-1 text-xs text-gray-400">Dashboard access and SSH connection</p>
 								</div>
-								{#if instance.root_password}
-									<div>
-										<dt class="text-gray-500">Root Password</dt>
-										<dd class="mt-1 flex items-center gap-2">
-											<code class="flex-1 rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">
-												{showPassword ? instance.root_password : '••••••••••••'}
-											</code>
-											<button
-												onclick={() => (showPassword = !showPassword)}
-												class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-											>
-												{showPassword ? 'Hide' : 'Show'}
-											</button>
-											<button
-												onclick={() => navigator.clipboard.writeText(instance.root_password ?? '')}
-												class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-											>
-												Copy
-											</button>
-										</dd>
-									</div>
-								{:else}
-									<div>
-										<dt class="text-gray-500">Root Password</dt>
-										<dd class="mt-1 text-xs text-gray-400">No password stored. Use Reset Password to generate one.</dd>
-									</div>
-								{/if}
-							</dl>
-							<div class="mt-4 border-t border-gray-100 pt-3">
-								<button
-									onclick={handleResetPassword}
-									disabled={resettingPassword || instance.status !== 'active'}
-									class="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									viewBox="0 0 20 20"
+									fill="currentColor"
+									class="h-5 w-5 text-gray-400 transition-transform {powerUserOpen ? 'rotate-180' : ''}"
 								>
-									{resettingPassword ? 'Resetting...' : 'Reset Password'}
-								</button>
-							</div>
+									<path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+								</svg>
+							</button>
+
+							{#if powerUserOpen}
+								<div class="space-y-5 border-t border-gray-200 p-5">
+									{#if instance.dashboard_url && instance.openclaw_auth_token}
+										<div>
+											<h4 class="text-sm font-medium text-gray-900">Dashboard</h4>
+											<p class="mt-1 text-xs text-gray-400">Access your agent's OpenClaw control panel</p>
+											<div class="mt-3">
+												<a
+													href="{instance.dashboard_url}/?token={instance.openclaw_auth_token}"
+													target="_blank"
+													rel="noopener noreferrer"
+													class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
+												>
+													<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
+														<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
+														<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
+													</svg>
+													Open Dashboard
+												</a>
+												<p class="mt-2 text-xs text-gray-400">You may need to accept the security certificate on first visit.</p>
+											</div>
+										</div>
+									{/if}
+
+									{#if instance.ipv4}
+										<div>
+											<h4 class="text-sm font-medium text-gray-900">SSH Access</h4>
+											<p class="mt-1 text-xs text-gray-400">Connect to your agent's server via SSH</p>
+											<dl class="mt-3 space-y-3 text-sm">
+												<div>
+													<dt class="text-gray-500">Command</dt>
+													<dd class="mt-1 flex items-center gap-2">
+														<code class="flex-1 rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">ssh root@{instance.ipv4}</code>
+														<button
+															onclick={() => navigator.clipboard.writeText(`ssh root@${instance.ipv4}`)}
+															class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+														>
+															Copy
+														</button>
+													</dd>
+												</div>
+												{#if instance.root_password}
+													<div>
+														<dt class="text-gray-500">Root Password</dt>
+														<dd class="mt-1 flex items-center gap-2">
+															<code class="flex-1 rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">
+																{showPassword ? instance.root_password : '••••••••••••'}
+															</code>
+															<button
+																onclick={() => (showPassword = !showPassword)}
+																class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+															>
+																{showPassword ? 'Hide' : 'Show'}
+															</button>
+															<button
+																onclick={() => navigator.clipboard.writeText(instance.root_password ?? '')}
+																class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+															>
+																Copy
+															</button>
+														</dd>
+													</div>
+												{:else}
+													<div>
+														<dt class="text-gray-500">Root Password</dt>
+														<dd class="mt-1 text-xs text-gray-400">No password stored. Use Reset Password to generate one.</dd>
+													</div>
+												{/if}
+											</dl>
+											<div class="mt-4 border-t border-gray-100 pt-3">
+												<button
+													onclick={handleResetPassword}
+													disabled={resettingPassword || instance.status !== 'active'}
+													class="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
+												>
+													{resettingPassword ? 'Resetting...' : 'Reset Password'}
+												</button>
+											</div>
+										</div>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					{/if}
 
