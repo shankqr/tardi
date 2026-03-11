@@ -18,6 +18,8 @@ import (
 
 // openclawRPC connects to an OpenClaw gateway via WebSocket (through Caddy),
 // handles the connect handshake, sends an RPC method, and returns the result.
+// OpenClaw uses a custom protocol: requests are {"type":"req","id":"...","method":"...","params":{...}}
+// and responses are {"type":"res","id":"...","ok":true/false,"payload":{...},"error":{...}}.
 func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any) (json.RawMessage, error) {
 	url := fmt.Sprintf("wss://%s/?token=%s", ipv4, authToken)
 
@@ -33,7 +35,6 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 	defer conn.Close()
 
 	// Step 1: Read connect.challenge event
-	var challengeNonce string
 	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		return nil, fmt.Errorf("set read deadline: %w", err)
 	}
@@ -44,29 +45,26 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 	}
 
 	var event struct {
-		Type    string `json:"type"`
-		Event   string `json:"event"`
-		Payload struct {
-			Nonce string `json:"nonce"`
-		} `json:"payload"`
+		Type  string `json:"type"`
+		Event string `json:"event"`
 	}
 	if err := json.Unmarshal(msg, &event); err != nil {
 		return nil, fmt.Errorf("parse challenge: %w", err)
 	}
-	if event.Event == "connect.challenge" {
-		challengeNonce = event.Payload.Nonce
+	if event.Type != "event" || event.Event != "connect.challenge" {
+		return nil, fmt.Errorf("expected connect.challenge, got %s/%s", event.Type, event.Event)
 	}
 
-	// Step 2: Send connect RPC
+	// Step 2: Send connect request (OpenClaw native protocol)
 	connectReq := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      "connect",
-		"method":  "connect",
+		"type":   "req",
+		"id":     "connect",
+		"method": "connect",
 		"params": map[string]any{
 			"minProtocol": 3,
 			"maxProtocol": 3,
 			"client": map[string]any{
-				"id":       "tardi-backend",
+				"id":       "openclaw-control-ui",
 				"version":  "1.0",
 				"platform": "linux",
 				"mode":     "webchat",
@@ -74,7 +72,6 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 			"role":   "operator",
 			"scopes": []string{"operator.admin", "operator.approvals", "operator.pairing"},
 			"caps":   []string{"tool-events"},
-			"nonce":  challengeNonce,
 		},
 	}
 	if err := conn.WriteJSON(connectReq); err != nil {
@@ -92,24 +89,25 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 	}
 
 	var connectResp struct {
-		Type  string          `json:"type"`
-		ID    string          `json:"id"`
-		Error json.RawMessage `json:"error"`
+		Type    string          `json:"type"`
+		ID      string          `json:"id"`
+		OK      bool            `json:"ok"`
+		Error   json.RawMessage `json:"error"`
 	}
 	if err := json.Unmarshal(msg, &connectResp); err != nil {
 		return nil, fmt.Errorf("parse connect response: %w", err)
 	}
-	if connectResp.Error != nil && string(connectResp.Error) != "null" {
+	if !connectResp.OK {
 		return nil, fmt.Errorf("connect error: %s", string(connectResp.Error))
 	}
 
 	// Step 4: Send the actual RPC method
 	rpcID := uuid.New().String()
 	rpcReq := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      rpcID,
-		"method":  method,
-		"params":  params,
+		"type":   "req",
+		"id":     rpcID,
+		"method": method,
+		"params": params,
 	}
 	if err := conn.WriteJSON(rpcReq); err != nil {
 		return nil, fmt.Errorf("send rpc: %w", err)
@@ -128,10 +126,11 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 		}
 
 		var resp struct {
-			Type   string          `json:"type"`
-			ID     string          `json:"id"`
-			Result json.RawMessage `json:"result"`
-			Error  json.RawMessage `json:"error"`
+			Type    string          `json:"type"`
+			ID      string          `json:"id"`
+			OK      bool            `json:"ok"`
+			Payload json.RawMessage `json:"payload"`
+			Error   json.RawMessage `json:"error"`
 		}
 		if err := json.Unmarshal(msg, &resp); err != nil {
 			continue // skip malformed messages
@@ -141,11 +140,11 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 		if resp.Type == "event" {
 			continue
 		}
-		if resp.ID == rpcID {
-			if resp.Error != nil && string(resp.Error) != "null" {
+		if resp.Type == "res" && resp.ID == rpcID {
+			if !resp.OK {
 				return nil, fmt.Errorf("rpc error: %s", string(resp.Error))
 			}
-			return resp.Result, nil
+			return resp.Payload, nil
 		}
 	}
 }
@@ -246,10 +245,10 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 		var status struct {
 			Channels struct {
 				WhatsApp *struct {
-					Accounts map[string]struct {
-						Connected bool   `json:"connected"`
-						Phone     string `json:"phone"`
-					} `json:"accounts"`
+					Linked bool `json:"linked"`
+					Self   struct {
+						E164 *string `json:"e164"`
+					} `json:"self"`
 				} `json:"whatsapp"`
 			} `json:"channels"`
 		}
@@ -263,12 +262,9 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 		linked := false
 		phone := ""
 		if status.Channels.WhatsApp != nil {
-			for _, acct := range status.Channels.WhatsApp.Accounts {
-				if acct.Connected {
-					linked = true
-					phone = acct.Phone
-					break
-				}
+			linked = status.Channels.WhatsApp.Linked
+			if status.Channels.WhatsApp.Self.E164 != nil {
+				phone = *status.Channels.WhatsApp.Self.E164
 			}
 		}
 
