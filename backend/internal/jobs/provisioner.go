@@ -233,6 +233,7 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 		header Set-Cookie "oc_sess={env.OPENCLAW_AUTH_TOKEN}; Path=/; Secure; HttpOnly; SameSite=None; Max-Age=86400"
 		reverse_proxy openclaw-gateway:18789 {
 			header_up X-Forwarded-User owner
+			header_up Origin "https://localhost:18789"
 			header_up Connection {header.Connection}
 			header_up Upgrade {header.Upgrade}
 		}
@@ -245,6 +246,7 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	handle @auth_cookie {
 		reverse_proxy openclaw-gateway:18789 {
 			header_up X-Forwarded-User owner
+			header_up Origin "https://localhost:18789"
 			header_up Connection {header.Connection}
 			header_up Upgrade {header.Upgrade}
 		}
