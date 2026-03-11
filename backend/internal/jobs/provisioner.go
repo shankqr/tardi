@@ -207,6 +207,7 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 		header_up Connection {header.Connection}
 		header_up Upgrade {header.Upgrade}
 		header_up Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
+		header_up X-Forwarded-For "127.0.0.1"
 	}
 }
 
