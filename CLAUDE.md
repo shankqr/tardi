@@ -114,7 +114,7 @@ GitHub Actions with two branches as source of truth:
 | Branch | Frontend                | Backend        | Image Tags               |
 | ------ | ----------------------- | -------------- | ------------------------ |
 | `dev`  | dev.tardi-18e.pages.dev | tardi-api-dev  | `dev-{sha7}` + `latest`  |
-| `main` | tardi-18e.pages.dev     | tardi-api-prod | `prod-{sha7}` + `stable` |
+| `main` | app.tardi.ai            | tardi-api-prod | `prod-{sha7}` + `stable` |
 
 ### Key Design Decisions
 
