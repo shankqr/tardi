@@ -234,6 +234,46 @@ export async function deleteSnapshot(token: string, snapshotId: string): Promise
 	}
 }
 
+export async function getWhatsAppQR(
+	token: string,
+	instanceId: string
+): Promise<{ qr_data_url: string; message: string }> {
+	if (USE_MOCK) {
+		return { qr_data_url: '', message: 'Mock mode' };
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/whatsapp/qr`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${token}` }
+	});
+
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		throw new Error(body.error || `WhatsApp QR failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
+export async function getWhatsAppStatus(
+	token: string,
+	instanceId: string
+): Promise<{ linked: boolean; phone: string }> {
+	if (USE_MOCK) {
+		return { linked: false, phone: '' };
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/whatsapp/status`, {
+		headers: { Authorization: `Bearer ${token}` }
+	});
+
+	if (!res.ok) {
+		return { linked: false, phone: '' };
+	}
+
+	return res.json();
+}
+
 export async function createPortalSession(token: string): Promise<{ url: string }> {
 	if (USE_MOCK) {
 		return { url: '/dashboard/billing' };
