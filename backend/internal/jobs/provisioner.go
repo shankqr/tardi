@@ -190,38 +190,10 @@ COMPOSEEOF
 # --- Caddyfile ---
 cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 :80 {
-	@health path /health
-	handle @health {
-		reverse_proxy openclaw-gateway:18789
+	reverse_proxy openclaw-gateway:18789 {
+		header_up Connection {header.Connection}
+		header_up Upgrade {header.Upgrade}
 	}
-
-	@static {
-		path /assets/* /favicon.* /apple-touch-icon.png
-	}
-	handle @static {
-		reverse_proxy openclaw-gateway:18789
-	}
-
-	@auth_header {
-		header Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
-	}
-	@auth_query {
-		query token={env.OPENCLAW_AUTH_TOKEN}
-	}
-	handle @auth_header {
-		reverse_proxy openclaw-gateway:18789 {
-			header_up Connection {header.Connection}
-			header_up Upgrade {header.Upgrade}
-		}
-	}
-	handle @auth_query {
-		reverse_proxy openclaw-gateway:18789 {
-			header_up Connection {header.Connection}
-			header_up Upgrade {header.Upgrade}
-		}
-	}
-
-	respond 401
 }
 CADDYEOF
 log_status "FILES_WRITTEN"
