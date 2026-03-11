@@ -107,6 +107,9 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
 {
   "gateway": {
     "bind": "lan",
+    "controlUi": {
+      "allowedOrigins": ["*"]
+    },
     "auth": {
       "mode": "token",
       "token": "{{.OpenClawAuthToken}}"
