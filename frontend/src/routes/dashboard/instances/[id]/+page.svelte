@@ -383,7 +383,7 @@
 							<p class="mt-1 text-xs text-gray-400">Link your WhatsApp account to enable messaging through your agent</p>
 							<div class="mt-4">
 								<a
-									href="https://{instance.ipv4}/?token={instance.openclaw_auth_token}"
+									href="https://{instance.ipv4}/channels?token={instance.openclaw_auth_token}"
 									target="_blank"
 									rel="noopener noreferrer"
 									class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
@@ -394,7 +394,7 @@
 									Connect WhatsApp
 								</a>
 								<p class="mt-3 text-xs text-gray-400">
-									Opens the agent dashboard. Navigate to Channels to scan the QR code.
+									Opens the WhatsApp channel page. Scan the QR code to link your account.
 									You may need to accept the security certificate on first visit.
 								</p>
 							</div>
