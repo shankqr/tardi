@@ -195,6 +195,13 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 		reverse_proxy openclaw-gateway:18789
 	}
 
+	@static {
+		path /assets/* /favicon.* /apple-touch-icon.png
+	}
+	handle @static {
+		reverse_proxy openclaw-gateway:18789
+	}
+
 	@auth_header {
 		header Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
 	}
