@@ -78,7 +78,6 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp
 ufw allow 80/tcp
-ufw allow 443/tcp
 ufw --force enable
 log_status "FIREWALL_CONFIGURED"
 
@@ -168,7 +167,6 @@ services:
     networks:
       - openclaw-net
     ports:
-      - "443:443"
       - "80:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
@@ -191,9 +189,7 @@ COMPOSEEOF
 
 # --- Caddyfile ---
 cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
-:443 {
-	tls internal
-
+:80 {
 	@health path /health
 	handle @health {
 		reverse_proxy openclaw-gateway:18789
@@ -219,16 +215,6 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	}
 
 	respond 401
-}
-
-:80 {
-	@health path /health
-	handle @health {
-		reverse_proxy openclaw-gateway:18789
-	}
-	handle {
-		redir https://{host}{uri} permanent
-	}
 }
 CADDYEOF
 log_status "FILES_WRITTEN"
