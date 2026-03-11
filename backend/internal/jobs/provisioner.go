@@ -119,6 +119,12 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
         "userHeader": "X-Forwarded-User"
       }
     }
+  },
+  "channels": {
+    "whatsapp": {
+      "dmPolicy": "pairing",
+      "groupPolicy": "disabled"
+    }
   }
 }
 CFGEOF
