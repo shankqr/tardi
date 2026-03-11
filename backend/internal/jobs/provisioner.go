@@ -209,6 +209,7 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 		header_up X-Forwarded-For "127.0.0.1"
 		header_up X-Real-Ip "127.0.0.1"
 		header_up Host "localhost:18789"
+		header_up Origin "https://localhost:18789"
 	}
 }
 
