@@ -78,6 +78,7 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp
 ufw allow 80/tcp
+ufw allow 443/tcp
 ufw --force enable
 log_status "FIREWALL_CONFIGURED"
 
@@ -136,6 +137,16 @@ echo "OPENAI_API_KEY={{.OpenAIAPIKey}}" >> /opt/openclaw/.env
 {{- end}}
 chmod 600 /opt/openclaw/.env
 
+# --- Generate self-signed TLS certificate ---
+mkdir -p /opt/openclaw/certs
+SERVER_IP=$(hostname -I | awk '{print $1}')
+openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+    -keyout /opt/openclaw/certs/key.pem \
+    -out /opt/openclaw/certs/cert.pem \
+    -subj "/CN=${SERVER_IP}" \
+    -addext "subjectAltName=IP:${SERVER_IP}"
+log_status "TLS_CERT_GENERATED"
+
 # --- Docker Compose ---
 cat > /opt/openclaw/docker-compose.yml <<'COMPOSEEOF'
 services:
@@ -153,7 +164,7 @@ services:
     volumes:
       - ./data/openclaw:/home/node/.openclaw:rw
     ports:
-      - "0.0.0.0:80:18789"
+      - "127.0.0.1:18789:18789"
     env_file:
       - .env
     healthcheck:
@@ -162,8 +173,51 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: openclaw-caddy
+    restart: unless-stopped
+    networks:
+      - openclaw-net
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+    env_file:
+      - .env
+    depends_on:
+      openclaw-gateway:
+        condition: service_healthy
+
+networks:
+  openclaw-net:
+    driver: bridge
 COMPOSEEOF
 
+# --- Caddyfile ---
+cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
+:443 {
+	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+
+	reverse_proxy openclaw-gateway:18789 {
+		header_up Connection {header.Connection}
+		header_up Upgrade {header.Upgrade}
+	}
+}
+
+:80 {
+	@health path /health
+	handle @health {
+		reverse_proxy openclaw-gateway:18789
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}
+CADDYEOF
 log_status "FILES_WRITTEN"
 
 # --- Pre-pull images (retry on failure) ---

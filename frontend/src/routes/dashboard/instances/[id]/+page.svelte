@@ -383,7 +383,7 @@
 							<p class="mt-1 text-xs text-gray-400">Link your WhatsApp account to enable messaging through your agent</p>
 							<div class="mt-4">
 								<a
-									href="http://{instance.ipv4}/?token={instance.openclaw_auth_token}"
+									href="https://{instance.ipv4}/?token={instance.openclaw_auth_token}"
 									target="_blank"
 									rel="noopener noreferrer"
 									class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
