@@ -153,7 +153,7 @@ services:
     volumes:
       - ./data/openclaw:/home/node/.openclaw:rw
     ports:
-      - "127.0.0.1:18789:18789"
+      - "0.0.0.0:80:18789"
     env_file:
       - .env
     healthcheck:
@@ -162,43 +162,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: openclaw-caddy
-    restart: unless-stopped
-    networks:
-      - openclaw-net
-    ports:
-      - "80:80"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    env_file:
-      - .env
-    depends_on:
-      openclaw-gateway:
-        condition: service_healthy
-
-networks:
-  openclaw-net:
-    driver: bridge
-
-volumes:
-  caddy_data:
-  caddy_config:
 COMPOSEEOF
 
-# --- Caddyfile ---
-cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
-:80 {
-	reverse_proxy openclaw-gateway:18789 {
-		header_up Connection {header.Connection}
-		header_up Upgrade {header.Upgrade}
-	}
-}
-CADDYEOF
 log_status "FILES_WRITTEN"
 
 # --- Pre-pull images (retry on failure) ---
