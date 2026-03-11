@@ -272,7 +272,7 @@ if [ $? -eq 0 ]; then
     STATUS="running"
 else
     # Check if container exists but is unhealthy
-    CONTAINER_STATE=$(docker inspect -f '{{.State.Status}}' openclaw-gateway 2>/dev/null)
+    CONTAINER_STATE=$(docker inspect -f '{{"{{"}}.State.Status{{"}}"}}' openclaw-gateway 2>/dev/null)
     if [ "$CONTAINER_STATE" = "running" ]; then
         STATUS="unhealthy"
     elif [ -n "$CONTAINER_STATE" ]; then
