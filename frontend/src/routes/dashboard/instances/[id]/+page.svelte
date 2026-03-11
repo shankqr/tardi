@@ -32,7 +32,6 @@
 	let resettingPassword = $state(false);
 	let actionError = $state<string | null>(null);
 	let showPassword = $state(false);
-	let showAuthToken = $state(false);
 
 	// Rename state
 	let editing = $state(false);
@@ -325,55 +324,25 @@
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
-					{#if instance.dashboard_url}
+					{#if instance.dashboard_url && instance.openclaw_auth_token}
 						<div class="rounded-xl border border-gray-200 p-5">
-							<h3 class="text-sm font-semibold text-gray-900">Dashboard Access</h3>
-							<p class="mt-1 text-xs text-gray-400">Connect to your agent's OpenClaw dashboard</p>
-							<dl class="mt-4 space-y-3 text-sm">
-								<div>
-									<dt class="text-gray-500">URL</dt>
-									<dd class="mt-1 flex items-center gap-2">
-										<code class="flex-1 truncate rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">{instance.dashboard_url}</code>
-										<a
-											href="{instance.dashboard_url}/?token={instance.openclaw_auth_token ?? ''}"
-											target="_blank"
-											rel="noopener noreferrer"
-											class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-										>
-											Open
-										</a>
-										<button
-											onclick={() => navigator.clipboard.writeText(`${instance.dashboard_url}/?token=${instance.openclaw_auth_token ?? ''}`)}
-											class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-										>
-											Copy
-										</button>
-									</dd>
-								</div>
-								{#if instance.openclaw_auth_token}
-									<div>
-										<dt class="text-gray-500">Auth Token</dt>
-										<dd class="mt-1 flex items-center gap-2">
-											<code class="flex-1 truncate rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">
-												{showAuthToken ? instance.openclaw_auth_token : '••••••••••••••••••••••••••••••••'}
-											</code>
-											<button
-												onclick={() => (showAuthToken = !showAuthToken)}
-												class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-											>
-												{showAuthToken ? 'Hide' : 'Show'}
-											</button>
-											<button
-												onclick={() => navigator.clipboard.writeText(instance.openclaw_auth_token ?? '')}
-												class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-											>
-												Copy
-											</button>
-										</dd>
-										<p class="mt-1.5 text-xs text-gray-400">Use as <code class="text-gray-500">Authorization: Bearer &lt;token&gt;</code> header</p>
-									</div>
-								{/if}
-							</dl>
+							<h3 class="text-sm font-semibold text-gray-900">Dashboard</h3>
+							<p class="mt-1 text-xs text-gray-400">Access your agent's OpenClaw control panel</p>
+							<div class="mt-4">
+								<a
+									href="{instance.dashboard_url}/?token={instance.openclaw_auth_token}"
+									target="_blank"
+									rel="noopener noreferrer"
+									class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
+								>
+									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
+										<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
+										<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
+									</svg>
+									Open Dashboard
+								</a>
+								<p class="mt-2 text-xs text-gray-400">You may need to accept the security certificate on first visit.</p>
+							</div>
 						</div>
 					{/if}
 
