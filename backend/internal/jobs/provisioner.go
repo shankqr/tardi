@@ -206,6 +206,7 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	reverse_proxy openclaw-gateway:18789 {
 		header_up Connection {header.Connection}
 		header_up Upgrade {header.Upgrade}
+		header_up Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
 	}
 }
 
