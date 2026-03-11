@@ -103,7 +103,8 @@ chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
 # bind=lan: listen on 0.0.0.0 so Caddy can reach the gateway via Docker network
-# auth token: pre-set so OpenClaw doesn't auto-generate a different one
+# auth=trusted-proxy: Caddy handles token auth, OpenClaw trusts X-Forwarded-User header from Docker network
+# trustedProxies: Docker bridge network CIDRs that OpenClaw accepts proxy headers from
 cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
 {
   "gateway": {
@@ -113,8 +114,10 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
     },
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
     "auth": {
-      "mode": "token",
-      "token": "{{.OpenClawAuthToken}}"
+      "mode": "trusted-proxy",
+      "trustedProxy": {
+        "userHeader": "X-Forwarded-User"
+      }
     }
   }
 }
@@ -199,18 +202,55 @@ networks:
 COMPOSEEOF
 
 # --- Caddyfile ---
+# Cookie-based auth flow:
+# 1. User visits /?token=xxx → Caddy validates, sets oc_sess cookie, proxies with X-Forwarded-User
+# 2. Subsequent requests (JS, CSS, WebSocket) carry the cookie → Caddy proxies with X-Forwarded-User
+# 3. Static assets (/assets/*, favicon) are public (no secrets, just bundled JS/CSS)
+# 4. Unauthenticated requests get 401
 cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 :443 {
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 
-	reverse_proxy openclaw-gateway:18789 {
-		header_up Connection {header.Connection}
-		header_up Upgrade {header.Upgrade}
-		header_up X-Forwarded-For "127.0.0.1"
-		header_up X-Real-Ip "127.0.0.1"
-		header_up Host "localhost:18789"
-		header_up Origin "https://localhost:18789"
+	# Static assets - no auth needed (bundled JS/CSS/images)
+	@static {
+		path /assets/* /favicon.* /apple-touch-icon.png /__openclaw__/*
 	}
+	handle @static {
+		reverse_proxy openclaw-gateway:18789
+	}
+
+	# Health check - no auth
+	@health path /health
+	handle @health {
+		reverse_proxy openclaw-gateway:18789
+	}
+
+	# Auth via token query param - sets session cookie for subsequent requests
+	@auth_query {
+		query token={env.OPENCLAW_AUTH_TOKEN}
+	}
+	handle @auth_query {
+		header Set-Cookie "oc_sess={env.OPENCLAW_AUTH_TOKEN}; Path=/; Secure; HttpOnly; SameSite=None; Max-Age=86400"
+		reverse_proxy openclaw-gateway:18789 {
+			header_up X-Forwarded-User owner
+			header_up Connection {header.Connection}
+			header_up Upgrade {header.Upgrade}
+		}
+	}
+
+	# Auth via session cookie (WebSocket and subsequent page requests)
+	@auth_cookie {
+		expression {http.request.cookie.oc_sess} == {env.OPENCLAW_AUTH_TOKEN}
+	}
+	handle @auth_cookie {
+		reverse_proxy openclaw-gateway:18789 {
+			header_up X-Forwarded-User owner
+			header_up Connection {header.Connection}
+			header_up Upgrade {header.Upgrade}
+		}
+	}
+
+	respond 401
 }
 
 :80 {
