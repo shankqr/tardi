@@ -335,7 +335,7 @@
 									<dd class="mt-1 flex items-center gap-2">
 										<code class="flex-1 truncate rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">{instance.dashboard_url}</code>
 										<a
-											href={instance.dashboard_url}
+											href="{instance.dashboard_url}/?token={instance.openclaw_auth_token ?? ''}"
 											target="_blank"
 											rel="noopener noreferrer"
 											class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
@@ -343,7 +343,7 @@
 											Open
 										</a>
 										<button
-											onclick={() => navigator.clipboard.writeText(instance.dashboard_url ?? '')}
+											onclick={() => navigator.clipboard.writeText(`${instance.dashboard_url}/?token=${instance.openclaw_auth_token ?? ''}`)}
 											class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
 										>
 											Copy
