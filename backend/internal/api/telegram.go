@@ -1,11 +1,9 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -14,7 +12,9 @@ import (
 	"github.com/shanq/tardi/internal/models"
 )
 
-// TelegramConnectHandler saves a Telegram bot token and tells OpenClaw to enable Telegram.
+// TelegramConnectHandler saves a Telegram bot token into agent config.
+// The VPS heartbeat script detects the config version change, pulls the new config,
+// updates openclaw.json and .env, then recreates the container.
 // POST /api/instances/{id}/telegram/connect
 func TelegramConnectHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +48,7 @@ func TelegramConnectHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Save token into agent config
+		// Save token into agent config (bumps version, triggers heartbeat sync)
 		existing, _ := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
 		config := make(map[string]any)
 		if existing != nil {
@@ -70,28 +70,14 @@ func TelegramConnectHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Tell OpenClaw to enable Telegram channel with this bot token
-		if inst.IPv4 != nil && inst.OpenClawAuthToken != nil {
-			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-			defer cancel()
-
-			_, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.telegram.connect", map[string]any{
-				"botToken": body.BotToken,
-			})
-			if err != nil {
-				slog.Warn("telegram connect: rpc failed (token saved, will retry on next config sync)", "error", err, "instance_id", instanceID)
-				// Token is saved — agent will pick it up on next config sync even if RPC fails
-			}
-		}
-
-		slog.Info("telegram connect: token saved", "instance_id", instanceID)
+		slog.Info("telegram connect: token saved, will propagate on next heartbeat sync", "instance_id", instanceID)
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"connected": true,
 		})
 	}
 }
 
-// TelegramDisconnectHandler removes the Telegram bot token and tells OpenClaw to disable Telegram.
+// TelegramDisconnectHandler removes the Telegram bot token from agent config.
 // POST /api/instances/{id}/telegram/disconnect
 func TelegramDisconnectHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -107,14 +93,14 @@ func TelegramDisconnectHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		inst, err := db.GetInstanceByID(r.Context(), deps.Pool, instanceID, user.ID)
+		_, err = db.GetInstanceByID(r.Context(), deps.Pool, instanceID, user.ID)
 		if err != nil {
 			WriteError(w, http.StatusNotFound, "not_found", "instance not found")
 			return
 		}
 
-		// Remove token from agent config
-		existing, _ := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
+		// Remove token from agent config (bumps version, triggers heartbeat sync)
+		existing, _ := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, instanceID)
 		if existing != nil {
 			config := make(map[string]any)
 			for k, v := range existing.Config {
@@ -124,7 +110,7 @@ func TelegramDisconnectHandler(deps Dependencies) http.HandlerFunc {
 
 			ac := &models.AgentConfig{
 				ID:            uuid.New(),
-				VpsInstanceID: inst.ID,
+				VpsInstanceID: instanceID,
 				Config:        config,
 				Version:       1,
 			}
@@ -135,18 +121,7 @@ func TelegramDisconnectHandler(deps Dependencies) http.HandlerFunc {
 			}
 		}
 
-		// Tell OpenClaw to disable Telegram
-		if inst.IPv4 != nil && inst.OpenClawAuthToken != nil {
-			ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-			defer cancel()
-
-			_, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.telegram.disconnect", nil)
-			if err != nil {
-				slog.Warn("telegram disconnect: rpc failed", "error", err, "instance_id", instanceID)
-			}
-		}
-
-		slog.Info("telegram disconnect: token removed", "instance_id", instanceID)
+		slog.Info("telegram disconnect: token removed, will propagate on next heartbeat sync", "instance_id", instanceID)
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"connected": false,
 		})

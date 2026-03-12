@@ -44,6 +44,7 @@ type CloudInitData struct {
 	Model             string // Model ID for the provider
 	ConfigVersion     int    // Initial config version to prevent redundant first sync
 	RootPassword      string // Explicitly set root password (overrides Hetzner's auto-generated one)
+	TelegramBotToken  string // Optional Telegram bot token
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
@@ -138,7 +139,10 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
       "enabled": true,
       "dmPolicy": "pairing",
       "groupPolicy": "disabled"
-    }
+    }{{- if .TelegramBotToken}},
+    "telegram": {
+      "enabled": true
+    }{{- end}}
   }
 }
 CFGEOF
@@ -158,6 +162,9 @@ echo "ANTHROPIC_API_KEY={{.AnthropicAPIKey}}" >> /opt/openclaw/.env
 {{- end}}
 {{- if .OpenAIAPIKey}}
 echo "OPENAI_API_KEY={{.OpenAIAPIKey}}" >> /opt/openclaw/.env
+{{- end}}
+{{- if .TelegramBotToken}}
+echo "TELEGRAM_BOT_TOKEN={{.TelegramBotToken}}" >> /opt/openclaw/.env
 {{- end}}
 chmod 600 /opt/openclaw/.env
 {{- if .ConfigVersion}}
@@ -366,16 +373,27 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         NEW_OR_KEY=$(echo "$CONFIG" | jq -r '.config.openrouter_api_key // empty')
         NEW_AN_KEY=$(echo "$CONFIG" | jq -r '.config.anthropic_api_key // empty')
         NEW_OA_KEY=$(echo "$CONFIG" | jq -r '.config.openai_api_key // empty')
+        NEW_TG_TOKEN=$(echo "$CONFIG" | jq -r '.config.telegram_bot_token // empty')
         NEW_PROVIDER=$(echo "$CONFIG" | jq -r '.config.provider // empty')
         NEW_MODEL=$(echo "$CONFIG" | jq -r '.config.model // empty')
 
-        # Rebuild .env preserving non-key vars
-        grep -v '_API_KEY=' /opt/openclaw/.env > /opt/openclaw/.env.tmp
+        # Rebuild .env preserving non-key/token vars
+        grep -v -E '_API_KEY=|TELEGRAM_BOT_TOKEN=' /opt/openclaw/.env > /opt/openclaw/.env.tmp
         [ -n "$NEW_OR_KEY" ] && echo "OPENROUTER_API_KEY=$NEW_OR_KEY" >> /opt/openclaw/.env.tmp
         [ -n "$NEW_AN_KEY" ] && echo "ANTHROPIC_API_KEY=$NEW_AN_KEY" >> /opt/openclaw/.env.tmp
         [ -n "$NEW_OA_KEY" ] && echo "OPENAI_API_KEY=$NEW_OA_KEY" >> /opt/openclaw/.env.tmp
+        [ -n "$NEW_TG_TOKEN" ] && echo "TELEGRAM_BOT_TOKEN=$NEW_TG_TOKEN" >> /opt/openclaw/.env.tmp
         mv /opt/openclaw/.env.tmp /opt/openclaw/.env
         chmod 600 /opt/openclaw/.env
+
+        # Update openclaw.json to enable/disable telegram channel
+        OC_CONFIG="/opt/openclaw/data/openclaw/openclaw.json"
+        if [ -n "$NEW_TG_TOKEN" ]; then
+            jq '.channels.telegram = {"enabled": true}' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
+        else
+            jq 'del(.channels.telegram)' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
+        fi
+        chown 1000:1000 "$OC_CONFIG"
 
         # Recreate container to pick up new env (restart does not reload env_file)
         cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
@@ -700,6 +718,9 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		}
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			ciData.OpenAIAPIKey = v
+		}
+		if v, ok := agentCfg.Config["telegram_bot_token"].(string); ok {
+			ciData.TelegramBotToken = v
 		}
 		if v, ok := agentCfg.Config["provider"].(string); ok && v != "" {
 			ciData.Provider = v
