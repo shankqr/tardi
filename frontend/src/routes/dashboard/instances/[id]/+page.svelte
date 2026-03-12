@@ -53,6 +53,8 @@
 	let restoringSnapshotId = $state<string | null>(null);
 	let deletingSnapshotId = $state<string | null>(null);
 	let confirmRestoreId = $state<string | null>(null);
+	let confirmDeleteId = $state<string | null>(null);
+	let confirmDeleteInput = $state('');
 
 	// WhatsApp state
 	let whatsappQR = $state<string | null>(null);
@@ -197,8 +199,20 @@
 		}
 	}
 
+	function promptDeleteSnapshot(snapshotId: string) {
+		confirmDeleteId = snapshotId;
+		confirmDeleteInput = '';
+	}
+
+	function cancelDeleteSnapshot() {
+		confirmDeleteId = null;
+		confirmDeleteInput = '';
+	}
+
 	async function handleDeleteSnapshot(snapshotId: string) {
 		deletingSnapshotId = snapshotId;
+		confirmDeleteId = null;
+		confirmDeleteInput = '';
 		actionError = null;
 		try {
 			const token = await getIdToken();
@@ -937,6 +951,31 @@
 													>
 														Cancel
 													</button>
+												{:else if confirmDeleteId === snap.id}
+													<div class="flex flex-col items-end gap-1.5">
+														<span class="text-xs text-gray-500">Type <strong>{snap.name}</strong> to confirm</span>
+														<input
+															type="text"
+															bind:value={confirmDeleteInput}
+															placeholder={snap.name}
+															class="w-40 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+														/>
+														<div class="flex items-center gap-1.5">
+															<button
+																onclick={() => handleDeleteSnapshot(snap.id)}
+																disabled={confirmDeleteInput !== snap.name}
+																class="rounded-md bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+															>
+																Delete
+															</button>
+															<button
+																onclick={cancelDeleteSnapshot}
+																class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+															>
+																Cancel
+															</button>
+														</div>
+													</div>
 												{:else}
 													<button
 														onclick={() => (confirmRestoreId = snap.id)}
@@ -947,7 +986,7 @@
 														Restore
 													</button>
 													<button
-														onclick={() => handleDeleteSnapshot(snap.id)}
+														onclick={() => promptDeleteSnapshot(snap.id)}
 														disabled={deletingSnapshotId === snap.id || isBusy}
 														class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
 														title="Delete this snapshot"
