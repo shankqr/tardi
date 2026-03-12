@@ -63,7 +63,11 @@ chown 1000:1000 "$OC_CONFIG"
 # Recreate container to pick up new env and config
 cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
 
+echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
+echo "config sync complete (version=$REMOTE_VERSION)"
+
 # Wait for healthy, then update default model if provider+model are set
+# This runs AFTER the completion message so frontend polling detects success early
 if [ -n "$NEW_PROVIDER" ] && [ -n "$NEW_MODEL" ]; then
     for i in $(seq 1 12); do
         sleep 5
@@ -73,9 +77,6 @@ if [ -n "$NEW_PROVIDER" ] && [ -n "$NEW_MODEL" ]; then
         fi
     done
 fi
-
-echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
-echo "config sync complete (version=$REMOTE_VERSION)"
 `
 
 // SyncConfigHandler triggers an immediate config sync on the VPS by
@@ -196,8 +197,9 @@ func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Check systemd unit state + grab last line from journal
-		cmd := `STATE=$(systemctl show tardi-config-sync --property=ActiveState --value 2>/dev/null || echo "not-found"); RESULT=$(systemctl show tardi-config-sync --property=Result --value 2>/dev/null || echo ""); LOG=$(journalctl -u tardi-config-sync --no-pager -n 1 -o cat 2>/dev/null || echo ""); printf '{"state":"%s","result":"%s","log":"%s"}' "$STATE" "$RESULT" "$LOG"`
+		// Check systemd unit state + grab last 5 lines from journal (completion message
+		// may not be the very last line since model-set runs after it)
+		cmd := `STATE=$(systemctl show tardi-config-sync --property=ActiveState --value 2>/dev/null || echo "not-found"); RESULT=$(systemctl show tardi-config-sync --property=Result --value 2>/dev/null || echo ""); LOG=$(journalctl -u tardi-config-sync --no-pager -n 5 -o cat 2>/dev/null || echo ""); printf '{"state":"%s","result":"%s","log":"%s"}' "$STATE" "$RESULT" "$LOG"`
 		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, cmd, 10*time.Second)
 		if err != nil {
 			WriteJSON(w, http.StatusOK, map[string]any{
@@ -209,19 +211,20 @@ func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
 
 		// Parse the state from the output
 		// ActiveState: active (running), inactive (finished), failed, not-found
+		// The "config sync complete" message is written to journal BEFORE the
+		// model-set health wait loop, so the unit may still be active when the
+		// config has already been applied. Check journal content first.
 		status := "running"
 		message := ""
-		if strings.Contains(out, `"state":"inactive"`) {
-			if strings.Contains(out, "config sync complete") {
-				status = "completed"
-				message = "Configuration applied successfully"
-			} else {
-				status = "completed"
-				message = "Sync finished"
-			}
+		if strings.Contains(out, "config sync complete") {
+			// Config applied — unit may still be active (model-set running) or inactive
+			status = "completed"
+			message = "Configuration applied successfully"
+		} else if strings.Contains(out, `"state":"inactive"`) {
+			status = "completed"
+			message = "Sync finished"
 		} else if strings.Contains(out, `"state":"failed"`) {
 			status = "failed"
-			// Extract last log line for error context
 			message = "Config sync failed on your agent"
 		} else if strings.Contains(out, `"state":"not-found"`) {
 			status = "unknown"
