@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -160,3 +161,78 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 		})
 	}
 }
+
+// SyncStatusHandler checks the status of a running config sync by
+// querying the systemd transient unit on the VPS via SSH.
+func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		user := middleware.UserFromContext(r.Context())
+		if user == nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+			return
+		}
+
+		instanceID, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid instance id")
+			return
+		}
+
+		inst, err := db.GetInstanceByID(r.Context(), deps.Pool, instanceID, user.ID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				WriteError(w, http.StatusNotFound, "not_found", "instance not found")
+				return
+			}
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to get instance")
+			return
+		}
+
+		if inst.IPv4 == nil || *inst.IPv4 == "" || inst.RootPassword == nil || *inst.RootPassword == "" {
+			WriteJSON(w, http.StatusOK, map[string]any{
+				"status": "unknown",
+				"error":  "instance not reachable",
+			})
+			return
+		}
+
+		// Check systemd unit state + grab last 5 lines of log
+		cmd := `STATE=$(systemctl show tardi-config-sync --property=ActiveState --value 2>/dev/null || echo "not-found"); RESULT=$(systemctl show tardi-config-sync --property=Result --value 2>/dev/null || echo ""); LOG=$(tail -5 /tmp/config-sync.log 2>/dev/null || echo ""); printf '{"state":"%s","result":"%s","log":"%s"}' "$STATE" "$RESULT" "$(echo "$LOG" | tail -1)"`
+		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, cmd, 10*time.Second)
+		if err != nil {
+			WriteJSON(w, http.StatusOK, map[string]any{
+				"status": "unknown",
+				"error":  "could not check sync status",
+			})
+			return
+		}
+
+		// Parse the state from the output
+		// ActiveState: active (running), inactive (finished), failed, not-found
+		status := "running"
+		message := ""
+		if strings.Contains(out, `"state":"inactive"`) {
+			if strings.Contains(out, "config sync complete") {
+				status = "completed"
+				message = "Configuration applied successfully"
+			} else {
+				status = "completed"
+				message = "Sync finished"
+			}
+		} else if strings.Contains(out, `"state":"failed"`) {
+			status = "failed"
+			// Extract last log line for error context
+			message = "Config sync failed on your agent"
+		} else if strings.Contains(out, `"state":"not-found"`) {
+			status = "unknown"
+			message = "No sync in progress"
+		}
+
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"status":  status,
+			"message": message,
+			"raw":     out,
+		})
+	}
+}
+

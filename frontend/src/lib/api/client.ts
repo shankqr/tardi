@@ -202,6 +202,25 @@ export async function syncConfig(
 	return res.json();
 }
 
+export async function getSyncStatus(
+	token: string,
+	instanceId: string
+): Promise<{ status: string; message: string }> {
+	if (USE_MOCK) {
+		return { status: 'completed', message: 'Mock sync complete' };
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/sync-status`, {
+		headers: { Authorization: `Bearer ${token}` }
+	});
+
+	if (!res.ok) {
+		throw new Error(`Sync status check failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
 export async function createSnapshot(
 	token: string,
 	instanceId: string,

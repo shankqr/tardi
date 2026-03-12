@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getIdToken } from '$lib/stores/auth';
-	import { getAgentConfig, updateAgentConfig, syncConfig } from '$lib/api/client';
+	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus } from '$lib/api/client';
 
 	const DEFAULT_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 
@@ -26,6 +26,7 @@
 	let syncError = $state<string | null>(null);
 	let syncElapsed = $state(0);
 	let syncTimer: ReturnType<typeof setInterval> | null = null;
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 	function startSyncTimer() {
 		syncElapsed = 0;
@@ -33,6 +34,31 @@
 	}
 	function stopSyncTimer() {
 		if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
+	}
+	function stopPollTimer() {
+		if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+	}
+
+	async function pollSyncStatus() {
+		try {
+			const token = await getIdToken();
+			if (!token) return;
+			const result = await getSyncStatus(token, instanceId);
+			if (result.status === 'completed') {
+				stopSyncTimer();
+				stopPollTimer();
+				syncPhase = 'success';
+				setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 8000);
+			} else if (result.status === 'failed') {
+				stopSyncTimer();
+				stopPollTimer();
+				syncError = result.message || 'Config sync failed on your agent';
+				syncPhase = 'failed';
+			}
+			// status === 'running' or 'unknown' → keep polling
+		} catch {
+			// Ignore poll errors, keep trying
+		}
 	}
 
 	async function loadConfig() {
@@ -91,18 +117,26 @@
 			await updateAgentConfig(token, instanceId, config);
 			keyDirty = false;
 
-			// Now trigger instant sync (takes 60-90s)
+			// Trigger instant sync (runs in background on VPS, ~60-90s)
 			syncPhase = 'syncing';
 			startSyncTimer();
 			try {
 				const result = await syncConfig(token, instanceId);
-				stopSyncTimer();
 				if (result.synced) {
-					syncPhase = 'success';
-					setTimeout(() => {
-						if (syncPhase === 'success') syncPhase = 'idle';
-					}, 6000);
+					// Sync triggered — now poll for completion every 5s, timeout at 120s
+					stopPollTimer();
+					pollTimer = setInterval(() => {
+						if (syncElapsed > 120) {
+							stopSyncTimer();
+							stopPollTimer();
+							syncError = 'Sync is taking longer than expected — it will apply automatically within 5 minutes';
+							syncPhase = 'failed';
+							return;
+						}
+						pollSyncStatus();
+					}, 5000);
 				} else {
+					stopSyncTimer();
 					syncError = result.error || 'Failed to apply configuration';
 					syncPhase = 'failed';
 				}
@@ -122,6 +156,7 @@
 		syncPhase = 'idle';
 		syncError = null;
 		stopSyncTimer();
+		stopPollTimer();
 	}
 
 	onMount(() => {
@@ -190,8 +225,8 @@
 									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
 								</svg>
 								<div>
-									<p class="text-sm font-medium text-green-800">Configuration saved and syncing to your agent</p>
-									<p class="text-xs text-green-600">Your agent will restart with the new settings in about a minute</p>
+									<p class="text-sm font-medium text-green-800">Configuration applied successfully</p>
+									<p class="text-xs text-green-600">Your agent is now running with the new settings</p>
 								</div>
 							</div>
 							<button onclick={dismissSync} class="text-green-500 hover:text-green-700" aria-label="Dismiss">
