@@ -441,6 +441,17 @@
 										<span class="h-2 w-2 rounded-full bg-green-500"></span>
 										Linked{whatsappPhone ? ` (${whatsappPhone})` : ''}
 									</div>
+									<div class="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
+										<h4 class="text-sm font-semibold text-green-900">Start chatting with your agent</h4>
+										<p class="mt-1 text-xs text-green-800">Your WhatsApp is now linked. To talk to your AI agent, message yourself on WhatsApp:</p>
+										<ol class="mt-2 space-y-1.5 text-xs text-green-800">
+											<li><span class="font-semibold">1.</span> Open <span class="font-semibold">WhatsApp</span> on your phone</li>
+											<li><span class="font-semibold">2.</span> Tap <span class="font-semibold">New Chat</span> (or the compose button)</li>
+											<li><span class="font-semibold">3.</span> Search for your own name or number &mdash; you'll see <span class="font-semibold">"Message yourself"</span></li>
+											<li><span class="font-semibold">4.</span> Send any message &mdash; your agent will reply!</li>
+										</ol>
+										<p class="mt-2 text-xs text-green-700">Other people can also message your WhatsApp number to interact with your agent.</p>
+									</div>
 								{:else if whatsappQR}
 									<div class="flex flex-col items-center gap-3">
 										<img src={whatsappQR} alt="WhatsApp QR Code" class="h-48 w-48 rounded-lg" />
