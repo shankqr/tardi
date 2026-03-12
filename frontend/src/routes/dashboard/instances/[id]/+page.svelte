@@ -74,7 +74,7 @@
 
 	// Status transition tracking for result notifications
 	let previousStatus = $state<string | null>(null);
-	let previousSnapshotStatuses = $state<Record<string, string>>({});
+	let previousSnapshotStatuses: Record<string, string> = {};
 	let restoreResult = $state<'success' | 'failed' | null>(null);
 	let snapshotResult = $state<'success' | 'failed' | null>(null);
 
