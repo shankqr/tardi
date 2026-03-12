@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { signUp, authError, sendVerificationEmail, signInWithGoogle, user } from '$lib/stores/auth';
+	import { signUp, authError, signInWithGoogle, user } from '$lib/stores/auth';
 	import { get } from 'svelte/store';
 
 	let email = $state('');
@@ -22,7 +22,6 @@
 		submitting = true;
 		try {
 			await signUp(email, password);
-			await sendVerificationEmail();
 			goto('/verify-email');
 		} catch {
 			// error handled by store

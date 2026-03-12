@@ -13,16 +13,19 @@
 
 	let resendCooldown = $state(0);
 	let resending = $state(false);
+	let sendError = $state('');
 
 	const currentUser = $derived($user);
 	const loading = $derived($authLoading);
 	const verified = $derived($emailVerified);
 
 	onMount(() => {
-		// Send verification email on mount (covers login flow for unverified users)
+		// Single source of email sending — handles both signup and login flows
 		sendVerificationEmail().then(() => {
 			resendCooldown = 60;
-		}).catch(() => {});
+		}).catch((err) => {
+			sendError = err instanceof Error ? err.message : 'Failed to send verification email';
+		});
 
 		// Poll for verification every 3 seconds
 		const pollInterval = setInterval(async () => {
@@ -94,8 +97,15 @@
 		<p class="mt-1 text-sm text-gray-500">
 			Click the link to continue.
 		</p>
+		<p class="mt-3 text-xs text-gray-400">
+			Don't see it? Check your spam or junk folder.
+		</p>
 
-		<div class="mt-8 space-y-3">
+		{#if sendError}
+			<div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{sendError}</div>
+		{/if}
+
+		<div class="mt-6 space-y-3">
 			<button
 				onclick={handleResend}
 				disabled={resendCooldown > 0 || resending}
