@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
+import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { parse } from 'smol-toml';
 import { defineConfig } from 'vite';
 
@@ -23,7 +24,25 @@ function loadWranglerEnv(): Record<string, string> {
 }
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	build: {
+		sourcemap: true
+	},
+	plugins: [
+		tailwindcss(),
+		sveltekit(),
+		sentryVitePlugin({
+			org: process.env.SENTRY_ORG,
+			project: process.env.SENTRY_PROJECT,
+			authToken: process.env.SENTRY_AUTH_TOKEN,
+			release: {
+				name: process.env.VITE_SENTRY_RELEASE
+			},
+			sourcemaps: {
+				filesToDeleteAfterUpload: ['**.map']
+			},
+			disable: !process.env.SENTRY_AUTH_TOKEN
+		})
+	],
 	define: Object.fromEntries(
 		Object.entries(loadWranglerEnv()).map(([k, v]) => [`import.meta.env.${k}`, JSON.stringify(v)])
 	)

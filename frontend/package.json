@@ -27,6 +27,8 @@
 		"wrangler": "^4.68.1"
 	},
 	"dependencies": {
+		"@sentry/sveltekit": "^10.43.0",
+		"@sentry/vite-plugin": "^5.1.1",
 		"@sveltejs/adapter-cloudflare": "^7.2.8",
 		"firebase": "^12.9.0"
 	}

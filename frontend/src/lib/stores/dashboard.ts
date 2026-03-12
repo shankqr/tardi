@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/sveltekit';
 import { writable } from 'svelte/store';
 import type { DashboardState } from '$lib/types';
 import { getDashboardState } from '$lib/api/client';
@@ -23,6 +24,7 @@ async function fetchDashboard() {
 	} catch (err) {
 		const message = err instanceof Error ? err.message : 'Failed to load dashboard';
 		dashboardError.set(message);
+		Sentry.captureException(err, { tags: { source: 'dashboard-polling' } });
 	} finally {
 		dashboardLoading.set(false);
 	}

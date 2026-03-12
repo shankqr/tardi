@@ -18,6 +18,8 @@ VITE_FIREBASE_APP_ID = "1:303646674262:web:ffb1dda130db33b18d5af7"
 STRIPE_PRICING_TABLE_ID = "prctbl_1T5VI4APpIsY1S3uFE0t3Gaz"
 STRIPE_PUBLISHABLE_KEY = "pk_test_51T4zbdAPpIsY1S3u2sy8FJ5ehbYHGoWfqGJ7lkO5y5y8h3zZ3hO2e5I8jqRZ0PNMFFwWSSxc86oHJBw2BBt0hYbG00PJI8lpMT"
 GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwLtsPQeta-1SvGb0zG5aNST1NRQgqC4p3fevmt5rS5P5RbfNQfngivC6lc9pWIMtpu/exec"
+VITE_SENTRY_DSN = ""
+VITE_SENTRY_ENVIRONMENT = "dev"
 
 # Production environment
 [env.production.vars]
@@ -34,3 +36,5 @@ VITE_FIREBASE_APP_ID = "1:1043193293599:web:bca40f2d944e1b3021de2a"
 STRIPE_PRICING_TABLE_ID = "prctbl_1T50NPAPpIsY1S3uP4cbeGUi"
 STRIPE_PUBLISHABLE_KEY = "pk_live_51T4zbdAPpIsY1S3uhXUlmD6YrvqeDCaoLRlimvXNgvaIRfIDHeJhnMCVmNTLhfBwk0pzsmEGnaisK7vk2DcMNx2p00f0sGqP29"
 GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwLtsPQeta-1SvGb0zG5aNST1NRQgqC4p3fevmt5rS5P5RbfNQfngivC6lc9pWIMtpu/exec"
+VITE_SENTRY_DSN = ""
+VITE_SENTRY_ENVIRONMENT = "production"

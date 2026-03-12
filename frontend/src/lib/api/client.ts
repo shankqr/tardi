@@ -1,24 +1,89 @@
+import * as Sentry from '@sentry/sveltekit';
 import type { DashboardState, Snapshot, VpsInstance } from '$lib/types';
 import { mockDashboardState } from './mock';
 import { getApiUrl } from '$lib/stores/config';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-export async function getDashboardState(token: string): Promise<DashboardState> {
-	if (USE_MOCK) {
-		return mockDashboardState;
-	}
-
-	const res = await fetch(`${getApiUrl()}/api/dashboard/state`, {
-		headers: { Authorization: `Bearer ${token}` },
-		cache: 'no-store'
+async function apiFetch<T>(
+	url: string,
+	options: RequestInit,
+	operation: string
+): Promise<T> {
+	Sentry.addBreadcrumb({
+		category: 'api',
+		message: `${options.method || 'GET'} ${operation}`,
+		data: { url },
+		level: 'info'
 	});
 
+	const res = await fetch(url, options);
+
 	if (!res.ok) {
-		throw new Error(`Dashboard fetch failed: ${res.status}`);
+		const body = await res.json().catch(() => ({}));
+		const error = new Error(body.error || `${operation} failed: ${res.status}`);
+
+		Sentry.setContext('api_error', {
+			operation,
+			url,
+			status: res.status,
+			responseBody: body
+		});
+
+		throw error;
 	}
 
 	return res.json();
+}
+
+async function apiFetchVoid(
+	url: string,
+	options: RequestInit,
+	operation: string
+): Promise<void> {
+	Sentry.addBreadcrumb({
+		category: 'api',
+		message: `${options.method || 'GET'} ${operation}`,
+		data: { url },
+		level: 'info'
+	});
+
+	const res = await fetch(url, options);
+
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		const error = new Error(body.error || `${operation} failed: ${res.status}`);
+
+		Sentry.setContext('api_error', {
+			operation,
+			url,
+			status: res.status,
+			responseBody: body
+		});
+
+		throw error;
+	}
+}
+
+function authHeaders(token: string): Record<string, string> {
+	return { Authorization: `Bearer ${token}` };
+}
+
+function authJsonHeaders(token: string): Record<string, string> {
+	return {
+		Authorization: `Bearer ${token}`,
+		'Content-Type': 'application/json'
+	};
+}
+
+export async function getDashboardState(token: string): Promise<DashboardState> {
+	if (USE_MOCK) return mockDashboardState;
+
+	return apiFetch(
+		`${getApiUrl()}/api/dashboard/state`,
+		{ headers: authHeaders(token), cache: 'no-store' },
+		'getDashboardState'
+	);
 }
 
 export async function createInstance(
@@ -40,46 +105,35 @@ export async function createInstance(
 		};
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances`, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json'
+	return apiFetch(
+		`${getApiUrl()}/api/instances`,
+		{
+			method: 'POST',
+			headers: authJsonHeaders(token),
+			body: JSON.stringify(data)
 		},
-		body: JSON.stringify(data)
-	});
-
-	if (!res.ok) {
-		throw new Error(`Create instance failed: ${res.status}`);
-	}
-
-	return res.json();
+		'createInstance'
+	);
 }
 
 export async function restartInstance(token: string, instanceId: string): Promise<void> {
 	if (USE_MOCK) return;
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/restart`, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error(`Restart failed: ${res.status}`);
-	}
+	return apiFetchVoid(
+		`${getApiUrl()}/api/instances/${instanceId}/restart`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'restartInstance'
+	);
 }
 
 export async function deleteInstance(token: string, instanceId: string): Promise<void> {
 	if (USE_MOCK) return;
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}`, {
-		method: 'DELETE',
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error(`Delete failed: ${res.status}`);
-	}
+	return apiFetchVoid(
+		`${getApiUrl()}/api/instances/${instanceId}`,
+		{ method: 'DELETE', headers: authHeaders(token) },
+		'deleteInstance'
+	);
 }
 
 export async function renameInstance(
@@ -88,23 +142,29 @@ export async function renameInstance(
 	name: string
 ): Promise<VpsInstance> {
 	if (USE_MOCK) {
-		return { id: instanceId, name, status: 'active', provider: 'hetzner', ipv4: null, region: 'eu', agent_status: null, last_heartbeat_at: null, dashboard_url: null, created_at: new Date().toISOString() };
+		return {
+			id: instanceId,
+			name,
+			status: 'active',
+			provider: 'hetzner',
+			ipv4: null,
+			region: 'eu',
+			agent_status: null,
+			last_heartbeat_at: null,
+			dashboard_url: null,
+			created_at: new Date().toISOString()
+		};
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}`, {
-		method: 'PATCH',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json'
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}`,
+		{
+			method: 'PATCH',
+			headers: authJsonHeaders(token),
+			body: JSON.stringify({ name })
 		},
-		body: JSON.stringify({ name })
-	});
-
-	if (!res.ok) {
-		throw new Error(`Rename failed: ${res.status}`);
-	}
-
-	return res.json();
+		'renameInstance'
+	);
 }
 
 export async function resetPassword(
@@ -115,16 +175,11 @@ export async function resetPassword(
 		return { root_password: 'mock-reset-password-12345' };
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/reset-password`, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error(`Reset password failed: ${res.status}`);
-	}
-
-	return res.json();
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/reset-password`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'resetPassword'
+	);
 }
 
 export async function getAgentConfig(
@@ -142,15 +197,11 @@ export async function getAgentConfig(
 		};
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/config`, {
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error(`Get config failed: ${res.status}`);
-	}
-
-	return res.json();
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/config`,
+		{ headers: authHeaders(token) },
+		'getAgentConfig'
+	);
 }
 
 export async function updateAgentConfig(
@@ -162,20 +213,15 @@ export async function updateAgentConfig(
 		return { config, version: 1 };
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/config`, {
-		method: 'PUT',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json'
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/config`,
+		{
+			method: 'PUT',
+			headers: authJsonHeaders(token),
+			body: JSON.stringify({ config })
 		},
-		body: JSON.stringify({ config })
-	});
-
-	if (!res.ok) {
-		throw new Error(`Update config failed: ${res.status}`);
-	}
-
-	return res.json();
+		'updateAgentConfig'
+	);
 }
 
 export async function syncConfig(
@@ -186,20 +232,40 @@ export async function syncConfig(
 		return { synced: true, config_version: 1 };
 	}
 
+	const url = `${getApiUrl()}/api/instances/${instanceId}/sync-config`;
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), 20000);
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/sync-config`, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${token}` },
-		signal: controller.signal
-	}).finally(() => clearTimeout(timer));
 
-	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `Sync failed: ${res.status}`);
+	Sentry.addBreadcrumb({
+		category: 'api',
+		message: 'POST syncConfig',
+		data: { url },
+		level: 'info'
+	});
+
+	try {
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: authHeaders(token),
+			signal: controller.signal
+		});
+
+		if (!res.ok) {
+			const body = await res.json().catch(() => ({}));
+			const error = new Error(body.error || `Sync failed: ${res.status}`);
+			Sentry.setContext('api_error', {
+				operation: 'syncConfig',
+				url,
+				status: res.status,
+				responseBody: body
+			});
+			throw error;
+		}
+
+		return res.json();
+	} finally {
+		clearTimeout(timer);
 	}
-
-	return res.json();
 }
 
 export async function getSyncStatus(
@@ -210,15 +276,11 @@ export async function getSyncStatus(
 		return { status: 'completed', message: 'Mock sync complete' };
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/sync-status`, {
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error(`Sync status check failed: ${res.status}`);
-	}
-
-	return res.json();
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/sync-status`,
+		{ headers: authHeaders(token) },
+		'getSyncStatus'
+	);
 }
 
 export async function createSnapshot(
@@ -236,46 +298,35 @@ export async function createSnapshot(
 		};
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/snapshots`, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json'
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/snapshots`,
+		{
+			method: 'POST',
+			headers: authJsonHeaders(token),
+			body: JSON.stringify({ name })
 		},
-		body: JSON.stringify({ name })
-	});
-
-	if (!res.ok) {
-		throw new Error(`Create snapshot failed: ${res.status}`);
-	}
-
-	return res.json();
+		'createSnapshot'
+	);
 }
 
 export async function restoreSnapshot(token: string, snapshotId: string): Promise<void> {
 	if (USE_MOCK) return;
 
-	const res = await fetch(`${getApiUrl()}/api/snapshots/${snapshotId}/restore`, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error(`Restore failed: ${res.status}`);
-	}
+	return apiFetchVoid(
+		`${getApiUrl()}/api/snapshots/${snapshotId}/restore`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'restoreSnapshot'
+	);
 }
 
 export async function deleteSnapshot(token: string, snapshotId: string): Promise<void> {
 	if (USE_MOCK) return;
 
-	const res = await fetch(`${getApiUrl()}/api/snapshots/${snapshotId}`, {
-		method: 'DELETE',
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error(`Delete snapshot failed: ${res.status}`);
-	}
+	return apiFetchVoid(
+		`${getApiUrl()}/api/snapshots/${snapshotId}`,
+		{ method: 'DELETE', headers: authHeaders(token) },
+		'deleteSnapshot'
+	);
 }
 
 export async function getWhatsAppQR(
@@ -290,18 +341,37 @@ export async function getWhatsAppQR(
 	const url = `${getApiUrl()}/api/instances/${instanceId}/whatsapp/qr${force ? '?force=true' : ''}`;
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), 50000);
-	const res = await fetch(url, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${token}` },
-		signal: controller.signal
-	}).finally(() => clearTimeout(timer));
 
-	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `WhatsApp QR failed: ${res.status}`);
+	Sentry.addBreadcrumb({
+		category: 'api',
+		message: 'POST getWhatsAppQR',
+		data: { url },
+		level: 'info'
+	});
+
+	try {
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: authHeaders(token),
+			signal: controller.signal
+		});
+
+		if (!res.ok) {
+			const body = await res.json().catch(() => ({}));
+			const error = new Error(body.error || `WhatsApp QR failed: ${res.status}`);
+			Sentry.setContext('api_error', {
+				operation: 'getWhatsAppQR',
+				url,
+				status: res.status,
+				responseBody: body
+			});
+			throw error;
+		}
+
+		return res.json();
+	} finally {
+		clearTimeout(timer);
 	}
-
-	return res.json();
 }
 
 export async function getWhatsAppStatus(
@@ -313,7 +383,7 @@ export async function getWhatsAppStatus(
 	}
 
 	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/whatsapp/status`, {
-		headers: { Authorization: `Bearer ${token}` }
+		headers: authHeaders(token)
 	});
 
 	if (!res.ok) {
@@ -332,21 +402,15 @@ export async function connectTelegram(
 		return { connected: true };
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/telegram/connect`, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json'
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/telegram/connect`,
+		{
+			method: 'POST',
+			headers: authJsonHeaders(token),
+			body: JSON.stringify({ bot_token: botToken })
 		},
-		body: JSON.stringify({ bot_token: botToken })
-	});
-
-	if (!res.ok) {
-		const body = await res.json().catch(() => ({}));
-		throw new Error(body.error || `Telegram connect failed: ${res.status}`);
-	}
-
-	return res.json();
+		'connectTelegram'
+	);
 }
 
 export async function disconnectTelegram(
@@ -357,16 +421,11 @@ export async function disconnectTelegram(
 		return { connected: false };
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/telegram/disconnect`, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error(`Telegram disconnect failed: ${res.status}`);
-	}
-
-	return res.json();
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/telegram/disconnect`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'disconnectTelegram'
+	);
 }
 
 export async function createPortalSession(token: string): Promise<{ url: string }> {
@@ -374,14 +433,9 @@ export async function createPortalSession(token: string): Promise<{ url: string 
 		return { url: '/dashboard/billing' };
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/billing/portal`, {
-		method: 'POST',
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error(`Create portal session failed: ${res.status}`);
-	}
-
-	return res.json();
+	return apiFetch(
+		`${getApiUrl()}/api/billing/portal`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'createPortalSession'
+	);
 }

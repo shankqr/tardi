@@ -1,7 +1,8 @@
 <script lang="ts">
 	import '../app.css';
+	import * as Sentry from '@sentry/sveltekit';
 	import { onMount } from 'svelte';
-	import { initAuth } from '$lib/stores/auth';
+	import { initAuth, user } from '$lib/stores/auth';
 	import { apiUrl, stripePricingTableId, stripePublishableKey } from '$lib/stores/config';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import Footer from '$lib/components/Footer.svelte';
@@ -14,6 +15,17 @@
 		apiUrl.set(data.config.apiUrl);
 		stripePricingTableId.set(data.config.stripePricingTableId);
 		stripePublishableKey.set(data.config.stripePublishableKey);
+	});
+
+	$effect(() => {
+		const unsubscribe = user.subscribe(($user) => {
+			if ($user) {
+				Sentry.setUser({ id: $user.uid, email: $user.email || undefined });
+			} else {
+				Sentry.setUser(null);
+			}
+		});
+		return unsubscribe;
 	});
 
 	onMount(() => {
