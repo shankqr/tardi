@@ -196,8 +196,8 @@ func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Check systemd unit state + grab last 5 lines of log
-		cmd := `STATE=$(systemctl show tardi-config-sync --property=ActiveState --value 2>/dev/null || echo "not-found"); RESULT=$(systemctl show tardi-config-sync --property=Result --value 2>/dev/null || echo ""); LOG=$(tail -5 /tmp/config-sync.log 2>/dev/null || echo ""); printf '{"state":"%s","result":"%s","log":"%s"}' "$STATE" "$RESULT" "$(echo "$LOG" | tail -1)"`
+		// Check systemd unit state + grab last line from journal
+		cmd := `STATE=$(systemctl show tardi-config-sync --property=ActiveState --value 2>/dev/null || echo "not-found"); RESULT=$(systemctl show tardi-config-sync --property=Result --value 2>/dev/null || echo ""); LOG=$(journalctl -u tardi-config-sync --no-pager -n 1 -o cat 2>/dev/null || echo ""); printf '{"state":"%s","result":"%s","log":"%s"}' "$STATE" "$RESULT" "$LOG"`
 		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, cmd, 10*time.Second)
 		if err != nil {
 			WriteJSON(w, http.StatusOK, map[string]any{
