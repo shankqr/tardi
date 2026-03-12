@@ -246,17 +246,25 @@ func (h *HetznerProvider) RebuildServer(ctx context.Context, providerServerID st
 		return "", fmt.Errorf("hetzner rebuild server: %w", err)
 	}
 
-	// Wait for rebuild to complete
-	if err := h.client.Action.WaitForFunc(ctx, nil, result.Action); err != nil {
-		return "", fmt.Errorf("hetzner rebuild server: wait: %w", err)
+	// Poll server status directly until running (more reliable than WaitForFunc)
+	for {
+		srv, _, err := h.client.Server.GetByID(ctx, serverID)
+		if err != nil {
+			return "", fmt.Errorf("hetzner rebuild server: poll status: %w", err)
+		}
+		if srv.Status == hcloud.ServerStatusRunning {
+			h.logger.Info("hetzner: server rebuilt",
+				"server_id", providerServerID,
+				"image_id", providerImageID,
+			)
+			return result.RootPassword, nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("hetzner rebuild server: timed out waiting for server %d", serverID)
+		case <-time.After(5 * time.Second):
+		}
 	}
-
-	h.logger.Info("hetzner: server rebuilt",
-		"server_id", providerServerID,
-		"image_id", providerImageID,
-	)
-
-	return result.RootPassword, nil
 }
 
 func (h *HetznerProvider) RestartServer(ctx context.Context, providerServerID string) error {
