@@ -303,6 +303,11 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
+		slog.Info("whatsapp qr: raw response",
+			"data_preview", string(result)[:min(500, len(result))],
+			"instance_id", instanceID,
+		)
+
 		var qrResult struct {
 			QRDataURL string `json:"qrDataUrl"`
 			Message   string `json:"message"`
