@@ -42,6 +42,7 @@ type CloudInitData struct {
 	OpenClawImageTag  string // e.g. "latest" or "v1.2.3"
 	Provider          string // AI provider: openrouter, anthropic, openai
 	Model             string // Model ID for the provider
+	ConfigVersion     int    // Initial config version to prevent redundant first sync
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
@@ -124,6 +125,7 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
   },
   "channels": {
     "whatsapp": {
+      "enabled": true,
       "dmPolicy": "pairing",
       "groupPolicy": "disabled"
     }
@@ -148,6 +150,9 @@ echo "ANTHROPIC_API_KEY={{.AnthropicAPIKey}}" >> /opt/openclaw/.env
 echo "OPENAI_API_KEY={{.OpenAIAPIKey}}" >> /opt/openclaw/.env
 {{- end}}
 chmod 600 /opt/openclaw/.env
+{{- if .ConfigVersion}}
+echo "{{.ConfigVersion}}" > /opt/openclaw/.config_version
+{{- end}}
 
 # --- Generate self-signed TLS certificate ---
 mkdir -p /opt/openclaw/certs
@@ -684,6 +689,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		if v, ok := agentCfg.Config["model"].(string); ok {
 			ciData.Model = v
 		}
+		ciData.ConfigVersion = agentCfg.Version
 	}
 
 	// Render cloud-init user data
