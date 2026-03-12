@@ -10,7 +10,8 @@
 		restoreSnapshot,
 		deleteSnapshot,
 		getWhatsAppQR,
-		getWhatsAppStatus
+		getWhatsAppStatus,
+		getAgentConfig
 	} from '$lib/api/client';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
@@ -187,14 +188,32 @@
 		}
 	}
 
+	let showApiKeyRequired = $state(false);
+
 	async function handleWhatsAppConnect() {
 		if (!instance) return;
 		whatsappLoading = true;
 		whatsappError = null;
 		whatsappQR = null;
+		showApiKeyRequired = false;
 		try {
 			const token = await getIdToken();
 			if (!token) throw new Error('Not authenticated');
+
+			// Check if an API key is configured before allowing WhatsApp connect
+			const agentCfg = await getAgentConfig(token, instance.id);
+			const cfg = agentCfg.config;
+			const hasKey =
+				(cfg.openrouter_api_key && typeof cfg.openrouter_api_key === 'string' && cfg.openrouter_api_key.length > 0) ||
+				(cfg.anthropic_api_key && typeof cfg.anthropic_api_key === 'string' && cfg.anthropic_api_key.length > 0) ||
+				(cfg.openai_api_key && typeof cfg.openai_api_key === 'string' && cfg.openai_api_key.length > 0);
+
+			if (!hasKey) {
+				showApiKeyRequired = true;
+				whatsappLoading = false;
+				return;
+			}
+
 			const result = await getWhatsAppQR(token, instance.id);
 			if (result.qr_data_url) {
 				whatsappQR = result.qr_data_url;
@@ -436,6 +455,26 @@
 										</button>
 									</div>
 								{:else}
+									{#if showApiKeyRequired}
+										<div class="mb-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
+											<p class="text-sm font-medium text-orange-800">API key required</p>
+											<p class="mt-1 text-xs text-orange-700">
+												Your agent needs an AI model API key to respond to WhatsApp messages. Set your OpenRouter API key in the <strong>AI Provider</strong> section above, then try again.
+											</p>
+											<a
+												href="https://openrouter.ai/keys"
+												target="_blank"
+												rel="noopener noreferrer"
+												class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-orange-800 underline hover:text-orange-900"
+											>
+												Get an OpenRouter API key
+												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3 w-3">
+													<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
+													<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
+												</svg>
+											</a>
+										</div>
+									{/if}
 									{#if whatsappError}
 										<p class="mb-3 text-xs text-red-600">{whatsappError}</p>
 									{/if}
