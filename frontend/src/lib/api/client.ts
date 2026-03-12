@@ -10,7 +10,8 @@ export async function getDashboardState(token: string): Promise<DashboardState> 
 	}
 
 	const res = await fetch(`${getApiUrl()}/api/dashboard/state`, {
-		headers: { Authorization: `Bearer ${token}` }
+		headers: { Authorization: `Bearer ${token}` },
+		cache: 'no-store'
 	});
 
 	if (!res.ok) {
