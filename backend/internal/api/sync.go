@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -128,7 +129,8 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 
 		// Run synchronously so the frontend can await completion.
 		// The script typically takes 60-90s (docker recreate + health wait).
-		cmd := fmt.Sprintf("cat > /tmp/config-sync.sh << 'SYNCEOF'\n%sSYNCEOF\nchmod +x /tmp/config-sync.sh && /tmp/config-sync.sh", configSyncScript)
+		encoded := base64.StdEncoding.EncodeToString([]byte(configSyncScript))
+		cmd := fmt.Sprintf("echo %s | base64 -d > /tmp/config-sync.sh && bash /tmp/config-sync.sh", encoded)
 		output, err := sshexec.RunCommand(ip, pw, cmd, 120*time.Second)
 		if err != nil {
 			slog.Error("sync config: SSH command failed",
