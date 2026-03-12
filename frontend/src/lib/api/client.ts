@@ -245,7 +245,7 @@ export async function getWhatsAppQR(
 
 	const url = `${getApiUrl()}/api/instances/${instanceId}/whatsapp/qr${force ? '?force=true' : ''}`;
 	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), 40000);
+	const timer = setTimeout(() => controller.abort(), 50000);
 	const res = await fetch(url, {
 		method: 'POST',
 		headers: { Authorization: `Bearer ${token}` },

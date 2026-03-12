@@ -288,10 +288,21 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 		defer cancel()
 
 		force := r.URL.Query().Get("force") == "true"
+
+		// If force, logout first to clear stale WhatsApp credentials,
+		// otherwise web.login.start times out trying to reuse dead session.
+		if force {
+			_, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.logout", map[string]any{
+				"channel": "whatsapp",
+			})
+			if err != nil {
+				slog.Warn("whatsapp qr: logout before relink failed (may be ok)", "error", err, "instance_id", instanceID)
+			}
+		}
 
 		result, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "web.login.start", map[string]any{
 			"force":     force,
