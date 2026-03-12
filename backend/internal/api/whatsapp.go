@@ -364,9 +364,18 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 
 		// Prefer health event data (fresh probe) over response data (cached)
 		statusData := result
+		source := "res"
 		if healthEvent != nil {
 			statusData = healthEvent
+			source = "health-event"
 		}
+
+		slog.Info("whatsapp status: raw data",
+			"source", source,
+			"has_health_event", healthEvent != nil,
+			"data_preview", string(statusData)[:min(500, len(statusData))],
+			"instance_id", instanceID,
+		)
 
 		var status struct {
 			Channels struct {
@@ -380,6 +389,7 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 			} `json:"channels"`
 		}
 		if err := json.Unmarshal(statusData, &status); err != nil {
+			slog.Error("whatsapp status: unmarshal failed", "error", err, "instance_id", instanceID)
 			WriteJSON(w, http.StatusOK, map[string]any{
 				"linked": false,
 			})
