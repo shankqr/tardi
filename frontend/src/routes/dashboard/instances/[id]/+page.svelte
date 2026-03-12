@@ -73,7 +73,9 @@
 	const isBusy = $derived(instance != null && instance.status !== 'active');
 
 	// Status transition tracking for result notifications
-	let previousStatus = $state<string | null>(null);
+	// NOTE: these are plain variables (not $state) to avoid reactive loops —
+	// they are read+written in $effect blocks, and $state would cause re-triggers.
+	let previousStatus: string | null = null;
 	let previousSnapshotStatuses: Record<string, string> = {};
 	let restoreResult = $state<'success' | 'failed' | null>(null);
 	let snapshotResult = $state<'success' | 'failed' | null>(null);
