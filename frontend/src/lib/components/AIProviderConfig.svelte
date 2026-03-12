@@ -190,8 +190,8 @@
 									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
 								</svg>
 								<div>
-									<p class="text-sm font-medium text-green-800">Configuration applied successfully</p>
-									<p class="text-xs text-green-600">Your agent is now running with the new API key</p>
+									<p class="text-sm font-medium text-green-800">Configuration saved and syncing to your agent</p>
+									<p class="text-xs text-green-600">Your agent will restart with the new settings in about a minute</p>
 								</div>
 							</div>
 							<button onclick={dismissSync} class="text-green-500 hover:text-green-700" aria-label="Dismiss">

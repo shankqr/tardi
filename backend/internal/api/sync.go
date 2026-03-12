@@ -129,25 +129,32 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 		ip := *inst.IPv4
 		pw := *inst.RootPassword
 
-		// Run synchronously so the frontend can await completion.
-		// The script typically takes 60-90s (docker recreate + health wait).
+		// Deploy the script and launch it in the background via nohup.
+		// The script takes 60-90s (docker recreate + health wait) which
+		// exceeds Cloud Run's effective connection timeout (~60s), so we
+		// cannot wait for it synchronously. Instead we:
+		//   1. Upload the script (fast, <2s)
+		//   2. Launch it detached with nohup (returns immediately)
+		//   3. Return success to the frontend
 		encoded := base64.StdEncoding.EncodeToString([]byte(configSyncScript))
-		cmd := fmt.Sprintf("echo %s | base64 -d > /tmp/config-sync.sh && bash /tmp/config-sync.sh", encoded)
-		output, err := sshexec.RunCommand(ip, pw, cmd, 120*time.Second)
+		cmd := fmt.Sprintf(
+			"echo %s | base64 -d > /tmp/config-sync.sh && chmod +x /tmp/config-sync.sh && nohup bash /tmp/config-sync.sh > /tmp/config-sync.log 2>&1 &",
+			encoded,
+		)
+		_, err = sshexec.RunCommand(ip, pw, cmd, 15*time.Second)
 		if err != nil {
-			slog.Error("sync config: SSH command failed",
+			slog.Error("sync config: failed to launch script",
 				"instance_id", instanceID,
 				"error", err,
-				"output", output,
 			)
 			WriteJSON(w, http.StatusOK, map[string]any{
 				"synced": false,
-				"error":  "config sync failed on VPS",
+				"error":  "Could not connect to your agent",
 			})
 			return
 		}
 
-		slog.Info("sync config: completed", "instance_id", instanceID, "output", output)
+		slog.Info("sync config: script launched", "instance_id", instanceID)
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"synced": true,
 		})
