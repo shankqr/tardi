@@ -48,6 +48,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("GET /api/instances/{id}/whatsapp/status", WhatsAppStatusHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/telegram/connect", TelegramConnectHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/telegram/disconnect", TelegramDisconnectHandler(deps))
+	authedMux.HandleFunc("POST /api/instances/{id}/sync-config", SyncConfigHandler(deps))
 	authedMux.HandleFunc("POST /api/billing/portal", BillingPortalHandler(deps))
 
 	// Agent phone-home endpoints (agent token auth, handled inside handlers)

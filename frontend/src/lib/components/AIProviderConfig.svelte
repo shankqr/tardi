@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getIdToken } from '$lib/stores/auth';
-	import { getAgentConfig, updateAgentConfig } from '$lib/api/client';
+	import { getAgentConfig, updateAgentConfig, syncConfig } from '$lib/api/client';
 
 	const DEFAULT_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 
@@ -15,20 +15,21 @@
 	let openrouterKey = $state('');
 	let currentModel = $state(DEFAULT_MODEL);
 	let currentProvider = $state('openrouter');
-	let saving = $state(false);
 	let loading = $state(true);
-	let saveError = $state<string | null>(null);
-	let saveSuccess = $state(false);
 	let showKey = $state(false);
 	let keyDirty = $state(false);
 	let showGuide = $state(false);
+
+	// Sync progress state
+	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'success' | 'failed';
+	let syncPhase = $state<SyncPhase>('idle');
+	let syncError = $state<string | null>(null);
 
 	async function loadConfig() {
 		loading = true;
 		try {
 			const token = await getIdToken();
 			if (!token) {
-				// Auth not ready yet — retry once after a short delay
 				await new Promise((r) => setTimeout(r, 1500));
 				const retryToken = await getIdToken();
 				if (!retryToken) return;
@@ -62,9 +63,8 @@
 	}
 
 	async function handleSave() {
-		saving = true;
-		saveError = null;
-		saveSuccess = false;
+		syncPhase = 'saving';
+		syncError = null;
 		try {
 			const token = await getIdToken();
 			if (!token) throw new Error('Not authenticated');
@@ -78,14 +78,34 @@
 			};
 
 			await updateAgentConfig(token, instanceId, config);
-			saveSuccess = true;
 			keyDirty = false;
-			setTimeout(() => (saveSuccess = false), 3000);
+
+			// Now trigger instant sync
+			syncPhase = 'syncing';
+			try {
+				const result = await syncConfig(token, instanceId);
+				if (result.synced) {
+					syncPhase = 'success';
+					setTimeout(() => {
+						if (syncPhase === 'success') syncPhase = 'idle';
+					}, 4000);
+				} else {
+					syncError = result.error || 'Sync failed — changes will apply within 5 minutes';
+					syncPhase = 'failed';
+				}
+			} catch {
+				syncError = 'Could not reach your agent — changes will apply within 5 minutes';
+				syncPhase = 'failed';
+			}
 		} catch (err) {
-			saveError = err instanceof Error ? err.message : 'Failed to save';
-		} finally {
-			saving = false;
+			syncError = err instanceof Error ? err.message : 'Failed to save';
+			syncPhase = 'failed';
 		}
+	}
+
+	function dismissSync() {
+		syncPhase = 'idle';
+		syncError = null;
 	}
 
 	onMount(() => {
@@ -103,6 +123,73 @@
 		</div>
 	{:else}
 		<div class="mt-4 space-y-4">
+			<!-- Sync progress overlay -->
+			{#if syncPhase !== 'idle'}
+				<div class="rounded-lg border p-4 {syncPhase === 'success' ? 'border-green-200 bg-green-50' : syncPhase === 'failed' ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}">
+					{#if syncPhase === 'saving'}
+						<div class="flex items-center gap-3">
+							<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+							</svg>
+							<div>
+								<p class="text-sm font-medium text-gray-900">Saving configuration...</p>
+							</div>
+						</div>
+					{:else if syncPhase === 'syncing'}
+						<div class="flex items-center gap-3">
+							<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+							</svg>
+							<div>
+								<p class="text-sm font-medium text-gray-900">Applying to your agent...</p>
+								<p class="text-xs text-gray-500">Restarting with new configuration</p>
+							</div>
+						</div>
+					{:else if syncPhase === 'success'}
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-3">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-green-600 shrink-0">
+									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+								</svg>
+								<p class="text-sm font-medium text-green-800">Configuration applied successfully</p>
+							</div>
+							<button onclick={dismissSync} class="text-green-500 hover:text-green-700">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
+									<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+								</svg>
+							</button>
+						</div>
+					{:else if syncPhase === 'failed'}
+						<div class="flex items-start justify-between">
+							<div class="flex items-start gap-3">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-red-500 shrink-0 mt-0.5">
+									<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+								</svg>
+								<div>
+									<p class="text-sm font-medium text-red-800">{syncError}</p>
+									<div class="mt-2 flex gap-2">
+										<button
+											onclick={handleSave}
+											class="rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700"
+										>
+											Retry
+										</button>
+										<button
+											onclick={dismissSync}
+											class="rounded-md border border-red-300 px-3 py-1 text-xs text-red-700 hover:bg-red-100"
+										>
+											Dismiss
+										</button>
+									</div>
+								</div>
+							</div>
+						</div>
+					{/if}
+				</div>
+			{/if}
+
 			<!-- OpenRouter API Key -->
 			<div>
 				<label for="openrouter-key" class="text-sm font-medium text-gray-700">OpenRouter API Key</label>
@@ -114,7 +201,7 @@
 							value={openrouterKey}
 							oninput={(e) => { openrouterKey = e.currentTarget.value; keyDirty = true; }}
 							placeholder="sk-or-v1-..."
-							disabled={disabled}
+							disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing'}
 							class="block w-full rounded-lg border border-gray-300 px-3 py-2 pr-16 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
 						/>
 						<button
@@ -136,10 +223,10 @@
 				<button
 					type="button"
 					onclick={handleSave}
-					disabled={disabled || saving}
+					disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing'}
 					class="rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
 				>
-					{saving ? 'Saving...' : 'Save'}
+					{syncPhase === 'saving' || syncPhase === 'syncing' ? 'Applying...' : 'Save'}
 				</button>
 				<a
 					href="https://openrouter.ai/keys"
@@ -160,12 +247,6 @@
 				>
 					{showGuide ? 'Hide Guide' : 'Guide Me'}
 				</button>
-				{#if saveSuccess}
-					<span class="text-sm text-green-600">Saved</span>
-				{/if}
-				{#if saveError}
-					<span class="text-sm text-red-600">{saveError}</span>
-				{/if}
 			</div>
 
 			{#if showGuide}
@@ -192,8 +273,6 @@
 					</ol>
 				</div>
 			{/if}
-
-			<p class="text-xs text-gray-400">Changes take effect within 5 minutes on your running agent.</p>
 		</div>
 	{/if}
 </div>

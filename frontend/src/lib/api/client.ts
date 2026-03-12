@@ -178,6 +178,30 @@ export async function updateAgentConfig(
 	return res.json();
 }
 
+export async function syncConfig(
+	token: string,
+	instanceId: string
+): Promise<{ synced: boolean; config_version?: number; error?: string }> {
+	if (USE_MOCK) {
+		return { synced: true, config_version: 1 };
+	}
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), 100000);
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/sync-config`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${token}` },
+		signal: controller.signal
+	}).finally(() => clearTimeout(timer));
+
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		throw new Error(body.error || `Sync failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
 export async function createSnapshot(
 	token: string,
 	instanceId: string,
