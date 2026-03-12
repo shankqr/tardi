@@ -149,6 +149,118 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 	}
 }
 
+// openclawRPCWithEvents is like openclawRPC but also captures the payload of
+// a named event (e.g. "health") that arrives before the RPC response.
+// Returns (rpcResult, eventPayload, error). eventPayload is nil if no matching event arrived.
+func openclawRPCWithEvents(ctx context.Context, ipv4, authToken, method string, params any, captureEvent string) (json.RawMessage, json.RawMessage, error) {
+	url := fmt.Sprintf("wss://%s/?token=%s", ipv4, authToken)
+
+	dialer := websocket.Dialer{
+		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Self-signed cert on user's VPS
+		HandshakeTimeout: 10 * time.Second,
+	}
+
+	conn, _, err := dialer.DialContext(ctx, url, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("websocket dial: %w", err)
+	}
+	defer conn.Close()
+
+	// Read connect.challenge
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return nil, nil, fmt.Errorf("set read deadline: %w", err)
+	}
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		return nil, nil, fmt.Errorf("read challenge: %w", err)
+	}
+	var challengeEvent struct {
+		Type  string `json:"type"`
+		Event string `json:"event"`
+	}
+	if err := json.Unmarshal(msg, &challengeEvent); err != nil || challengeEvent.Event != "connect.challenge" {
+		return nil, nil, fmt.Errorf("expected connect.challenge")
+	}
+
+	// Send connect
+	connectReq := map[string]any{
+		"type": "req", "id": "connect", "method": "connect",
+		"params": map[string]any{
+			"minProtocol": 3, "maxProtocol": 3,
+			"client": map[string]any{
+				"id": "openclaw-control-ui", "version": "1.0", "platform": "linux", "mode": "webchat",
+			},
+			"role": "operator", "scopes": []string{"operator.admin", "operator.approvals", "operator.pairing"},
+			"caps": []string{"tool-events"},
+		},
+	}
+	if err := conn.WriteJSON(connectReq); err != nil {
+		return nil, nil, fmt.Errorf("send connect: %w", err)
+	}
+
+	// Read connect response
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return nil, nil, fmt.Errorf("set read deadline: %w", err)
+	}
+	_, msg, err = conn.ReadMessage()
+	if err != nil {
+		return nil, nil, fmt.Errorf("read connect response: %w", err)
+	}
+	var connectResp struct {
+		OK    bool            `json:"ok"`
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(msg, &connectResp); err != nil || !connectResp.OK {
+		return nil, nil, fmt.Errorf("connect failed: %s", string(connectResp.Error))
+	}
+
+	// Send RPC
+	rpcID := uuid.New().String()
+	if err := conn.WriteJSON(map[string]any{
+		"type": "req", "id": rpcID, "method": method, "params": params,
+	}); err != nil {
+		return nil, nil, fmt.Errorf("send rpc: %w", err)
+	}
+
+	// Read response, capturing the named event if it arrives
+	if err := conn.SetReadDeadline(time.Now().Add(35 * time.Second)); err != nil {
+		return nil, nil, fmt.Errorf("set read deadline: %w", err)
+	}
+
+	var capturedEvent json.RawMessage
+	for {
+		_, msg, err = conn.ReadMessage()
+		if err != nil {
+			return nil, nil, fmt.Errorf("read rpc response: %w", err)
+		}
+
+		var frame struct {
+			Type    string          `json:"type"`
+			Event   string          `json:"event"`
+			ID      string          `json:"id"`
+			OK      bool            `json:"ok"`
+			Payload json.RawMessage `json:"payload"`
+			Error   json.RawMessage `json:"error"`
+		}
+		if err := json.Unmarshal(msg, &frame); err != nil {
+			continue
+		}
+
+		if frame.Type == "event" {
+			if frame.Event == captureEvent && frame.Payload != nil {
+				capturedEvent = frame.Payload
+			}
+			continue
+		}
+		if frame.Type == "res" && frame.ID == rpcID {
+			if !frame.OK {
+				return nil, nil, fmt.Errorf("rpc error: %s", string(frame.Error))
+			}
+			return frame.Payload, capturedEvent, nil
+		}
+	}
+}
+
 // WhatsAppQRHandler returns the WhatsApp login QR code from OpenClaw.
 // POST /api/instances/{id}/whatsapp/qr
 func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
@@ -237,27 +349,37 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
 
-		result, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.status", map[string]any{
+		// channels.status with probe=true returns cached data in the "res" message,
+		// but fires a fresh "health" event with live channel state. We use
+		// openclawRPCWithEvents to capture that health event for accurate status.
+		result, healthEvent, err := openclawRPCWithEvents(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.status", map[string]any{
 			"probe":     true,
 			"timeoutMs": 10000,
-		})
+		}, "health")
 		if err != nil {
 			slog.Error("whatsapp status: rpc failed", "error", err, "instance_id", instanceID)
 			WriteError(w, http.StatusBadGateway, "gateway_error", "failed to get WhatsApp status")
 			return
 		}
 
+		// Prefer health event data (fresh probe) over response data (cached)
+		statusData := result
+		if healthEvent != nil {
+			statusData = healthEvent
+		}
+
 		var status struct {
 			Channels struct {
 				WhatsApp *struct {
-					Linked bool `json:"linked"`
-					Self   struct {
+					Linked    bool `json:"linked"`
+					Connected bool `json:"connected"`
+					Self      struct {
 						E164 *string `json:"e164"`
 					} `json:"self"`
 				} `json:"whatsapp"`
 			} `json:"channels"`
 		}
-		if err := json.Unmarshal(result, &status); err != nil {
+		if err := json.Unmarshal(statusData, &status); err != nil {
 			WriteJSON(w, http.StatusOK, map[string]any{
 				"linked": false,
 			})
