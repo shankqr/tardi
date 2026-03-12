@@ -581,6 +581,64 @@
 						</div>
 					{/if}
 
+					<div class="rounded-xl border border-gray-200 p-5">
+						<div class="flex items-center gap-2">
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5 text-[#2AABEE]">
+								<path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+							</svg>
+							<h3 class="text-sm font-semibold text-gray-900">Telegram</h3>
+						</div>
+						<p class="mt-1 text-xs text-gray-400">Link a Telegram bot to enable messaging through your agent</p>
+
+						<div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
+							<p class="font-semibold text-gray-900">How to set up your Telegram bot:</p>
+							<ol class="mt-2 space-y-2.5">
+								<li>
+									<span class="font-semibold">1.</span> Open Telegram and search for
+									<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#2AABEE] underline hover:text-blue-700">@BotFather</a>
+								</li>
+								<li>
+									<span class="font-semibold">2.</span> Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/newbot</code> to create a new bot
+								</li>
+								<li>
+									<span class="font-semibold">3.</span> Choose a <span class="font-semibold">display name</span> for your bot (e.g. "My AI Agent")
+								</li>
+								<li>
+									<span class="font-semibold">4.</span> Choose a <span class="font-semibold">username</span> ending in <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">bot</code> (e.g. <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">my_ai_agent_bot</code>)
+								</li>
+								<li>
+									<span class="font-semibold">5.</span> BotFather will send you an <span class="font-semibold">API token</span> &mdash; copy it (looks like <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">123456:ABC-DEF1234...</code>)
+								</li>
+								<li>
+									<span class="font-semibold">6.</span> Paste the token below and click <span class="font-semibold">Connect</span>
+								</li>
+							</ol>
+
+							<div class="mt-3 border-t border-gray-200 pt-3">
+								<p class="font-semibold text-gray-900">Optional: Customize your bot</p>
+								<ul class="mt-1.5 space-y-1 text-gray-600">
+									<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setdescription</code> to BotFather to set a bio</li>
+									<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setuserpic</code> to BotFather to set a profile picture</li>
+									<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setabouttext</code> to set the "About" section</li>
+								</ul>
+							</div>
+						</div>
+
+						<div class="mt-4 flex items-center gap-2">
+							<input
+								type="text"
+								placeholder="Paste your bot token here"
+								class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500"
+							/>
+							<button
+								onclick={() => alert('Telegram integration coming soon!')}
+								class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+							>
+								Connect
+							</button>
+						</div>
+					</div>
+
 					{#if (instance.dashboard_url && instance.openclaw_auth_token) || instance.ipv4}
 						<div class="rounded-xl border border-gray-200">
 							<button
