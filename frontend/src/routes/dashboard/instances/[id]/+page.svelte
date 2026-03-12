@@ -260,20 +260,28 @@
 		whatsappPolling = false;
 	}
 
+	let whatsappChecking = $state(false);
+
+	async function refreshWhatsAppStatus() {
+		if (!instance) return;
+		whatsappChecking = true;
+		try {
+			const token = await getIdToken();
+			if (!token) return;
+			const status = await getWhatsAppStatus(token, instance.id);
+			whatsappLinked = status.linked;
+			whatsappPhone = status.phone;
+		} catch {
+			// ignore
+		} finally {
+			whatsappChecking = false;
+		}
+	}
+
 	// Check WhatsApp status on load
 	$effect(() => {
 		if (instance?.status === 'active' && instance.openclaw_auth_token && instance.ipv4) {
-			(async () => {
-				try {
-					const token = await getIdToken();
-					if (!token) return;
-					const status = await getWhatsAppStatus(token, instance.id);
-					whatsappLinked = status.linked;
-					whatsappPhone = status.phone;
-				} catch {
-					// ignore
-				}
-			})();
+			refreshWhatsAppStatus();
 		}
 		return () => stopWhatsAppPolling();
 	});
@@ -437,9 +445,29 @@
 							<p class="mt-1 text-xs text-gray-400">Link your WhatsApp account to enable messaging through your agent</p>
 							<div class="mt-4">
 								{#if whatsappLinked}
-									<div class="flex items-center gap-2 text-sm text-green-700">
-										<span class="h-2 w-2 rounded-full bg-green-500"></span>
-										Linked{whatsappPhone ? ` (${whatsappPhone})` : ''}
+									<div class="flex items-center justify-between">
+										<div class="flex items-center gap-2 text-sm text-green-700">
+											<span class="h-2 w-2 rounded-full bg-green-500"></span>
+											Linked{whatsappPhone ? ` (${whatsappPhone})` : ''}
+										</div>
+										<div class="flex items-center gap-2">
+											<button
+												onclick={refreshWhatsAppStatus}
+												disabled={whatsappChecking}
+												class="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+												title="Refresh status"
+											>
+												{whatsappChecking ? 'Checking...' : 'Refresh'}
+											</button>
+											<button
+												onclick={handleWhatsAppConnect}
+												disabled={whatsappLoading}
+												class="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+												title="Reconnect with a different WhatsApp account"
+											>
+												Reconnect
+											</button>
+										</div>
 									</div>
 									<div class="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
 										<h4 class="text-sm font-semibold text-green-900">Start chatting with your agent</h4>
