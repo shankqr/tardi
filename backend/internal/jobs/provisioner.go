@@ -40,6 +40,8 @@ type CloudInitData struct {
 	OpenAIAPIKey      string // Optional direct OpenAI access
 	OpenClawAuthToken string // Auto-generated, for OpenClaw's own auth
 	OpenClawImageTag  string // e.g. "latest" or "v1.2.3"
+	Provider          string // AI provider: openrouter, anthropic, openai
+	Model             string // Model ID for the provider
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
@@ -350,6 +352,8 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         NEW_OR_KEY=$(echo "$CONFIG" | jq -r '.config.openrouter_api_key // empty')
         NEW_AN_KEY=$(echo "$CONFIG" | jq -r '.config.anthropic_api_key // empty')
         NEW_OA_KEY=$(echo "$CONFIG" | jq -r '.config.openai_api_key // empty')
+        NEW_PROVIDER=$(echo "$CONFIG" | jq -r '.config.provider // empty')
+        NEW_MODEL=$(echo "$CONFIG" | jq -r '.config.model // empty')
 
         # Rebuild .env preserving non-key vars
         grep -v '_API_KEY=' /opt/openclaw/.env > /opt/openclaw/.env.tmp
@@ -359,8 +363,19 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         mv /opt/openclaw/.env.tmp /opt/openclaw/.env
         chmod 600 /opt/openclaw/.env
 
-        # Restart OpenClaw to pick up new env
-        cd /opt/openclaw && docker compose restart openclaw-gateway
+        # Recreate container to pick up new env (restart does not reload env_file)
+        cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
+
+        # Wait for healthy, then update default model if provider+model are set
+        if [ -n "$NEW_PROVIDER" ] && [ -n "$NEW_MODEL" ]; then
+            for i in $(seq 1 12); do
+                sleep 5
+                if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+                    docker exec openclaw-gateway openclaw models set "${NEW_PROVIDER}/${NEW_MODEL}" 2>/dev/null
+                    break
+                fi
+            done
+        fi
 
         echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
     fi
@@ -456,6 +471,17 @@ systemctl enable openclaw-stack
 systemctl start openclaw-stack
 systemctl enable openclaw-heartbeat.timer
 systemctl start openclaw-heartbeat.timer
+
+# --- Set default model after gateway is healthy ---
+{{- if and .Provider .Model}}
+for i in $(seq 1 30); do
+    if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+        docker exec openclaw-gateway openclaw models set "{{.Provider}}/{{.Model}}" 2>/dev/null && break
+        sleep 2
+    fi
+    sleep 2
+done
+{{- end}}
 
 log_status "COMPLETED"
 `))
@@ -651,6 +677,12 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		}
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			ciData.OpenAIAPIKey = v
+		}
+		if v, ok := agentCfg.Config["provider"].(string); ok {
+			ciData.Provider = v
+		}
+		if v, ok := agentCfg.Config["model"].(string); ok {
+			ciData.Model = v
 		}
 	}
 
