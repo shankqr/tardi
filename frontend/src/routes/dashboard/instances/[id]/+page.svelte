@@ -455,7 +455,15 @@
 								{:else if whatsappQR}
 									<div class="flex flex-col items-center gap-3">
 										<img src={whatsappQR} alt="WhatsApp QR Code" class="h-48 w-48 rounded-lg" />
-										<p class="text-xs text-gray-500">Scan with WhatsApp to link your account</p>
+										<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
+											<p class="font-semibold text-gray-900">How to scan this QR code:</p>
+											<ol class="mt-1.5 space-y-1">
+												<li><span class="font-semibold">1.</span> Open <span class="font-semibold">WhatsApp</span> on your phone</li>
+												<li><span class="font-semibold">2.</span> Go to <span class="font-semibold">Settings &gt; Linked Devices</span></li>
+												<li><span class="font-semibold">3.</span> Tap <span class="font-semibold">"Link a Device"</span></li>
+												<li><span class="font-semibold">4.</span> Point your phone camera at the QR code above</li>
+											</ol>
+										</div>
 										{#if whatsappPolling}
 											<p class="text-xs text-gray-400">Waiting for scan...</p>
 										{/if}
