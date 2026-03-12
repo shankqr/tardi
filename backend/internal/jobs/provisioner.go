@@ -661,13 +661,15 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("store openclaw auth token: %w", err)
 	}
 
-	// Fetch API keys from agent config
+	// Fetch API keys from agent config (with defaults for provider/model)
 	ciData := CloudInitData{
 		AgentToken:        agentToken,
 		APIURL:            p.apiURL,
 		InstanceID:        inst.ID.String(),
 		OpenClawAuthToken: openClawAuthToken,
 		OpenClawImageTag:  p.openClawImageTag,
+		Provider:          "openrouter",
+		Model:             "nvidia/nemotron-3-super-120b-a12b:free",
 	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, p.pool, inst.ID)
 	if err != nil {
@@ -683,10 +685,10 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			ciData.OpenAIAPIKey = v
 		}
-		if v, ok := agentCfg.Config["provider"].(string); ok {
+		if v, ok := agentCfg.Config["provider"].(string); ok && v != "" {
 			ciData.Provider = v
 		}
-		if v, ok := agentCfg.Config["model"].(string); ok {
+		if v, ok := agentCfg.Config["model"].(string); ok && v != "" {
 			ciData.Model = v
 		}
 		ciData.ConfigVersion = agentCfg.Version
