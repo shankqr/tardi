@@ -98,10 +98,14 @@ type VpsInstance struct {
 	RootPassword         *string
 	AgentTokenSecretName *string
 	OpenClawAuthToken    *string
-	AgentStatus          *string
-	LastHeartbeatAt      *time.Time
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	AgentStatus              *string
+	LastHeartbeatAt          *time.Time
+	OpenClawVersion          *string
+	TargetOpenClawVersion    *string
+	OpenClawUpdateStatus     *string
+	OpenClawUpdateError      *string
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
 }
 
 type ProvisioningJob struct {

@@ -143,7 +143,9 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running') LIMIT 1),
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
+		       created_at, updated_at
 		FROM vps_instances v
 		WHERE user_id = $1 AND status != 'terminated'
 		ORDER BY created_at DESC
@@ -161,6 +163,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status, &inst.Step,
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -177,7 +180,9 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running') LIMIT 1),
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
+		       created_at, updated_at
 		FROM vps_instances v
 		WHERE id = $1 AND user_id = $2
 	`, instanceID, userID).Scan(
@@ -185,6 +190,7 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status, &inst.Step,
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -483,7 +489,9 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
+		       created_at, updated_at
 		FROM vps_instances
 		WHERE status = $1
 	`, status)
@@ -500,6 +508,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -642,7 +651,9 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
+		       created_at, updated_at
 		FROM vps_instances
 		WHERE subscription_id = $1 AND status NOT IN ('terminated', 'terminating')
 	`, subID)
@@ -659,6 +670,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -865,7 +877,9 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
+		       created_at, updated_at
 		FROM vps_instances
 		WHERE agent_token_secret_name = $1
 	`, tokenSecretName).Scan(
@@ -873,6 +887,7 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -882,4 +897,56 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 		return nil, fmt.Errorf("get instance by agent token: %w", err)
 	}
 	return inst, nil
+}
+
+// GetGlobalTargetVersion returns the platform-wide target OpenClaw version.
+func GetGlobalTargetVersion(ctx context.Context, pool *pgxpool.Pool) (string, error) {
+	var value string
+	err := pool.QueryRow(ctx, `
+		SELECT value FROM platform_settings WHERE key = 'target_openclaw_version'
+	`).Scan(&value)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "latest", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get global target version: %w", err)
+	}
+	return value, nil
+}
+
+// SetGlobalTargetVersion updates the platform-wide target OpenClaw version.
+func SetGlobalTargetVersion(ctx context.Context, pool *pgxpool.Pool, version string) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO platform_settings (key, value, updated_at)
+		VALUES ('target_openclaw_version', $1, now())
+		ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()
+	`, version)
+	if err != nil {
+		return fmt.Errorf("set global target version: %w", err)
+	}
+	return nil
+}
+
+// UpdateInstanceOpenClawVersion records the version the agent reports and its update status.
+func UpdateInstanceOpenClawVersion(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, version string, updateStatus *string, updateError *string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE vps_instances
+		SET openclaw_version = $1, openclaw_update_status = $2, openclaw_update_error = $3, updated_at = now()
+		WHERE id = $4
+	`, version, updateStatus, updateError, instanceID)
+	if err != nil {
+		return fmt.Errorf("update openclaw version: %w", err)
+	}
+	return nil
+}
+
+// SetInstanceTargetVersion sets a per-instance target version override (nil to clear).
+func SetInstanceTargetVersion(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, version *string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET target_openclaw_version = $1, updated_at = now() WHERE id = $2
+	`, version, instanceID)
+	if err != nil {
+		return fmt.Errorf("set instance target version: %w", err)
+	}
+	return nil
 }

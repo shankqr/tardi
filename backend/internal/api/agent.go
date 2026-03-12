@@ -64,9 +64,12 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Parse optional status from body
+		// Parse status and version info from body
 		var body struct {
-			Status string `json:"status"`
+			Status               string `json:"status"`
+			OpenClawVersion      string `json:"openclaw_version"`
+			OpenClawUpdateStatus string `json:"openclaw_update_status"`
+			OpenClawUpdateError  string `json:"openclaw_update_error"`
 		}
 		json.NewDecoder(r.Body).Decode(&body)
 
@@ -81,6 +84,21 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
+		// Record OpenClaw version and update status if reported
+		if body.OpenClawVersion != "" {
+			var updateStatus *string
+			var updateError *string
+			if body.OpenClawUpdateStatus != "" {
+				updateStatus = &body.OpenClawUpdateStatus
+			}
+			if body.OpenClawUpdateError != "" {
+				updateError = &body.OpenClawUpdateError
+			}
+			if err := db.UpdateInstanceOpenClawVersion(r.Context(), deps.Pool, inst.ID, body.OpenClawVersion, updateStatus, updateError); err != nil {
+				slog.Error("agent heartbeat: update openclaw version", "error", err)
+			}
+		}
+
 		// Return current config version so agent can detect changes
 		var configVersion int
 		config, err := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
@@ -88,8 +106,17 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			configVersion = config.Version
 		}
 
+		// Compute effective target version: per-instance override > global
+		var targetVersion string
+		if inst.TargetOpenClawVersion != nil && *inst.TargetOpenClawVersion != "" {
+			targetVersion = *inst.TargetOpenClawVersion
+		} else {
+			targetVersion, _ = db.GetGlobalTargetVersion(r.Context(), deps.Pool)
+		}
+
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"config_version": configVersion,
+			"config_version":          configVersion,
+			"target_openclaw_version": targetVersion,
 		})
 	}
 }

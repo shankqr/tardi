@@ -26,8 +26,10 @@ type InstanceResponse struct {
 	AgentStatus       *string `json:"agent_status"`
 	LastHeartbeatAt   *string `json:"last_heartbeat_at"`
 	DashboardURL      *string `json:"dashboard_url"`
-	OpenClawAuthToken *string `json:"openclaw_auth_token,omitempty"`
-	CreatedAt         string  `json:"created_at"`
+	OpenClawAuthToken    *string `json:"openclaw_auth_token,omitempty"`
+	OpenClawVersion      *string `json:"openclaw_version,omitempty"`
+	OpenClawUpdateStatus *string `json:"openclaw_update_status,omitempty"`
+	CreatedAt            string  `json:"created_at"`
 }
 
 // SubscriptionResponse matches frontend's Subscription type.
@@ -58,6 +60,8 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 	r.RootPassword = inst.RootPassword
 	r.AgentStatus = inst.AgentStatus
 	r.OpenClawAuthToken = inst.OpenClawAuthToken
+	r.OpenClawVersion = inst.OpenClawVersion
+	r.OpenClawUpdateStatus = inst.OpenClawUpdateStatus
 	if inst.IPv4 != nil && *inst.IPv4 != "" {
 		url := fmt.Sprintf("https://%s", *inst.IPv4)
 		r.DashboardURL = &url

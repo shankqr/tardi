@@ -205,6 +205,8 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 
 	// Mark instance active
 	_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusActive)
+	// Record the initial OpenClaw version
+	_ = db.UpdateInstanceOpenClawVersion(ctx, r.pool, inst.ID, r.openClawImageTag, nil, nil)
 
 	r.logger.Info("resumer: instance resumed successfully",
 		"instance_id", inst.ID,

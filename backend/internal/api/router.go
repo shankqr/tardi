@@ -50,6 +50,14 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/agent/config", AgentConfigHandler(deps))
 	mux.HandleFunc("POST /api/agent/heartbeat", AgentHeartbeatHandler(deps))
 
+	// Admin endpoints (admin token auth)
+	adminMux := http.NewServeMux()
+	adminMux.HandleFunc("GET /api/admin/openclaw/version", AdminGetVersionHandler(deps))
+	adminMux.HandleFunc("PUT /api/admin/openclaw/version", AdminSetGlobalVersionHandler(deps))
+	adminMux.HandleFunc("PUT /api/admin/openclaw/version/{id}", AdminSetInstanceVersionHandler(deps))
+	adminAuth := adminTokenAuth(deps.Config.AdminAPIToken)
+	mux.Handle("/api/admin/", adminAuth(adminMux))
+
 	// Stripe webhook (signature verification, not JWT auth)
 	mux.HandleFunc("POST /api/webhooks/stripe", StripeWebhookHandler(deps))
 
@@ -67,4 +75,22 @@ func NewRouter(deps Dependencies) http.Handler {
 	)
 
 	return handler
+}
+
+// adminTokenAuth returns middleware that validates the X-Admin-Token header.
+func adminTokenAuth(token string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if token == "" {
+				WriteError(w, http.StatusForbidden, "forbidden", "admin API not configured")
+				return
+			}
+			provided := r.Header.Get("X-Admin-Token")
+			if provided == "" || provided != token {
+				WriteError(w, http.StatusUnauthorized, "unauthorized", "invalid admin token")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

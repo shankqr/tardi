@@ -1,0 +1,116 @@
+package api
+
+import (
+	"encoding/json"
+	"log/slog"
+	"net/http"
+
+	"github.com/google/uuid"
+
+	"github.com/shanq/tardi/internal/db"
+)
+
+// AdminGetVersionHandler returns the global target version and all instance version statuses.
+func AdminGetVersionHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		globalVersion, err := db.GetGlobalTargetVersion(r.Context(), deps.Pool)
+		if err != nil {
+			slog.Error("admin: get global version", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to get global version")
+			return
+		}
+
+		// Get all active instances with their version info
+		instances, err := db.GetActiveInstancesByStatus(r.Context(), deps.Pool, "active")
+		if err != nil {
+			slog.Error("admin: get active instances", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to get instances")
+			return
+		}
+
+		type instanceVersion struct {
+			ID                   string  `json:"id"`
+			Name                 string  `json:"name"`
+			OpenClawVersion      *string `json:"openclaw_version"`
+			TargetOpenClawVersion *string `json:"target_openclaw_version"`
+			OpenClawUpdateStatus *string `json:"openclaw_update_status"`
+			OpenClawUpdateError  *string `json:"openclaw_update_error"`
+		}
+
+		var versions []instanceVersion
+		for _, inst := range instances {
+			versions = append(versions, instanceVersion{
+				ID:                    inst.ID.String(),
+				Name:                  inst.Name,
+				OpenClawVersion:       inst.OpenClawVersion,
+				TargetOpenClawVersion: inst.TargetOpenClawVersion,
+				OpenClawUpdateStatus:  inst.OpenClawUpdateStatus,
+				OpenClawUpdateError:   inst.OpenClawUpdateError,
+			})
+		}
+
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"global_target_version": globalVersion,
+			"instances":             versions,
+		})
+	}
+}
+
+// AdminSetGlobalVersionHandler sets the global target OpenClaw version.
+func AdminSetGlobalVersionHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Version string `json:"version"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+			return
+		}
+		if body.Version == "" {
+			WriteError(w, http.StatusBadRequest, "bad_request", "version is required")
+			return
+		}
+
+		if err := db.SetGlobalTargetVersion(r.Context(), deps.Pool, body.Version); err != nil {
+			slog.Error("admin: set global version", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to set global version")
+			return
+		}
+
+		slog.Info("admin: global openclaw version updated", "version", body.Version)
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"global_target_version": body.Version,
+		})
+	}
+}
+
+// AdminSetInstanceVersionHandler sets a per-instance target version override.
+func AdminSetInstanceVersionHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		instanceID, err := uuid.Parse(r.PathValue("id"))
+		if err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid instance id")
+			return
+		}
+
+		var body struct {
+			Version *string `json:"version"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+			return
+		}
+
+		if err := db.SetInstanceTargetVersion(r.Context(), deps.Pool, instanceID, body.Version); err != nil {
+			slog.Error("admin: set instance version", "instance_id", instanceID, "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to set instance version")
+			return
+		}
+
+		slog.Info("admin: instance openclaw version override set", "instance_id", instanceID, "version", body.Version)
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"instance_id":            instanceID.String(),
+			"target_openclaw_version": body.Version,
+		})
+	}
+}

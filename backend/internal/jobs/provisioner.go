@@ -301,7 +301,7 @@ RestartSec=30
 WantedBy=multi-user.target
 SVCEOF
 
-# --- Heartbeat script (with config sync) ---
+# --- Heartbeat script (with config sync and version update) ---
 cat > /opt/openclaw/heartbeat.sh <<'HBEOF'
 #!/bin/bash
 source /opt/openclaw/.env
@@ -322,11 +322,21 @@ else
     fi
 fi
 
-# Send heartbeat and capture response
+# Detect current running OpenClaw version (image tag)
+CURRENT_IMAGE=$(docker inspect --format='{{"{{"}}.Config.Image{{"}}"}}' openclaw-openclaw-gateway-1 2>/dev/null || \
+                docker inspect --format='{{"{{"}}.Config.Image{{"}}"}}' openclaw-gateway 2>/dev/null)
+CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://')
+[ -z "$CURRENT_TAG" ] && CURRENT_TAG="unknown"
+
+# Read update status if mid-update
+UPDATE_STATUS=$(cat /opt/openclaw/.update_status 2>/dev/null || echo "")
+UPDATE_ERROR=$(cat /opt/openclaw/.update_error 2>/dev/null || echo "")
+
+# Send heartbeat with version info and capture response
 RESPONSE=$(curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
     -H "Authorization: Bearer ${AGENT_TOKEN}" \
     -H "Content-Type: application/json" \
-    -d "{\"status\":\"${STATUS}\"}" 2>/dev/null)
+    -d "{\"status\":\"${STATUS}\",\"openclaw_version\":\"${CURRENT_TAG}\",\"openclaw_update_status\":\"${UPDATE_STATUS}\",\"openclaw_update_error\":\"${UPDATE_ERROR}\"}" 2>/dev/null)
 
 # Check for config changes
 REMOTE_VERSION=$(echo "$RESPONSE" | jq -r '.config_version // 0' 2>/dev/null)
@@ -353,6 +363,65 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         cd /opt/openclaw && docker compose restart openclaw-gateway
 
         echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
+    fi
+fi
+
+# --- OpenClaw version update ---
+TARGET_VERSION=$(echo "$RESPONSE" | jq -r '.target_openclaw_version // empty' 2>/dev/null)
+
+if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
+   && [ "$UPDATE_STATUS" != "pulling" ] && [ "$UPDATE_STATUS" != "updating" ]; then
+
+    echo "pulling" > /opt/openclaw/.update_status
+    rm -f /opt/openclaw/.update_error
+
+    # Update docker-compose.yml to use the new tag
+    sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ghcr.io/openclaw/openclaw:${TARGET_VERSION}|" \
+        /opt/openclaw/docker-compose.yml
+
+    # Pull the new image (rollback on failure)
+    if ! docker compose -f /opt/openclaw/docker-compose.yml pull openclaw-gateway 2>/tmp/openclaw-pull.log; then
+        echo "failed" > /opt/openclaw/.update_status
+        echo "pull failed: $(tail -1 /tmp/openclaw-pull.log)" > /opt/openclaw/.update_error
+        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ghcr.io/openclaw/openclaw:${CURRENT_TAG}|" \
+            /opt/openclaw/docker-compose.yml
+        exit 0
+    fi
+
+    echo "updating" > /opt/openclaw/.update_status
+
+    # Recreate container with new image (volume mount preserves all user data)
+    if ! docker compose -f /opt/openclaw/docker-compose.yml up -d openclaw-gateway 2>/tmp/openclaw-update.log; then
+        echo "failed" > /opt/openclaw/.update_status
+        echo "up failed: $(tail -1 /tmp/openclaw-update.log)" > /opt/openclaw/.update_error
+        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ghcr.io/openclaw/openclaw:${CURRENT_TAG}|" \
+            /opt/openclaw/docker-compose.yml
+        docker compose -f /opt/openclaw/docker-compose.yml up -d openclaw-gateway 2>/dev/null
+        exit 0
+    fi
+
+    # Health check: wait up to 90 seconds (18 x 5s)
+    HEALTHY=false
+    for i in $(seq 1 18); do
+        sleep 5
+        if curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+            HEALTHY=true
+            break
+        fi
+    done
+
+    if [ "$HEALTHY" = true ]; then
+        echo "completed" > /opt/openclaw/.update_status
+        rm -f /opt/openclaw/.update_error
+        # Clean up old images to save disk space
+        docker image prune -f >/dev/null 2>&1
+    else
+        # ROLLBACK: revert to previous version
+        echo "failed" > /opt/openclaw/.update_status
+        echo "health check failed after update" > /opt/openclaw/.update_error
+        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ghcr.io/openclaw/openclaw:${CURRENT_TAG}|" \
+            /opt/openclaw/docker-compose.yml
+        docker compose -f /opt/openclaw/docker-compose.yml up -d openclaw-gateway 2>/dev/null
     fi
 fi
 HBEOF
@@ -719,6 +788,8 @@ func (p *Provisioner) stepActivate(ctx context.Context, job *models.Provisioning
 	if err := db.UpdateInstanceStatus(ctx, p.pool, job.VpsInstanceID, models.VpsStatusActive); err != nil {
 		return fmt.Errorf("activate instance: %w", err)
 	}
+	// Record the initial OpenClaw version
+	_ = db.UpdateInstanceOpenClawVersion(ctx, p.pool, job.VpsInstanceID, p.openClawImageTag, nil, nil)
 	return nil
 }
 
@@ -728,13 +799,16 @@ func GetInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at, created_at, updated_at
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
+		       created_at, updated_at
 		FROM vps_instances WHERE id = $1
 	`, instanceID).Scan(
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if err != nil {
