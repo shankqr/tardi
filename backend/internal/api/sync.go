@@ -20,7 +20,9 @@ import (
 // up-to-date (not baked in at provisioning time).
 const configSyncScript = `#!/bin/bash
 set -euo pipefail
-source /opt/openclaw/.env
+# Source only the vars we need (full source breaks on unquoted values with spaces)
+export API_URL=$(grep '^API_URL=' /opt/openclaw/.env | cut -d= -f2-)
+export AGENT_TOKEN=$(grep '^AGENT_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
 
 CONFIG=$(curl -sf "${API_URL}/api/agent/config" \
     -H "Authorization: Bearer ${AGENT_TOKEN}" 2>/dev/null)
