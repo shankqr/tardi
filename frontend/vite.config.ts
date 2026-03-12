@@ -5,11 +5,13 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 import { parse } from 'smol-toml';
 import { defineConfig } from 'vite';
 
-// Load VITE_* vars from wrangler.toml preview env so we have a single source of truth.
+// Load VITE_* vars from wrangler.toml so we have a single source of truth.
+// Reads from "production" or "preview" env section based on WRANGLER_ENV.
 function loadWranglerEnv(): Record<string, string> {
 	const toml = readFileSync('wrangler.toml', 'utf-8');
 	const config = parse(toml) as Record<string, unknown>;
-	const vars = (config.env as Record<string, Record<string, unknown>>)?.preview?.vars as
+	const envName = process.env.WRANGLER_ENV === 'production' ? 'production' : 'preview';
+	const vars = (config.env as Record<string, Record<string, unknown>>)?.[envName]?.vars as
 		| Record<string, string>
 		| undefined;
 	if (!vars) return {};

@@ -52,7 +52,7 @@ jobs:
           SHA_SHORT=$(echo "${{ github.sha }}" | head -c 7)
           if [ "${{ github.ref_name }}" = "main" ]; then
             ENV_TAG="prod-${SHA_SHORT}"
-            CONVENIENCE_TAG="stable"
+            CONVENIENCE_TAG="latest"
             CLOUD_RUN_SERVICE="tardi-api-prod"
           else
             ENV_TAG="dev-${SHA_SHORT}"

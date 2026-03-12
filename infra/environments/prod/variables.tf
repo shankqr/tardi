@@ -24,7 +24,7 @@ variable "frontend_url" {
 variable "docker_image_tag" {
   description = "Docker image tag for Cloud Run"
   type        = string
-  default     = "stable"
+  default     = "latest"
 }
 
 variable "api_url" {
