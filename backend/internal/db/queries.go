@@ -142,7 +142,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running') LIMIT 1),
+		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running','failed') ORDER BY updated_at DESC LIMIT 1),
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       created_at, updated_at
@@ -179,7 +179,7 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running') LIMIT 1),
+		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running','failed') ORDER BY updated_at DESC LIMIT 1),
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       created_at, updated_at
