@@ -179,8 +179,10 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
 		defer cancel()
 
+		force := r.URL.Query().Get("force") == "true"
+
 		result, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "web.login.start", map[string]any{
-			"force":     false,
+			"force":     force,
 			"timeoutMs": 30000,
 		})
 		if err != nil {
@@ -235,7 +237,10 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
 
-		result, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.status", map[string]any{})
+		result, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.status", map[string]any{
+			"probe":     true,
+			"timeoutMs": 10000,
+		})
 		if err != nil {
 			slog.Error("whatsapp status: rpc failed", "error", err, "instance_id", instanceID)
 			WriteError(w, http.StatusBadGateway, "gateway_error", "failed to get WhatsApp status")

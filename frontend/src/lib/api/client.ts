@@ -236,13 +236,15 @@ export async function deleteSnapshot(token: string, snapshotId: string): Promise
 
 export async function getWhatsAppQR(
 	token: string,
-	instanceId: string
+	instanceId: string,
+	force = false
 ): Promise<{ qr_data_url: string; message: string }> {
 	if (USE_MOCK) {
 		return { qr_data_url: '', message: 'Mock mode' };
 	}
 
-	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/whatsapp/qr`, {
+	const url = `${getApiUrl()}/api/instances/${instanceId}/whatsapp/qr${force ? '?force=true' : ''}`;
+	const res = await fetch(url, {
 		method: 'POST',
 		headers: { Authorization: `Bearer ${token}` }
 	});

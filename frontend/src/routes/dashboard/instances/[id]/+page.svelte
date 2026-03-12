@@ -191,11 +191,12 @@
 	let showApiKeyRequired = $state(false);
 	let showApiKeyGuide = $state(false);
 
-	async function handleWhatsAppConnect() {
+	async function handleWhatsAppConnect(force = false) {
 		if (!instance) return;
 		whatsappLoading = true;
 		whatsappError = null;
 		whatsappQR = null;
+		whatsappLinked = false;
 		showApiKeyRequired = false;
 		try {
 			const token = await getIdToken();
@@ -215,7 +216,7 @@
 				return;
 			}
 
-			const result = await getWhatsAppQR(token, instance.id);
+			const result = await getWhatsAppQR(token, instance.id, force);
 			if (result.qr_data_url) {
 				whatsappQR = result.qr_data_url;
 				startWhatsAppPolling();
@@ -460,7 +461,7 @@
 												{whatsappChecking ? 'Checking...' : 'Refresh'}
 											</button>
 											<button
-												onclick={handleWhatsAppConnect}
+												onclick={() => handleWhatsAppConnect(true)}
 												disabled={whatsappLoading}
 												class="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
 												title="Reconnect with a different WhatsApp account"
@@ -496,7 +497,7 @@
 											<p class="text-xs text-gray-400">Waiting for scan...</p>
 										{/if}
 										<button
-											onclick={handleWhatsAppConnect}
+											onclick={() => handleWhatsAppConnect()}
 											class="text-xs text-gray-500 hover:text-gray-700"
 										>
 											Refresh QR
@@ -546,7 +547,7 @@
 										<p class="mb-3 text-xs text-red-600">{whatsappError}</p>
 									{/if}
 									<button
-										onclick={handleWhatsAppConnect}
+										onclick={() => handleWhatsAppConnect()}
 										disabled={whatsappLoading || instance.status !== 'active'}
 										class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
 									>
