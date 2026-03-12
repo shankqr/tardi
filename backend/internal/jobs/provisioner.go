@@ -142,6 +142,7 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
     }{{- if .TelegramBotToken}},
     "telegram": {
       "enabled": true,
+      "token": "{{.TelegramBotToken}}",
       "dmPolicy": "open",
       "allowFrom": ["*"]
     }{{- end}}
@@ -391,7 +392,7 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         # Update openclaw.json to enable/disable telegram channel
         OC_CONFIG="/opt/openclaw/data/openclaw/openclaw.json"
         if [ -n "$NEW_TG_TOKEN" ]; then
-            jq '.channels.telegram = {"enabled": true, "dmPolicy": "open", "allowFrom": ["*"]}' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
+            jq --arg token "$NEW_TG_TOKEN" '.channels.telegram = {"enabled": true, "token": $token, "dmPolicy": "open", "allowFrom": ["*"]}' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
         else
             jq 'del(.channels.telegram)' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
         fi
