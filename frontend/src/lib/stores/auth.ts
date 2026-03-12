@@ -32,7 +32,16 @@ function getFriendlyErrorMessage(err: unknown): string {
 			return 'An account already exists with this email using a different sign-in method.';
 		case 'auth/requires-recent-login':
 			return 'Please sign in again to continue.';
+		case 'auth/unauthorized-domain':
+			return 'This domain is not authorized for sign-in. Please contact support.';
+		case 'auth/operation-not-allowed':
+			return 'This sign-in method is not enabled. Please contact support.';
+		case 'auth/internal-error':
+			return 'An internal error occurred. Please try again later.';
+		case 'auth/configuration-not-found':
+			return 'Authentication is not properly configured. Please contact support.';
 		default:
+			console.error('[Auth] Unhandled error code:', code, err);
 			return 'Something went wrong. Please try again.';
 	}
 }
