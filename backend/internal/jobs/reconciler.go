@@ -256,6 +256,8 @@ func (r *Reconciler) reconcileStaleRestarting(ctx context.Context) {
 
 // reconcileStaleSnapshotting fixes instances stuck in "snapshotting" for too long.
 // This happens when the snapshot goroutine crashes or the context times out without cleanup.
+// Note: we check snapshot created_at instead of instance updated_at because heartbeats
+// continuously update the instance's updated_at, making the staleness check unreliable.
 func (r *Reconciler) reconcileStaleSnapshotting(ctx context.Context) {
 	instances, err := db.GetActiveInstancesByStatus(ctx, r.pool, models.VpsStatusSnapshotting)
 	if err != nil {
@@ -264,71 +266,94 @@ func (r *Reconciler) reconcileStaleSnapshotting(ctx context.Context) {
 	}
 
 	for _, inst := range instances {
-		if time.Since(inst.UpdatedAt) < 10*time.Minute {
+		// Find the "creating" snapshot to check how long it's been running
+		snapshots, err := db.GetSnapshotsByInstanceID(ctx, r.pool, inst.ID)
+		if err != nil {
+			r.logger.Error("reconciler: get snapshots for snapshotting instance", "instance_id", inst.ID, "error", err)
+			continue
+		}
+
+		stale := false
+		for _, snap := range snapshots {
+			if snap.Status == models.SnapshotStatusCreating && time.Since(snap.CreatedAt) > 20*time.Minute {
+				stale = true
+				_ = db.UpdateSnapshotError(ctx, r.pool, snap.ID, "snapshot creation timed out")
+			}
+		}
+
+		if !stale {
 			continue
 		}
 
 		r.logger.Warn("reconciler: instance stuck in snapshotting, resetting to active",
 			"instance_id", inst.ID,
-			"stuck_since", inst.UpdatedAt,
 		)
-
-		// Mark any snapshots still in "creating" as error
-		snapshots, err := db.GetSnapshotsByInstanceID(ctx, r.pool, inst.ID)
-		if err == nil {
-			for _, snap := range snapshots {
-				if snap.Status == models.SnapshotStatusCreating {
-					_ = db.UpdateSnapshotError(ctx, r.pool, snap.ID, "snapshot creation timed out")
-				}
-			}
-		}
-
 		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusActive)
 	}
 }
 
 // reconcileStaleRestoring fixes instances stuck in "restoring" for too long.
+// Uses a direct query to find instances that entered restoring status > 15 min ago,
+// since heartbeats update updated_at and make the staleness check unreliable.
 func (r *Reconciler) reconcileStaleRestoring(ctx context.Context) {
-	instances, err := db.GetActiveInstancesByStatus(ctx, r.pool, models.VpsStatusRestoring)
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, provider, provider_server_id
+		FROM vps_instances
+		WHERE status = 'restoring'
+		  AND NOT EXISTS (
+		    SELECT 1 FROM audit_log
+		    WHERE resource_type = 'snapshot' AND action = 'restore_snapshot'
+		      AND created_at > NOW() - INTERVAL '15 minutes'
+		  )
+	`)
 	if err != nil {
 		r.logger.Error("reconciler: get restoring instances", "error", err)
 		return
 	}
+	defer rows.Close()
 
-	for _, inst := range instances {
-		if time.Since(inst.UpdatedAt) < 15*time.Minute {
+	for rows.Next() {
+		var idStr, providerName string
+		var serverID *string
+		if err := rows.Scan(&idStr, &providerName, &serverID); err != nil {
+			r.logger.Error("reconciler: scan restoring row", "error", err)
 			continue
 		}
 
-		if inst.ProviderServerID == nil {
-			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
-			continue
-		}
-
-		prov, err := r.registry.Get(inst.Provider)
+		instanceID, err := uuid.Parse(idStr)
 		if err != nil {
 			continue
 		}
 
-		server, err := prov.GetServer(ctx, *inst.ProviderServerID)
+		if serverID == nil {
+			_ = db.UpdateInstanceStatus(ctx, r.pool, instanceID, models.VpsStatusError)
+			continue
+		}
+
+		prov, err := r.registry.Get(providerName)
+		if err != nil {
+			continue
+		}
+
+		server, err := prov.GetServer(ctx, *serverID)
 		if err != nil {
 			r.logger.Warn("reconciler: failed to get restoring server",
-				"instance_id", inst.ID, "error", err)
-			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+				"instance_id", idStr, "error", err)
+			_ = db.UpdateInstanceStatus(ctx, r.pool, instanceID, models.VpsStatusError)
 			continue
 		}
 
 		if server.Status == "running" {
 			r.logger.Info("reconciler: stale restoring instance is actually running, activating",
-				"instance_id", inst.ID,
+				"instance_id", idStr,
 			)
-			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusActive)
+			_ = db.UpdateInstanceStatus(ctx, r.pool, instanceID, models.VpsStatusActive)
 		} else {
 			r.logger.Warn("reconciler: stale restoring instance still not running",
-				"instance_id", inst.ID,
+				"instance_id", idStr,
 				"actual_status", server.Status,
 			)
-			_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
+			_ = db.UpdateInstanceStatus(ctx, r.pool, instanceID, models.VpsStatusError)
 		}
 	}
 }
