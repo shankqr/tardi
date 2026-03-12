@@ -231,31 +231,35 @@ func executeCreateSnapshot(deps Dependencies, inst *models.VpsInstance, snap *mo
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	// Use a separate context for DB cleanup so it works even if the provider context times out
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cleanupCancel()
-
 	prov, err := deps.Registry.Get(inst.Provider)
 	if err != nil {
 		slog.Error("create snapshot: provider not found", "provider", inst.Provider, "error", err)
-		_ = db.UpdateSnapshotError(cleanupCtx, deps.Pool, snap.ID, "provider unavailable")
-		_ = db.UpdateInstanceStatus(cleanupCtx, deps.Pool, inst.ID, models.VpsStatusActive)
+		dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer dbCancel()
+		_ = db.UpdateSnapshotError(dbCtx, deps.Pool, snap.ID, "provider unavailable")
+		_ = db.UpdateInstanceStatus(dbCtx, deps.Pool, inst.ID, models.VpsStatusActive)
 		return
 	}
 
 	result, err := prov.CreateSnapshot(ctx, *inst.ProviderServerID, snap.Name)
 	if err != nil {
 		slog.Error("create snapshot: provider call failed", "snapshot_id", snap.ID, "error", err)
-		_ = db.UpdateSnapshotError(cleanupCtx, deps.Pool, snap.ID, err.Error())
-		_ = db.UpdateInstanceStatus(cleanupCtx, deps.Pool, inst.ID, models.VpsStatusActive)
+		dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer dbCancel()
+		_ = db.UpdateSnapshotError(dbCtx, deps.Pool, snap.ID, err.Error())
+		_ = db.UpdateInstanceStatus(dbCtx, deps.Pool, inst.ID, models.VpsStatusActive)
 		return
 	}
 
-	if err := db.UpdateSnapshotReady(cleanupCtx, deps.Pool, snap.ID, result.ProviderImageID, result.SizeGB); err != nil {
+	// Fresh context for DB updates after potentially long provider call
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer dbCancel()
+
+	if err := db.UpdateSnapshotReady(dbCtx, deps.Pool, snap.ID, result.ProviderImageID, result.SizeGB); err != nil {
 		slog.Error("create snapshot: store result", "snapshot_id", snap.ID, "error", err)
 	}
 
-	_ = db.UpdateInstanceStatus(cleanupCtx, deps.Pool, inst.ID, models.VpsStatusActive)
+	_ = db.UpdateInstanceStatus(dbCtx, deps.Pool, inst.ID, models.VpsStatusActive)
 	slog.Info("snapshot created", "snapshot_id", snap.ID, "image_id", result.ProviderImageID)
 }
 
@@ -263,30 +267,34 @@ func executeRestore(deps Dependencies, inst *models.VpsInstance, snap *models.Sn
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cleanupCancel()
-
 	prov, err := deps.Registry.Get(inst.Provider)
 	if err != nil {
 		slog.Error("restore: provider not found", "provider", inst.Provider, "error", err)
-		_ = db.UpdateInstanceStatus(cleanupCtx, deps.Pool, inst.ID, models.VpsStatusError)
+		dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer dbCancel()
+		_ = db.UpdateInstanceStatus(dbCtx, deps.Pool, inst.ID, models.VpsStatusError)
 		return
 	}
 
 	newPassword, err := prov.RebuildServer(ctx, *inst.ProviderServerID, *snap.ProviderImageID)
 	if err != nil {
 		slog.Error("restore: provider call failed", "instance_id", inst.ID, "error", err)
-		_ = db.UpdateInstanceStatus(cleanupCtx, deps.Pool, inst.ID, models.VpsStatusError)
+		dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer dbCancel()
+		_ = db.UpdateInstanceStatus(dbCtx, deps.Pool, inst.ID, models.VpsStatusError)
 		return
 	}
 
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer dbCancel()
+
 	if newPassword != "" {
-		if err := db.UpdateInstanceRootPassword(cleanupCtx, deps.Pool, inst.ID, newPassword); err != nil {
+		if err := db.UpdateInstanceRootPassword(dbCtx, deps.Pool, inst.ID, newPassword); err != nil {
 			slog.Error("restore: store password", "instance_id", inst.ID, "error", err)
 		}
 	}
 
-	_ = db.UpdateInstanceStatus(cleanupCtx, deps.Pool, inst.ID, models.VpsStatusActive)
+	_ = db.UpdateInstanceStatus(dbCtx, deps.Pool, inst.ID, models.VpsStatusActive)
 	slog.Info("restore completed", "instance_id", inst.ID, "snapshot_id", snap.ID)
 }
 
@@ -294,33 +302,38 @@ func executeDeleteSnapshot(deps Dependencies, snap *models.Snapshot) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cleanupCancel()
-
 	// If the snapshot has a provider image, delete it
 	if snap.ProviderImageID != nil {
 		inst, err := getSnapshotInstance(ctx, deps, snap.VpsInstanceID)
 		if err != nil {
 			slog.Error("delete snapshot: get instance", "error", err)
-			_ = db.UpdateSnapshotError(cleanupCtx, deps.Pool, snap.ID, "failed to get instance")
+			dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer dbCancel()
+			_ = db.UpdateSnapshotError(dbCtx, deps.Pool, snap.ID, "failed to get instance")
 			return
 		}
 
 		prov, err := deps.Registry.Get(inst.Provider)
 		if err != nil {
 			slog.Error("delete snapshot: provider not found", "provider", inst.Provider, "error", err)
-			_ = db.UpdateSnapshotError(cleanupCtx, deps.Pool, snap.ID, "provider unavailable")
+			dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer dbCancel()
+			_ = db.UpdateSnapshotError(dbCtx, deps.Pool, snap.ID, "provider unavailable")
 			return
 		}
 
 		if err := prov.DeleteSnapshot(ctx, *snap.ProviderImageID); err != nil {
 			slog.Error("delete snapshot: provider call failed", "snapshot_id", snap.ID, "error", err)
-			_ = db.UpdateSnapshotError(cleanupCtx, deps.Pool, snap.ID, err.Error())
+			dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer dbCancel()
+			_ = db.UpdateSnapshotError(dbCtx, deps.Pool, snap.ID, err.Error())
 			return
 		}
 	}
 
-	_ = db.UpdateSnapshotStatus(cleanupCtx, deps.Pool, snap.ID, models.SnapshotStatusDeleted)
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer dbCancel()
+	_ = db.UpdateSnapshotStatus(dbCtx, deps.Pool, snap.ID, models.SnapshotStatusDeleted)
 	slog.Info("snapshot deleted", "snapshot_id", snap.ID)
 }
 
