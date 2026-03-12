@@ -224,7 +224,13 @@
 				whatsappError = result.message || 'No QR code returned';
 			}
 		} catch (err) {
-			whatsappError = err instanceof Error ? err.message : 'Failed to get QR code';
+			if (err instanceof DOMException && err.name === 'AbortError') {
+				whatsappError = 'Request timed out — please try again';
+			} else if (err instanceof TypeError && err.message === 'Failed to fetch') {
+				whatsappError = 'Connection timed out — please try again';
+			} else {
+				whatsappError = err instanceof Error ? err.message : 'Failed to get QR code';
+			}
 		} finally {
 			whatsappLoading = false;
 		}
