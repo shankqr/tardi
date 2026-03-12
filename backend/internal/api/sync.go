@@ -139,10 +139,10 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 		//   3. Return success to the frontend
 		encoded := base64.StdEncoding.EncodeToString([]byte(configSyncScript))
 		cmd := fmt.Sprintf(
-			"echo %s | base64 -d > /tmp/config-sync.sh && chmod +x /tmp/config-sync.sh && systemctl reset-failed tardi-config-sync 2>/dev/null; systemd-run --unit=tardi-config-sync --no-block --collect bash /tmp/config-sync.sh",
+			"echo %s | base64 -d > /tmp/config-sync.sh && chmod +x /tmp/config-sync.sh && systemctl stop tardi-config-sync 2>/dev/null; systemctl reset-failed tardi-config-sync 2>/dev/null; systemd-run --unit=tardi-config-sync --no-block --collect bash /tmp/config-sync.sh",
 			encoded,
 		)
-		_, err = sshexec.RunCommand(ip, pw, cmd, 15*time.Second)
+		_, err = sshexec.RunCommand(ip, pw, cmd, 30*time.Second)
 		if err != nil {
 			slog.Error("sync config: failed to launch script",
 				"instance_id", instanceID,
