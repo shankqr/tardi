@@ -761,8 +761,8 @@
 							</button>
 
 							{#if powerUserOpen}
-								<div class="space-y-5 border-t border-gray-200 p-5">
-									<div>
+								<div class="space-y-4 border-t border-gray-200 p-5">
+									<div class="rounded-lg border border-gray-200 p-4">
 										<h4 class="text-sm font-medium text-gray-900">Advanced AI Settings</h4>
 										<p class="mt-1 text-xs text-gray-400">Choose provider, model, and manage additional API keys</p>
 										<div class="mt-3">
@@ -771,7 +771,7 @@
 									</div>
 
 									{#if instance.dashboard_url && instance.openclaw_auth_token}
-										<div>
+										<div class="rounded-lg border border-gray-200 p-4">
 											<h4 class="text-sm font-medium text-gray-900">Dashboard</h4>
 											<p class="mt-1 text-xs text-gray-400">Access your agent's OpenClaw control panel</p>
 											<div class="mt-3">
@@ -793,7 +793,7 @@
 									{/if}
 
 									{#if instance.ipv4}
-										<div>
+										<div class="rounded-lg border border-gray-200 p-4">
 											<h4 class="text-sm font-medium text-gray-900">SSH Access</h4>
 											<p class="mt-1 text-xs text-gray-400">Connect to your agent's server via SSH</p>
 											<dl class="mt-3 space-y-3 text-sm">
