@@ -3,6 +3,40 @@ import type { User } from 'firebase/auth';
 
 const USE_MOCK_AUTH = import.meta.env.VITE_USE_MOCK_AUTH === 'true';
 
+function getFriendlyErrorMessage(err: unknown): string {
+	const code = (err as { code?: string })?.code ?? '';
+	switch (code) {
+		case 'auth/invalid-credential':
+			return 'Incorrect email or password. Please try again.';
+		case 'auth/user-not-found':
+			return 'No account found with this email.';
+		case 'auth/wrong-password':
+			return 'Incorrect password. Please try again.';
+		case 'auth/email-already-in-use':
+			return 'An account with this email already exists.';
+		case 'auth/weak-password':
+			return 'Password is too weak. Use at least 6 characters.';
+		case 'auth/invalid-email':
+			return 'Please enter a valid email address.';
+		case 'auth/user-disabled':
+			return 'This account has been disabled. Contact support.';
+		case 'auth/too-many-requests':
+			return 'Too many attempts. Please wait a moment and try again.';
+		case 'auth/network-request-failed':
+			return 'Network error. Please check your connection and try again.';
+		case 'auth/popup-closed-by-user':
+			return 'Sign-in was cancelled. Please try again.';
+		case 'auth/popup-blocked':
+			return 'Sign-in popup was blocked. Please allow popups and try again.';
+		case 'auth/account-exists-with-different-credential':
+			return 'An account already exists with this email using a different sign-in method.';
+		case 'auth/requires-recent-login':
+			return 'Please sign in again to continue.';
+		default:
+			return 'Something went wrong. Please try again.';
+	}
+}
+
 interface AuthState {
 	user: User | null;
 	loading: boolean;
@@ -78,7 +112,7 @@ export async function signIn(email: string, password: string) {
 	try {
 		await signInWithEmailAndPassword(auth, email, password);
 	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Sign in failed';
+		const message = getFriendlyErrorMessage(err);
 		authState.update((s) => ({ ...s, error: message }));
 		throw err;
 	}
@@ -98,7 +132,7 @@ export async function signUp(email: string, password: string) {
 	try {
 		await createUserWithEmailAndPassword(auth, email, password);
 	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Sign up failed';
+		const message = getFriendlyErrorMessage(err);
 		authState.update((s) => ({ ...s, error: message }));
 		throw err;
 	}
@@ -119,7 +153,7 @@ export async function signInWithGoogle() {
 		const provider = new GoogleAuthProvider();
 		await signInWithPopup(auth, provider);
 	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Google sign-in failed';
+		const message = getFriendlyErrorMessage(err);
 		authState.update((s) => ({ ...s, error: message }));
 		throw err;
 	}
@@ -150,7 +184,7 @@ export async function resetPassword(email: string) {
 	try {
 		await sendPasswordResetEmail(auth, email);
 	} catch (err) {
-		const message = err instanceof Error ? err.message : 'Password reset failed';
+		const message = getFriendlyErrorMessage(err);
 		authState.update((s) => ({ ...s, error: message }));
 		throw err;
 	}
