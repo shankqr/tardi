@@ -14,7 +14,8 @@
 		getAgentConfig,
 		connectTelegram,
 		disconnectTelegram,
-		syncConfig
+		syncConfig,
+		getSyncStatus
 	} from '$lib/api/client';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
@@ -69,9 +70,46 @@
 	// Telegram state
 	let telegramToken = $state('');
 	let telegramLoading = $state(false);
-	let telegramSyncing = $state(false);
 	let telegramError = $state<string | null>(null);
 	let telegramConnected = $state(false);
+	type TelegramSyncPhase = 'idle' | 'syncing' | 'success' | 'failed';
+	let telegramSyncPhase = $state<TelegramSyncPhase>('idle');
+	let telegramSyncElapsed = $state(0);
+	let telegramSyncTimer: ReturnType<typeof setInterval> | null = null;
+	let telegramPollTimer: ReturnType<typeof setInterval> | null = null;
+
+	function startTelegramSyncTimer() {
+		telegramSyncElapsed = 0;
+		telegramSyncTimer = setInterval(() => { telegramSyncElapsed += 1; }, 1000);
+	}
+	function stopTelegramSyncTimer() {
+		if (telegramSyncTimer) { clearInterval(telegramSyncTimer); telegramSyncTimer = null; }
+	}
+	function stopTelegramPollTimer() {
+		if (telegramPollTimer) { clearInterval(telegramPollTimer); telegramPollTimer = null; }
+	}
+
+	async function pollTelegramSyncStatus() {
+		if (!instance) return;
+		try {
+			const token = await getIdToken();
+			if (!token) return;
+			const result = await getSyncStatus(token, instance.id);
+			if (result.status === 'completed') {
+				stopTelegramSyncTimer();
+				stopTelegramPollTimer();
+				telegramSyncPhase = 'success';
+				setTimeout(() => { if (telegramSyncPhase === 'success') telegramSyncPhase = 'idle'; }, 8000);
+			} else if (result.status === 'failed') {
+				stopTelegramSyncTimer();
+				stopTelegramPollTimer();
+				telegramError = result.message || 'Config sync failed on your agent';
+				telegramSyncPhase = 'failed';
+			}
+		} catch {
+			// Ignore poll errors, keep trying
+		}
+	}
 
 	// Busy state — disables all actions during non-active statuses
 	const isBusy = $derived(instance != null && instance.status !== 'active');
@@ -335,19 +373,34 @@
 
 	async function triggerTelegramSync() {
 		if (!instance) return;
-		telegramSyncing = true;
+		telegramSyncPhase = 'syncing';
 		telegramError = null;
+		startTelegramSyncTimer();
 		try {
 			const token = await getIdToken();
 			if (!token) throw new Error('Not authenticated');
 			const result = await syncConfig(token, instance.id);
-			if (!result.synced) {
+			if (result.synced) {
+				stopTelegramPollTimer();
+				telegramPollTimer = setInterval(() => {
+					if (telegramSyncElapsed > 120) {
+						stopTelegramSyncTimer();
+						stopTelegramPollTimer();
+						telegramError = 'Sync is taking longer than expected — it will apply automatically within 5 minutes';
+						telegramSyncPhase = 'failed';
+						return;
+					}
+					pollTelegramSyncStatus();
+				}, 5000);
+			} else {
+				stopTelegramSyncTimer();
 				telegramError = result.error || 'Sync failed — click Retry to try again';
+				telegramSyncPhase = 'failed';
 			}
 		} catch {
-			telegramError = 'Sync timed out — click Retry to try again';
-		} finally {
-			telegramSyncing = false;
+			stopTelegramSyncTimer();
+			telegramError = 'Could not reach your agent — changes will apply within 5 minutes';
+			telegramSyncPhase = 'failed';
 		}
 	}
 
@@ -688,8 +741,8 @@
 						<div class="mt-4">
 							{#if telegramConnected}
 								<div class="flex items-center justify-between">
-									<div class="flex items-center gap-2 text-sm {telegramSyncing ? 'text-amber-700' : 'text-green-700'}">
-										{#if telegramSyncing}
+									<div class="flex items-center gap-2 text-sm {telegramSyncPhase === 'syncing' ? 'text-amber-700' : 'text-green-700'}">
+										{#if telegramSyncPhase === 'syncing'}
 											<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -700,7 +753,7 @@
 											Telegram bot connected
 										{/if}
 									</div>
-									{#if !telegramSyncing}
+									{#if telegramSyncPhase !== 'syncing'}
 										<button
 											onclick={handleTelegramDisconnect}
 											disabled={telegramLoading}
@@ -710,26 +763,69 @@
 										</button>
 									{/if}
 								</div>
-								{#if telegramSyncing}
-									<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-										<div class="flex items-center gap-2">
-											<svg class="h-4 w-4 animate-spin text-amber-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-											</svg>
-											<p class="text-xs font-medium text-amber-800">Deploying Telegram bot to your agent...</p>
+								{#if telegramSyncPhase === 'syncing'}
+									<div class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+										<div class="space-y-3">
+											<div class="flex items-center gap-3">
+												<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+												</svg>
+												<div class="flex-1">
+													<p class="text-sm font-medium text-gray-900">Deploying Telegram bot to your agent...</p>
+													<p class="text-xs text-gray-500">
+														{#if telegramSyncElapsed < 10}
+															Connecting to your agent
+														{:else if telegramSyncElapsed < 30}
+															Updating configuration
+														{:else if telegramSyncElapsed < 60}
+															Restarting with new settings
+														{:else}
+															Waiting for health check
+														{/if}
+														<span class="ml-1 tabular-nums text-gray-400">{telegramSyncElapsed}s</span>
+													</p>
+												</div>
+											</div>
+											<div class="h-1 overflow-hidden rounded-full bg-gray-200">
+												<div
+													class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
+													style="width: {Math.min(telegramSyncElapsed / 80 * 100, 95)}%"
+												></div>
+											</div>
+											<p class="text-xs text-gray-400">This usually takes about a minute. Please wait before messaging the bot.</p>
 										</div>
-										<p class="mt-1.5 text-xs text-amber-700">This usually takes about a minute. Please wait before messaging the bot.</p>
+									</div>
+								{:else if telegramSyncPhase === 'success'}
+									<div class="mt-3 rounded-lg border border-green-200 bg-green-50 p-4">
+										<div class="flex items-center gap-3">
+											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-green-600 shrink-0">
+												<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+											</svg>
+											<div>
+												<p class="text-sm font-medium text-green-800">Telegram bot deployed successfully</p>
+												<p class="text-xs text-green-600">Anyone who messages your bot will get a response from your AI agent</p>
+											</div>
+										</div>
 									</div>
 								{:else if telegramError}
 									<div class="mt-3 rounded-lg border border-red-200 bg-red-50 p-4">
-										<p class="text-xs text-red-800">{telegramError}</p>
-										<button
-											onclick={triggerTelegramSync}
-											class="mt-2 text-xs font-medium text-red-800 underline hover:text-red-900"
-										>
-											Retry
-										</button>
+										<p class="text-xs font-medium text-red-800">{telegramError}</p>
+										<p class="text-xs text-red-600 mt-1">Your token was saved. It will apply automatically within 5 minutes.</p>
+										<div class="mt-2 flex gap-2">
+											<button
+												onclick={triggerTelegramSync}
+												class="rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700"
+											>
+												Retry
+											</button>
+											<button
+												onclick={() => { telegramSyncPhase = 'idle'; telegramError = null; }}
+												class="rounded-md border border-red-300 px-3 py-1 text-xs text-red-700 hover:bg-red-100"
+											>
+												Dismiss
+											</button>
+										</div>
 									</div>
 								{:else}
 									<div class="mt-3 rounded-lg border border-green-200 bg-green-50 p-4">
