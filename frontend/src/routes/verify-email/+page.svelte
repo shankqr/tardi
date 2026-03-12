@@ -19,6 +19,11 @@
 	const verified = $derived($emailVerified);
 
 	onMount(() => {
+		// Send verification email on mount (covers login flow for unverified users)
+		sendVerificationEmail().then(() => {
+			resendCooldown = 60;
+		}).catch(() => {});
+
 		// Poll for verification every 3 seconds
 		const pollInterval = setInterval(async () => {
 			const isVerified = await reloadUser();
