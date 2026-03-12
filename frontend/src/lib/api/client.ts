@@ -279,6 +279,52 @@ export async function getWhatsAppStatus(
 	return res.json();
 }
 
+export async function connectTelegram(
+	token: string,
+	instanceId: string,
+	botToken: string
+): Promise<{ connected: boolean }> {
+	if (USE_MOCK) {
+		return { connected: true };
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/telegram/connect`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${token}`,
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({ bot_token: botToken })
+	});
+
+	if (!res.ok) {
+		const body = await res.json().catch(() => ({}));
+		throw new Error(body.error || `Telegram connect failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
+export async function disconnectTelegram(
+	token: string,
+	instanceId: string
+): Promise<{ connected: boolean }> {
+	if (USE_MOCK) {
+		return { connected: false };
+	}
+
+	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/telegram/disconnect`, {
+		method: 'POST',
+		headers: { Authorization: `Bearer ${token}` }
+	});
+
+	if (!res.ok) {
+		throw new Error(`Telegram disconnect failed: ${res.status}`);
+	}
+
+	return res.json();
+}
+
 export async function createPortalSession(token: string): Promise<{ url: string }> {
 	if (USE_MOCK) {
 		return { url: '/dashboard/billing' };

@@ -165,7 +165,7 @@ func GetAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 		for k, v := range config.Config {
 			masked[k] = v
 		}
-		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key"} {
+		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "telegram_bot_token"} {
 			if v, ok := masked[keyField].(string); ok && len(v) > 4 {
 				masked[keyField] = v[:3] + "..." + v[len(v)-4:]
 			}
@@ -219,7 +219,7 @@ func UpdateAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 
 		// Preserve existing API keys when frontend sends null (unchanged)
 		existing, _ := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
-		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key"} {
+		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "telegram_bot_token"} {
 			if body.Config[keyField] == nil && existing != nil {
 				if v, ok := existing.Config[keyField].(string); ok && v != "" {
 					body.Config[keyField] = v

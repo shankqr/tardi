@@ -44,6 +44,8 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("DELETE /api/snapshots/{snapshot_id}", DeleteSnapshotHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/whatsapp/qr", WhatsAppQRHandler(deps))
 	authedMux.HandleFunc("GET /api/instances/{id}/whatsapp/status", WhatsAppStatusHandler(deps))
+	authedMux.HandleFunc("POST /api/instances/{id}/telegram/connect", TelegramConnectHandler(deps))
+	authedMux.HandleFunc("POST /api/instances/{id}/telegram/disconnect", TelegramDisconnectHandler(deps))
 	authedMux.HandleFunc("POST /api/billing/portal", BillingPortalHandler(deps))
 
 	// Agent phone-home endpoints (agent token auth, handled inside handlers)

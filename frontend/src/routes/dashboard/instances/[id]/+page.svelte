@@ -11,7 +11,9 @@
 		deleteSnapshot,
 		getWhatsAppQR,
 		getWhatsAppStatus,
-		getAgentConfig
+		getAgentConfig,
+		connectTelegram,
+		disconnectTelegram
 	} from '$lib/api/client';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
@@ -60,6 +62,12 @@
 	let whatsappPhone = $state('');
 	let whatsappPolling = $state(false);
 	let whatsappPollTimer = $state<ReturnType<typeof setInterval> | null>(null);
+
+	// Telegram state
+	let telegramToken = $state('');
+	let telegramLoading = $state(false);
+	let telegramError = $state<string | null>(null);
+	let telegramConnected = $state(false);
 
 	// Busy state — disables all actions during non-active statuses
 	const isBusy = $derived(instance != null && instance.status !== 'active');
@@ -305,6 +313,55 @@
 			refreshWhatsAppStatus();
 		}
 		return () => stopWhatsAppPolling();
+	});
+
+	async function handleTelegramConnect() {
+		if (!instance || !telegramToken.trim()) return;
+		telegramLoading = true;
+		telegramError = null;
+		try {
+			const token = await getIdToken();
+			if (!token) throw new Error('Not authenticated');
+			await connectTelegram(token, instance.id, telegramToken.trim());
+			telegramConnected = true;
+			telegramToken = '';
+		} catch (err) {
+			telegramError = err instanceof Error ? err.message : 'Failed to connect Telegram';
+		} finally {
+			telegramLoading = false;
+		}
+	}
+
+	async function handleTelegramDisconnect() {
+		if (!instance) return;
+		telegramLoading = true;
+		telegramError = null;
+		try {
+			const token = await getIdToken();
+			if (!token) throw new Error('Not authenticated');
+			await disconnectTelegram(token, instance.id);
+			telegramConnected = false;
+		} catch (err) {
+			telegramError = err instanceof Error ? err.message : 'Failed to disconnect Telegram';
+		} finally {
+			telegramLoading = false;
+		}
+	}
+
+	// Check Telegram status on load (token exists in config = connected)
+	$effect(() => {
+		if (instance?.status === 'active') {
+			(async () => {
+				try {
+					const token = await getIdToken();
+					if (!token) return;
+					const cfg = await getAgentConfig(token, instance.id);
+					telegramConnected = !!(cfg.config.telegram_bot_token && typeof cfg.config.telegram_bot_token === 'string' && cfg.config.telegram_bot_token.length > 0);
+				} catch {
+					// ignore
+				}
+			})();
+		}
 	});
 
 	function timeAgo(dateStr: string | null): string {
@@ -590,52 +647,80 @@
 						</div>
 						<p class="mt-1 text-xs text-gray-400">Link a Telegram bot to enable messaging through your agent</p>
 
-						<div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
-							<p class="font-semibold text-gray-900">How to set up your Telegram bot:</p>
-							<ol class="mt-2 space-y-2.5">
-								<li>
-									<span class="font-semibold">1.</span> Open Telegram and search for
-									<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#2AABEE] underline hover:text-blue-700">@BotFather</a>
-								</li>
-								<li>
-									<span class="font-semibold">2.</span> Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/newbot</code> to create a new bot
-								</li>
-								<li>
-									<span class="font-semibold">3.</span> Choose a <span class="font-semibold">display name</span> for your bot (e.g. "My AI Agent")
-								</li>
-								<li>
-									<span class="font-semibold">4.</span> Choose a <span class="font-semibold">username</span> ending in <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">bot</code> (e.g. <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">my_ai_agent_bot</code>)
-								</li>
-								<li>
-									<span class="font-semibold">5.</span> BotFather will send you an <span class="font-semibold">API token</span> &mdash; copy it (looks like <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">123456:ABC-DEF1234...</code>)
-								</li>
-								<li>
-									<span class="font-semibold">6.</span> Paste the token below and click <span class="font-semibold">Connect</span>
-								</li>
-							</ol>
+						<div class="mt-4">
+							{#if telegramConnected}
+								<div class="flex items-center justify-between">
+									<div class="flex items-center gap-2 text-sm text-green-700">
+										<span class="h-2 w-2 rounded-full bg-green-500"></span>
+										Telegram bot connected
+									</div>
+									<button
+										onclick={handleTelegramDisconnect}
+										disabled={telegramLoading}
+										class="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+									>
+										{telegramLoading ? 'Disconnecting...' : 'Disconnect'}
+									</button>
+								</div>
+								<div class="mt-3 rounded-lg border border-green-200 bg-green-50 p-4">
+									<h4 class="text-sm font-semibold text-green-900">Your Telegram bot is live!</h4>
+									<p class="mt-1 text-xs text-green-800">Anyone who messages your bot on Telegram will get a response from your AI agent.</p>
+								</div>
+							{:else}
+								<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
+									<p class="font-semibold text-gray-900">How to set up your Telegram bot:</p>
+									<ol class="mt-2 space-y-2.5">
+										<li>
+											<span class="font-semibold">1.</span> Open Telegram and search for
+											<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#2AABEE] underline hover:text-blue-700">@BotFather</a>
+										</li>
+										<li>
+											<span class="font-semibold">2.</span> Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/newbot</code> to create a new bot
+										</li>
+										<li>
+											<span class="font-semibold">3.</span> Choose a <span class="font-semibold">display name</span> for your bot (e.g. "My AI Agent")
+										</li>
+										<li>
+											<span class="font-semibold">4.</span> Choose a <span class="font-semibold">username</span> ending in <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">bot</code> (e.g. <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">my_ai_agent_bot</code>)
+										</li>
+										<li>
+											<span class="font-semibold">5.</span> BotFather will send you an <span class="font-semibold">API token</span> &mdash; copy it (looks like <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">123456:ABC-DEF1234...</code>)
+										</li>
+										<li>
+											<span class="font-semibold">6.</span> Paste the token below and click <span class="font-semibold">Connect</span>
+										</li>
+									</ol>
 
-							<div class="mt-3 border-t border-gray-200 pt-3">
-								<p class="font-semibold text-gray-900">Optional: Customize your bot</p>
-								<ul class="mt-1.5 space-y-1 text-gray-600">
-									<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setdescription</code> to BotFather to set a bio</li>
-									<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setuserpic</code> to BotFather to set a profile picture</li>
-									<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setabouttext</code> to set the "About" section</li>
-								</ul>
-							</div>
-						</div>
+									<div class="mt-3 border-t border-gray-200 pt-3">
+										<p class="font-semibold text-gray-900">Optional: Customize your bot</p>
+										<ul class="mt-1.5 space-y-1 text-gray-600">
+											<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setdescription</code> to BotFather to set a bio</li>
+											<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setuserpic</code> to BotFather to set a profile picture</li>
+											<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setabouttext</code> to set the "About" section</li>
+										</ul>
+									</div>
+								</div>
 
-						<div class="mt-4 flex items-center gap-2">
-							<input
-								type="text"
-								placeholder="Paste your bot token here"
-								class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500"
-							/>
-							<button
-								onclick={() => alert('Telegram integration coming soon!')}
-								class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-							>
-								Connect
-							</button>
+								{#if telegramError}
+									<p class="mt-3 text-xs text-red-600">{telegramError}</p>
+								{/if}
+								<div class="mt-4 flex items-center gap-2">
+									<input
+										type="text"
+										bind:value={telegramToken}
+										placeholder="Paste your bot token here"
+										disabled={telegramLoading || instance.status !== 'active'}
+										class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500 disabled:opacity-50"
+									/>
+									<button
+										onclick={handleTelegramConnect}
+										disabled={telegramLoading || !telegramToken.trim() || instance.status !== 'active'}
+										class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+									>
+										{telegramLoading ? 'Connecting...' : 'Connect'}
+									</button>
+								</div>
+							{/if}
 						</div>
 					</div>
 
