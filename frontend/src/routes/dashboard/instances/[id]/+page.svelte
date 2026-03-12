@@ -189,6 +189,7 @@
 	}
 
 	let showApiKeyRequired = $state(false);
+	let showApiKeyGuide = $state(false);
 
 	async function handleWhatsAppConnect() {
 		if (!instance) return;
@@ -461,18 +462,37 @@
 											<p class="mt-1 text-xs text-orange-700">
 												Your agent needs an AI model API key to respond to WhatsApp messages. Set your OpenRouter API key in the <strong>AI Provider</strong> section above, then try again.
 											</p>
-											<a
-												href="https://openrouter.ai/keys"
-												target="_blank"
-												rel="noopener noreferrer"
-												class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-orange-800 underline hover:text-orange-900"
-											>
-												Get an OpenRouter API key
-												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3 w-3">
-													<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
-													<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
-												</svg>
-											</a>
+											<div class="mt-2 flex items-center gap-3">
+												<button
+													type="button"
+													onclick={() => (showApiKeyGuide = !showApiKeyGuide)}
+													class="inline-flex items-center gap-1 text-xs font-medium text-orange-800 underline hover:text-orange-900"
+												>
+													{showApiKeyGuide ? 'Hide Guide' : 'Guide Me'}
+												</button>
+												<a
+													href="https://openrouter.ai/keys"
+													target="_blank"
+													rel="noopener noreferrer"
+													class="inline-flex items-center gap-1 text-xs font-medium text-orange-800 underline hover:text-orange-900"
+												>
+													Get an OpenRouter API key
+													<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3 w-3">
+														<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
+														<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
+													</svg>
+												</a>
+											</div>
+											{#if showApiKeyGuide}
+												<ol class="mt-3 space-y-1.5 text-xs text-orange-800">
+													<li><span class="font-semibold">1.</span> Go to <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" class="underline hover:text-orange-900">openrouter.ai</a> and click <span class="font-semibold">Sign Up</span></li>
+													<li><span class="font-semibold">2.</span> Create an account using your email, Google, or GitHub</li>
+													<li><span class="font-semibold">3.</span> Go to <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="underline hover:text-orange-900">openrouter.ai/keys</a></li>
+													<li><span class="font-semibold">4.</span> Click <span class="font-semibold">Create Key</span> and name it (e.g. "Tardi")</li>
+													<li><span class="font-semibold">5.</span> Copy the key (starts with <code class="rounded bg-orange-100 px-1 py-0.5">sk-or-v1-...</code>) and paste it in the <strong>AI Provider</strong> section above</li>
+													<li><span class="font-semibold">6.</span> Click <span class="font-semibold">Save</span>, then come back here to connect WhatsApp</li>
+												</ol>
+											{/if}
 										</div>
 									{/if}
 									{#if whatsappError}
