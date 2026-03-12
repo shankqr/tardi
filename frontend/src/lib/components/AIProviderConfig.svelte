@@ -24,6 +24,16 @@
 	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'success' | 'failed';
 	let syncPhase = $state<SyncPhase>('idle');
 	let syncError = $state<string | null>(null);
+	let syncElapsed = $state(0);
+	let syncTimer: ReturnType<typeof setInterval> | null = null;
+
+	function startSyncTimer() {
+		syncElapsed = 0;
+		syncTimer = setInterval(() => { syncElapsed += 1; }, 1000);
+	}
+	function stopSyncTimer() {
+		if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
+	}
 
 	async function loadConfig() {
 		loading = true;
@@ -65,6 +75,7 @@
 	async function handleSave() {
 		syncPhase = 'saving';
 		syncError = null;
+		stopSyncTimer();
 		try {
 			const token = await getIdToken();
 			if (!token) throw new Error('Not authenticated');
@@ -80,24 +91,28 @@
 			await updateAgentConfig(token, instanceId, config);
 			keyDirty = false;
 
-			// Now trigger instant sync
+			// Now trigger instant sync (takes 60-90s)
 			syncPhase = 'syncing';
+			startSyncTimer();
 			try {
 				const result = await syncConfig(token, instanceId);
+				stopSyncTimer();
 				if (result.synced) {
 					syncPhase = 'success';
 					setTimeout(() => {
 						if (syncPhase === 'success') syncPhase = 'idle';
-					}, 4000);
+					}, 6000);
 				} else {
-					syncError = result.error || 'Sync failed — changes will apply within 5 minutes';
+					syncError = result.error || 'Failed to apply configuration';
 					syncPhase = 'failed';
 				}
 			} catch {
+				stopSyncTimer();
 				syncError = 'Could not reach your agent — changes will apply within 5 minutes';
 				syncPhase = 'failed';
 			}
 		} catch (err) {
+			stopSyncTimer();
 			syncError = err instanceof Error ? err.message : 'Failed to save';
 			syncPhase = 'failed';
 		}
@@ -106,6 +121,7 @@
 	function dismissSync() {
 		syncPhase = 'idle';
 		syncError = null;
+		stopSyncTimer();
 	}
 
 	onMount(() => {
@@ -137,15 +153,35 @@
 							</div>
 						</div>
 					{:else if syncPhase === 'syncing'}
-						<div class="flex items-center gap-3">
-							<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
-								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-							</svg>
-							<div>
-								<p class="text-sm font-medium text-gray-900">Applying to your agent...</p>
-								<p class="text-xs text-gray-500">Restarting with new configuration</p>
+						<div class="space-y-3">
+							<div class="flex items-center gap-3">
+								<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+								</svg>
+								<div class="flex-1">
+									<p class="text-sm font-medium text-gray-900">Applying to your agent...</p>
+									<p class="text-xs text-gray-500">
+										{#if syncElapsed < 10}
+											Connecting to your agent
+										{:else if syncElapsed < 30}
+											Updating configuration
+										{:else if syncElapsed < 60}
+											Restarting with new settings
+										{:else}
+											Waiting for health check
+										{/if}
+										<span class="ml-1 tabular-nums text-gray-400">{syncElapsed}s</span>
+									</p>
+								</div>
 							</div>
+							<div class="h-1 overflow-hidden rounded-full bg-gray-200">
+								<div
+									class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
+									style="width: {Math.min(syncElapsed / 80 * 100, 95)}%"
+								></div>
+							</div>
+							<p class="text-xs text-gray-400">This usually takes about a minute. Please don't close this page.</p>
 						</div>
 					{:else if syncPhase === 'success'}
 						<div class="flex items-center justify-between">
@@ -153,9 +189,12 @@
 								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-green-600 shrink-0">
 									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
 								</svg>
-								<p class="text-sm font-medium text-green-800">Saved — syncing to your agent now</p>
+								<div>
+									<p class="text-sm font-medium text-green-800">Configuration applied successfully</p>
+									<p class="text-xs text-green-600">Your agent is now running with the new API key</p>
+								</div>
 							</div>
-							<button onclick={dismissSync} class="text-green-500 hover:text-green-700">
+							<button onclick={dismissSync} class="text-green-500 hover:text-green-700" aria-label="Dismiss">
 								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
 									<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
 								</svg>
@@ -169,6 +208,7 @@
 								</svg>
 								<div>
 									<p class="text-sm font-medium text-red-800">{syncError}</p>
+									<p class="text-xs text-red-600 mt-1">Your key was saved. You can update it and retry, or it will apply automatically within 5 minutes.</p>
 									<div class="mt-2 flex gap-2">
 										<button
 											onclick={handleSave}
