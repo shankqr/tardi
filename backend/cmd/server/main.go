@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -114,6 +115,9 @@ func main() {
 
 	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag)
 
+	// WaitGroup for background goroutines (snapshot create/restore/delete, restart, etc.)
+	var bgTasks sync.WaitGroup
+
 	// Build router with all endpoints
 	deps := api.Dependencies{
 		Pool:     pool,
@@ -122,6 +126,7 @@ func main() {
 		Billing:  stripeSvc,
 		Registry: registry,
 		Resumer:  resumer,
+		BGTasks:  &bgTasks,
 	}
 	handler := api.NewRouter(deps)
 
@@ -133,17 +138,32 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Graceful shutdown
+	// Graceful shutdown — wait for background tasks (snapshots, restores) before exiting
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
-		logger.Info("shutting down...")
+		logger.Info("shutting down, waiting for background tasks...")
 		cancel()
 
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// Stop accepting new requests
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
 		srv.Shutdown(shutdownCtx)
+
+		// Wait for in-flight background goroutines (snapshot/restore/delete/restart)
+		// with a hard deadline so we don't hang forever
+		done := make(chan struct{})
+		go func() {
+			bgTasks.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+			logger.Info("all background tasks completed")
+		case <-time.After(14 * time.Minute):
+			logger.Warn("shutdown deadline reached, some background tasks may not have completed")
+		}
 	}()
 
 	logger.Info("server starting", "port", cfg.Port, "environment", cfg.Environment)

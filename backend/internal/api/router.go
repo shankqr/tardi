@@ -3,6 +3,7 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -20,6 +21,7 @@ type Dependencies struct {
 	Billing  *billing.StripeService
 	Registry *provider.Registry
 	Resumer  *jobs.Resumer
+	BGTasks  *sync.WaitGroup // Tracks background goroutines (snapshots, restores) for graceful shutdown
 }
 
 func NewRouter(deps Dependencies) http.Handler {

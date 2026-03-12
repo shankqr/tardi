@@ -92,7 +92,11 @@ func CreateSnapshotHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		go executeCreateSnapshot(deps, inst, snap)
+		deps.BGTasks.Add(1)
+		go func() {
+			defer deps.BGTasks.Done()
+			executeCreateSnapshot(deps, inst, snap)
+		}()
 
 		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
 			ID:           uuid.New(),
@@ -161,7 +165,11 @@ func RestoreSnapshotHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		go executeRestore(deps, inst, snap)
+		deps.BGTasks.Add(1)
+		go func() {
+			defer deps.BGTasks.Done()
+			executeRestore(deps, inst, snap)
+		}()
 
 		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
 			ID:           uuid.New(),
@@ -212,7 +220,11 @@ func DeleteSnapshotHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		go executeDeleteSnapshot(deps, snap)
+		deps.BGTasks.Add(1)
+		go func() {
+			defer deps.BGTasks.Done()
+			executeDeleteSnapshot(deps, snap)
+		}()
 
 		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
 			ID:           uuid.New(),

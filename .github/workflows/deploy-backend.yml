@@ -82,3 +82,4 @@ jobs:
           region: ${{ secrets.GCP_REGION }}
           image: ${{ steps.tags.outputs.full_image }}:${{ steps.tags.outputs.env_tag }}
           revision_traffic: LATEST=100
+          flags: --no-cpu-throttling --timeout=900

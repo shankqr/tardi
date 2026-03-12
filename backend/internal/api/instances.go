@@ -162,7 +162,11 @@ func RestartInstanceHandler(deps Dependencies) http.HandlerFunc {
 		}
 
 		// Execute restart in background goroutine
-		go executeRestart(deps, inst)
+		deps.BGTasks.Add(1)
+		go func() {
+			defer deps.BGTasks.Done()
+			executeRestart(deps, inst)
+		}()
 
 		// Audit log
 		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
@@ -215,7 +219,11 @@ func DeleteInstanceHandler(deps Dependencies) http.HandlerFunc {
 		}
 
 		// Execute deletion in background goroutine
-		go executeDelete(deps, inst)
+		deps.BGTasks.Add(1)
+		go func() {
+			defer deps.BGTasks.Done()
+			executeDelete(deps, inst)
+		}()
 
 		// Audit log
 		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
