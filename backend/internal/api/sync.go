@@ -61,38 +61,28 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 			"ip", *inst.IPv4,
 		)
 
-		output, err := sshexec.RunCommand(
-			*inst.IPv4,
-			*inst.RootPassword,
-			"/opt/openclaw/heartbeat.sh",
-			90*time.Second,
-		)
-
-		if err != nil {
-			slog.Error("sync config: SSH command failed",
-				"instance_id", instanceID,
-				"error", err,
-				"output", output,
-			)
-			WriteJSON(w, http.StatusOK, map[string]any{
-				"synced": false,
-				"error":  "Failed to apply config — changes will sync within 5 minutes",
-			})
-			return
-		}
-
-		// Read back the current config version to confirm
-		config, err := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, instanceID)
-		var configVersion int
-		if err == nil && config != nil {
-			configVersion = config.Version
-		}
-
-		slog.Info("sync config: success", "instance_id", instanceID, "config_version", configVersion)
+		// Fire-and-forget: the heartbeat script can take 60-90s (docker pull,
+		// container recreate, etc.) which causes browser timeouts. Run it in
+		// the background and return immediately.
+		ip := *inst.IPv4
+		pw := *inst.RootPassword
+		deps.BGTasks.Add(1)
+		go func() {
+			defer deps.BGTasks.Done()
+			output, err := sshexec.RunCommand(ip, pw, "/opt/openclaw/heartbeat.sh", 120*time.Second)
+			if err != nil {
+				slog.Error("sync config: SSH command failed",
+					"instance_id", instanceID,
+					"error", err,
+					"output", output,
+				)
+				return
+			}
+			slog.Info("sync config: heartbeat completed", "instance_id", instanceID)
+		}()
 
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"synced":         true,
-			"config_version": configVersion,
+			"synced": true,
 		})
 	}
 }

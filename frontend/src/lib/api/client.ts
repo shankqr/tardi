@@ -187,7 +187,7 @@ export async function syncConfig(
 	}
 
 	const controller = new AbortController();
-	const timer = setTimeout(() => controller.abort(), 100000);
+	const timer = setTimeout(() => controller.abort(), 15000);
 	const res = await fetch(`${getApiUrl()}/api/instances/${instanceId}/sync-config`, {
 		method: 'POST',
 		headers: { Authorization: `Bearer ${token}` },
