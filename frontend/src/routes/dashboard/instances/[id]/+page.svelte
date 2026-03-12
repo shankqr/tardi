@@ -13,7 +13,8 @@
 		getWhatsAppStatus,
 		getAgentConfig,
 		connectTelegram,
-		disconnectTelegram
+		disconnectTelegram,
+		syncConfig
 	} from '$lib/api/client';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
@@ -341,6 +342,8 @@
 			await connectTelegram(token, instance.id, telegramToken.trim());
 			telegramConnected = true;
 			telegramToken = '';
+			// Trigger immediate config sync so the VPS picks up the token now
+			syncConfig(token, instance.id).catch(() => {});
 		} catch (err) {
 			telegramError = err instanceof Error ? err.message : 'Failed to connect Telegram';
 		} finally {
@@ -357,6 +360,7 @@
 			if (!token) throw new Error('Not authenticated');
 			await disconnectTelegram(token, instance.id);
 			telegramConnected = false;
+			syncConfig(token, instance.id).catch(() => {});
 		} catch (err) {
 			telegramError = err instanceof Error ? err.message : 'Failed to disconnect Telegram';
 		} finally {
