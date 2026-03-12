@@ -20,6 +20,7 @@
 	let saveSuccess = $state(false);
 	let showKey = $state(false);
 	let keyDirty = $state(false);
+	let showGuide = $state(false);
 
 	async function loadConfig() {
 		loading = true;
@@ -138,6 +139,13 @@
 						<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
 					</svg>
 				</a>
+				<button
+					type="button"
+					onclick={() => (showGuide = !showGuide)}
+					class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+				>
+					{showGuide ? 'Hide Guide' : 'Guide Me'}
+				</button>
 				{#if saveSuccess}
 					<span class="text-sm text-green-600">Saved</span>
 				{/if}
@@ -145,6 +153,31 @@
 					<span class="text-sm text-red-600">{saveError}</span>
 				{/if}
 			</div>
+
+			{#if showGuide}
+				<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+					<div class="flex items-start justify-between">
+						<h4 class="text-sm font-semibold text-blue-900">How to get your OpenRouter API key</h4>
+						<button
+							type="button"
+							onclick={() => (showGuide = false)}
+							aria-label="Close guide"
+							class="text-blue-400 hover:text-blue-600"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
+								<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+							</svg>
+						</button>
+					</div>
+					<ol class="mt-3 space-y-2 text-sm text-blue-800">
+						<li><span class="font-semibold">1.</span> Go to <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" class="underline hover:text-blue-900">openrouter.ai</a> and click <span class="font-semibold">Sign Up</span></li>
+						<li><span class="font-semibold">2.</span> Create an account using your email, Google, or GitHub</li>
+						<li><span class="font-semibold">3.</span> Once logged in, go to <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="underline hover:text-blue-900">openrouter.ai/keys</a></li>
+						<li><span class="font-semibold">4.</span> Click <span class="font-semibold">Create Key</span> and give it a name (e.g. "Tardi")</li>
+						<li><span class="font-semibold">5.</span> Copy the key (starts with <code class="rounded bg-blue-100 px-1 py-0.5 text-xs">sk-or-v1-...</code>) and paste it in the field above</li>
+					</ol>
+				</div>
+			{/if}
 
 			<p class="text-xs text-gray-400">Changes take effect within 5 minutes on your running agent.</p>
 		</div>
