@@ -15,6 +15,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
 	import AIProviderConfig from '$lib/components/AIProviderConfig.svelte';
+	import AIProviderAdvanced from '$lib/components/AIProviderAdvanced.svelte';
 
 	const instance = $derived(
 		$dashboardState?.instances.find((i) => i.id === page.params.id) ?? null
@@ -475,6 +476,14 @@
 
 							{#if powerUserOpen}
 								<div class="space-y-5 border-t border-gray-200 p-5">
+									<div>
+										<h4 class="text-sm font-medium text-gray-900">Advanced AI Settings</h4>
+										<p class="mt-1 text-xs text-gray-400">Choose provider, model, and manage additional API keys</p>
+										<div class="mt-3">
+											<AIProviderAdvanced instanceId={instance.id} disabled={instance.status !== 'active'} />
+										</div>
+									</div>
+
 									{#if instance.dashboard_url && instance.openclaw_auth_token}
 										<div>
 											<h4 class="text-sm font-medium text-gray-900">Dashboard</h4>
