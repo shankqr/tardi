@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import type { AIProvider } from '$lib/types';
 	import { getIdToken } from '$lib/stores/auth';
 	import { getAgentConfig, updateAgentConfig } from '$lib/api/client';
@@ -92,8 +93,12 @@
 	async function loadConfig() {
 		loading = true;
 		try {
-			const token = await getIdToken();
-			if (!token) return;
+			let token = await getIdToken();
+			if (!token) {
+				await new Promise((r) => setTimeout(r, 1500));
+				token = await getIdToken();
+				if (!token) return;
+			}
 			const result = await getAgentConfig(token, instanceId);
 			if (result.config) {
 				const cfg = result.config;
@@ -149,7 +154,7 @@
 		}
 	}
 
-	$effect(() => {
+	onMount(() => {
 		loadConfig();
 	});
 </script>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { getIdToken } from '$lib/stores/auth';
 	import { getAgentConfig, updateAgentConfig } from '$lib/api/client';
 
@@ -26,24 +27,37 @@
 		loading = true;
 		try {
 			const token = await getIdToken();
-			if (!token) return;
+			if (!token) {
+				// Auth not ready yet — retry once after a short delay
+				await new Promise((r) => setTimeout(r, 1500));
+				const retryToken = await getIdToken();
+				if (!retryToken) return;
+				const result = await getAgentConfig(retryToken, instanceId);
+				if (result.config) {
+					applyConfig(result.config);
+				}
+				return;
+			}
 			const result = await getAgentConfig(token, instanceId);
 			if (result.config) {
-				const cfg = result.config;
-				if (cfg.openrouter_api_key && typeof cfg.openrouter_api_key === 'string') {
-					openrouterKey = cfg.openrouter_api_key;
-				}
-				if (cfg.model && typeof cfg.model === 'string') {
-					currentModel = cfg.model;
-				}
-				if (cfg.provider && typeof cfg.provider === 'string') {
-					currentProvider = cfg.provider;
-				}
+				applyConfig(result.config);
 			}
 		} catch {
 			// No config yet, use defaults
 		} finally {
 			loading = false;
+		}
+	}
+
+	function applyConfig(cfg: Record<string, unknown>) {
+		if (cfg.openrouter_api_key && typeof cfg.openrouter_api_key === 'string') {
+			openrouterKey = cfg.openrouter_api_key;
+		}
+		if (cfg.model && typeof cfg.model === 'string') {
+			currentModel = cfg.model;
+		}
+		if (cfg.provider && typeof cfg.provider === 'string') {
+			currentProvider = cfg.provider;
 		}
 	}
 
@@ -74,7 +88,7 @@
 		}
 	}
 
-	$effect(() => {
+	onMount(() => {
 		loadConfig();
 	});
 </script>
