@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 
@@ -185,27 +186,29 @@ func (h *HetznerProvider) CreateSnapshot(ctx context.Context, providerServerID s
 		return nil, fmt.Errorf("hetzner create snapshot: %w", err)
 	}
 
-	// Wait for snapshot creation to complete
-	if err := h.client.Action.WaitForFunc(ctx, nil, result.Action); err != nil {
-		return nil, fmt.Errorf("hetzner create snapshot: wait: %w", err)
+	// Poll image status directly until available (more reliable than WaitForFunc)
+	for {
+		image, _, err := h.client.Image.GetByID(ctx, result.Image.ID)
+		if err != nil {
+			return nil, fmt.Errorf("hetzner create snapshot: poll image: %w", err)
+		}
+		if image.Status == hcloud.ImageStatusAvailable {
+			h.logger.Info("hetzner: snapshot created",
+				"server_id", providerServerID,
+				"image_id", image.ID,
+				"size_gb", image.ImageSize,
+			)
+			return &provider.SnapshotResult{
+				ProviderImageID: strconv.FormatInt(image.ID, 10),
+				SizeGB:          image.ImageSize,
+			}, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("hetzner create snapshot: timed out waiting for image %d", result.Image.ID)
+		case <-time.After(5 * time.Second):
+		}
 	}
-
-	// Re-fetch image to get final size
-	image, _, err := h.client.Image.GetByID(ctx, result.Image.ID)
-	if err != nil {
-		return nil, fmt.Errorf("hetzner create snapshot: get image: %w", err)
-	}
-
-	h.logger.Info("hetzner: snapshot created",
-		"server_id", providerServerID,
-		"image_id", image.ID,
-		"size_gb", image.ImageSize,
-	)
-
-	return &provider.SnapshotResult{
-		ProviderImageID: strconv.FormatInt(image.ID, 10),
-		SizeGB:          image.ImageSize,
-	}, nil
 }
 
 func (h *HetznerProvider) DeleteSnapshot(ctx context.Context, providerImageID string) error {

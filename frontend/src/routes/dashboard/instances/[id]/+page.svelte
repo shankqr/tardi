@@ -66,6 +66,7 @@
 
 	// Status transition tracking for result notifications
 	let previousStatus = $state<string | null>(null);
+	let previousSnapshotStatuses = $state<Record<string, string>>({});
 	let restoreResult = $state<'success' | 'failed' | null>(null);
 	let snapshotResult = $state<'success' | 'failed' | null>(null);
 
@@ -77,6 +78,19 @@
 		if (previousStatus === 'snapshotting' && current === 'active') snapshotResult = 'success';
 		if (previousStatus === 'snapshotting' && current === 'error') snapshotResult = 'failed';
 		previousStatus = current;
+	});
+
+	// Also track individual snapshot status transitions (creating → ready/error)
+	$effect(() => {
+		if (!instanceSnapshots.length) return;
+		const newStatuses: Record<string, string> = {};
+		for (const snap of instanceSnapshots) {
+			const prev = previousSnapshotStatuses[snap.id];
+			if (prev === 'creating' && snap.status === 'ready') snapshotResult = 'success';
+			if (prev === 'creating' && snap.status === 'error') snapshotResult = 'failed';
+			newStatuses[snap.id] = snap.status;
+		}
+		previousSnapshotStatuses = newStatuses;
 	});
 
 	function startEditing() {
