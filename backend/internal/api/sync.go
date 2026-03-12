@@ -48,7 +48,7 @@ chmod 600 /opt/openclaw/.env
 # Update openclaw.json to enable/disable telegram channel
 OC_CONFIG="/opt/openclaw/data/openclaw/openclaw.json"
 if [ -n "$NEW_TG_TOKEN" ]; then
-    jq '.channels.telegram = {"enabled": true}' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
+    jq '.channels.telegram = {"enabled": true, "dmPolicy": "open"}' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
     echo "telegram: enabled"
 else
     jq 'del(.channels.telegram)' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
