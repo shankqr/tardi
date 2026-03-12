@@ -104,6 +104,27 @@ export async function signUp(email: string, password: string) {
 	}
 }
 
+export async function signInWithGoogle() {
+	authState.update((s) => ({ ...s, error: null }));
+
+	if (USE_MOCK_AUTH) {
+		authState.set({ user: createMockUser('mock@google.com'), loading: false, error: null });
+		return;
+	}
+
+	const { getFirebaseAuth } = await import('$lib/firebase');
+	const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
+	const auth = getFirebaseAuth();
+	try {
+		const provider = new GoogleAuthProvider();
+		await signInWithPopup(auth, provider);
+	} catch (err) {
+		const message = err instanceof Error ? err.message : 'Google sign-in failed';
+		authState.update((s) => ({ ...s, error: message }));
+		throw err;
+	}
+}
+
 export async function signOut() {
 	if (USE_MOCK_AUTH) {
 		authState.set({ user: null, loading: false, error: null });
