@@ -52,12 +52,59 @@ func (r *Reconciler) Start(ctx context.Context) {
 }
 
 func (r *Reconciler) reconcile(ctx context.Context) {
+	r.reconcileStaleRunningJobs(ctx)
 	r.reconcileActive(ctx)
 	r.reconcileStaleRestarting(ctx)
 	r.reconcileStaleProvisioning(ctx)
 	r.reconcileStaleResuming(ctx)
 	r.reconcileStaleSnapshotting(ctx)
 	r.reconcileStaleRestoring(ctx)
+}
+
+// reconcileStaleRunningJobs resets jobs stuck in "running" status for too long.
+// This happens when a Cloud Run instance is scaled down mid-provisioning,
+// orphaning the job since only "pending"/"failed" jobs get claimed by workers.
+func (r *Reconciler) reconcileStaleRunningJobs(ctx context.Context) {
+	result, err := r.pool.Exec(ctx, `
+		UPDATE provisioning_jobs
+		SET status = 'failed',
+		    error_message = 'worker terminated mid-execution, scheduling retry',
+		    next_retry_at = NOW(),
+		    updated_at = NOW()
+		WHERE status = 'running'
+		  AND updated_at < NOW() - INTERVAL '15 minutes'
+		  AND attempts < max_attempts
+	`)
+	if err != nil {
+		r.logger.Error("reconciler: reset stale running jobs", "error", err)
+		return
+	}
+	if result.RowsAffected() > 0 {
+		r.logger.Warn("reconciler: reset stale running jobs for retry",
+			"count", result.RowsAffected(),
+		)
+	}
+
+	// Also mark as dead any stale running jobs that have exhausted retries
+	result, err = r.pool.Exec(ctx, `
+		UPDATE provisioning_jobs
+		SET status = 'dead',
+		    error_message = 'worker terminated mid-execution, no retries remaining',
+		    completed_at = NOW(),
+		    updated_at = NOW()
+		WHERE status = 'running'
+		  AND updated_at < NOW() - INTERVAL '15 minutes'
+		  AND attempts >= max_attempts
+	`)
+	if err != nil {
+		r.logger.Error("reconciler: mark exhausted stale jobs dead", "error", err)
+		return
+	}
+	if result.RowsAffected() > 0 {
+		r.logger.Warn("reconciler: marked exhausted stale running jobs as dead",
+			"count", result.RowsAffected(),
+		)
+	}
 }
 
 // reconcileActive checks active instances against provider state.
