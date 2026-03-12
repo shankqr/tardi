@@ -1,9 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { user } from '$lib/stores/auth';
+	import { goto } from '$app/navigation';
+	import { user, authLoading, emailVerified } from '$lib/stores/auth';
 	import { stripePricingTableId, stripePublishableKey } from '$lib/stores/config';
 
 	const currentUser = $derived($user);
+
+	// Redirect unverified users to verify-email
+	$effect(() => {
+		if (!$authLoading && currentUser && !$emailVerified) {
+			goto('/verify-email');
+		}
+	});
 
 	const clientReferenceId = $derived(currentUser?.uid ?? '');
 	const pricingTableId = $derived($stripePricingTableId);

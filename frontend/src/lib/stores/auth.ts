@@ -62,6 +62,7 @@ export const user = derived(authState, ($state) => $state.user);
 export const authLoading = derived(authState, ($state) => $state.loading);
 export const authError = derived(authState, ($state) => $state.error);
 export const isAuthenticated = derived(authState, ($state) => !!$state.user && !$state.loading);
+export const emailVerified = derived(authState, ($state) => $state.user?.emailVerified ?? false);
 
 export async function signIn(email: string, password: string) {
 	authState.update((s) => ({ ...s, error: null }));
@@ -131,6 +132,37 @@ export async function resetPassword(email: string) {
 		const message = err instanceof Error ? err.message : 'Password reset failed';
 		authState.update((s) => ({ ...s, error: message }));
 		throw err;
+	}
+}
+
+export async function sendVerificationEmail() {
+	if (USE_MOCK_AUTH) return;
+	const { getFirebaseAuth } = await import('$lib/firebase');
+	const { sendEmailVerification } = await import('firebase/auth');
+	const auth = getFirebaseAuth();
+	if (auth.currentUser) {
+		await sendEmailVerification(auth.currentUser);
+	}
+}
+
+export async function reloadUser(): Promise<boolean> {
+	if (USE_MOCK_AUTH) return true;
+	const { getFirebaseAuth } = await import('$lib/firebase');
+	const auth = getFirebaseAuth();
+	if (auth.currentUser) {
+		await auth.currentUser.reload();
+		authState.set({ user: auth.currentUser, loading: false, error: null });
+		return auth.currentUser.emailVerified;
+	}
+	return false;
+}
+
+export async function forceTokenRefresh(): Promise<void> {
+	if (USE_MOCK_AUTH) return;
+	const { getFirebaseAuth } = await import('$lib/firebase');
+	const auth = getFirebaseAuth();
+	if (auth.currentUser) {
+		await auth.currentUser.getIdToken(true);
 	}
 }
 

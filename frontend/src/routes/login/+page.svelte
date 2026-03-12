@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { signIn, resetPassword, authError } from '$lib/stores/auth';
+	import { signIn, resetPassword, authError, user } from '$lib/stores/auth';
+	import { get } from 'svelte/store';
 
 	let email = $state('');
 	let password = $state('');
@@ -17,7 +18,12 @@
 				resetSent = true;
 			} else {
 				await signIn(email, password);
-				goto('/dashboard');
+				const currentUser = get(user);
+				if (currentUser && !currentUser.emailVerified) {
+					goto('/verify-email');
+				} else {
+					goto('/dashboard');
+				}
 			}
 		} catch {
 			// error handled by store

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { signUp, authError } from '$lib/stores/auth';
+	import { signUp, authError, sendVerificationEmail } from '$lib/stores/auth';
 
 	let email = $state('');
 	let password = $state('');
@@ -20,7 +20,8 @@
 		submitting = true;
 		try {
 			await signUp(email, password);
-			goto('/onboarding/checkout');
+			await sendVerificationEmail();
+			goto('/verify-email');
 		} catch {
 			// error handled by store
 		} finally {
