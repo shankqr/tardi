@@ -656,6 +656,13 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return err
 	}
 
+	// Idempotency: if server was already created in a prior attempt, skip creation
+	if inst.ProviderServerID != nil && *inst.ProviderServerID != "" {
+		p.logger.Info("provisioner: server already created, skipping",
+			"instance_id", inst.ID, "provider_server_id", *inst.ProviderServerID)
+		return nil
+	}
+
 	prov, err := p.registry.Get(inst.Provider)
 	if err != nil {
 		return fmt.Errorf("get provider: %w", err)
@@ -746,7 +753,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
-		Name:       "openclaw",
+		Name:       fmt.Sprintf("openclaw-%s", inst.ID.String()[:8]),
 		ServerType: mapping.ProviderServerType,
 		Region:     mapping.ProviderRegion,
 		Image:      mapping.ProviderImage,
