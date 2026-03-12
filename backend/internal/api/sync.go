@@ -123,26 +123,27 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 			"ip", *inst.IPv4,
 		)
 
-		// Fire-and-forget: config sync can take 60-90s (docker recreate, health wait).
 		ip := *inst.IPv4
 		pw := *inst.RootPassword
-		deps.BGTasks.Add(1)
-		go func() {
-			defer deps.BGTasks.Done()
-			// Write the sync script and run it
-			cmd := fmt.Sprintf("cat > /tmp/config-sync.sh << 'SYNCEOF'\n%sSYNCEOF\nchmod +x /tmp/config-sync.sh && /tmp/config-sync.sh", configSyncScript)
-			output, err := sshexec.RunCommand(ip, pw, cmd, 120*time.Second)
-			if err != nil {
-				slog.Error("sync config: SSH command failed",
-					"instance_id", instanceID,
-					"error", err,
-					"output", output,
-				)
-				return
-			}
-			slog.Info("sync config: completed", "instance_id", instanceID, "output", output)
-		}()
 
+		// Run synchronously so the frontend can await completion.
+		// The script typically takes 60-90s (docker recreate + health wait).
+		cmd := fmt.Sprintf("cat > /tmp/config-sync.sh << 'SYNCEOF'\n%sSYNCEOF\nchmod +x /tmp/config-sync.sh && /tmp/config-sync.sh", configSyncScript)
+		output, err := sshexec.RunCommand(ip, pw, cmd, 120*time.Second)
+		if err != nil {
+			slog.Error("sync config: SSH command failed",
+				"instance_id", instanceID,
+				"error", err,
+				"output", output,
+			)
+			WriteJSON(w, http.StatusOK, map[string]any{
+				"synced": false,
+				"error":  "config sync failed on VPS",
+			})
+			return
+		}
+
+		slog.Info("sync config: completed", "instance_id", instanceID, "output", output)
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"synced": true,
 		})

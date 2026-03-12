@@ -69,6 +69,7 @@
 	// Telegram state
 	let telegramToken = $state('');
 	let telegramLoading = $state(false);
+	let telegramSyncing = $state(false);
 	let telegramError = $state<string | null>(null);
 	let telegramConnected = $state(false);
 
@@ -332,6 +333,24 @@
 		return () => stopWhatsAppPolling();
 	});
 
+	async function triggerTelegramSync() {
+		if (!instance) return;
+		telegramSyncing = true;
+		telegramError = null;
+		try {
+			const token = await getIdToken();
+			if (!token) throw new Error('Not authenticated');
+			const result = await syncConfig(token, instance.id);
+			if (!result.synced) {
+				telegramError = result.error || 'Sync failed — click Retry to try again';
+			}
+		} catch {
+			telegramError = 'Sync timed out — click Retry to try again';
+		} finally {
+			telegramSyncing = false;
+		}
+	}
+
 	async function handleTelegramConnect() {
 		if (!instance || !telegramToken.trim()) return;
 		telegramLoading = true;
@@ -342,11 +361,10 @@
 			await connectTelegram(token, instance.id, telegramToken.trim());
 			telegramConnected = true;
 			telegramToken = '';
-			// Trigger immediate config sync so the VPS picks up the token now
-			syncConfig(token, instance.id).catch(() => {});
+			telegramLoading = false;
+			await triggerTelegramSync();
 		} catch (err) {
 			telegramError = err instanceof Error ? err.message : 'Failed to connect Telegram';
-		} finally {
 			telegramLoading = false;
 		}
 	}
@@ -360,10 +378,10 @@
 			if (!token) throw new Error('Not authenticated');
 			await disconnectTelegram(token, instance.id);
 			telegramConnected = false;
-			syncConfig(token, instance.id).catch(() => {});
+			telegramLoading = false;
+			await triggerTelegramSync();
 		} catch (err) {
 			telegramError = err instanceof Error ? err.message : 'Failed to disconnect Telegram';
-		} finally {
 			telegramLoading = false;
 		}
 	}
@@ -670,22 +688,55 @@
 						<div class="mt-4">
 							{#if telegramConnected}
 								<div class="flex items-center justify-between">
-									<div class="flex items-center gap-2 text-sm text-green-700">
-										<span class="h-2 w-2 rounded-full bg-green-500"></span>
-										Telegram bot connected
+									<div class="flex items-center gap-2 text-sm {telegramSyncing ? 'text-amber-700' : 'text-green-700'}">
+										{#if telegramSyncing}
+											<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+											</svg>
+											Deploying to your agent...
+										{:else}
+											<span class="h-2 w-2 rounded-full bg-green-500"></span>
+											Telegram bot connected
+										{/if}
 									</div>
-									<button
-										onclick={handleTelegramDisconnect}
-										disabled={telegramLoading}
-										class="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
-									>
-										{telegramLoading ? 'Disconnecting...' : 'Disconnect'}
-									</button>
+									{#if !telegramSyncing}
+										<button
+											onclick={handleTelegramDisconnect}
+											disabled={telegramLoading}
+											class="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+										>
+											{telegramLoading ? 'Disconnecting...' : 'Disconnect'}
+										</button>
+									{/if}
 								</div>
-								<div class="mt-3 rounded-lg border border-green-200 bg-green-50 p-4">
-									<h4 class="text-sm font-semibold text-green-900">Your Telegram bot is live!</h4>
-									<p class="mt-1 text-xs text-green-800">Anyone who messages your bot on Telegram will get a response from your AI agent.</p>
-								</div>
+								{#if telegramSyncing}
+									<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+										<div class="flex items-center gap-2">
+											<svg class="h-4 w-4 animate-spin text-amber-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+											</svg>
+											<p class="text-xs font-medium text-amber-800">Deploying Telegram bot to your agent...</p>
+										</div>
+										<p class="mt-1.5 text-xs text-amber-700">This usually takes about a minute. Please wait before messaging the bot.</p>
+									</div>
+								{:else if telegramError}
+									<div class="mt-3 rounded-lg border border-red-200 bg-red-50 p-4">
+										<p class="text-xs text-red-800">{telegramError}</p>
+										<button
+											onclick={triggerTelegramSync}
+											class="mt-2 text-xs font-medium text-red-800 underline hover:text-red-900"
+										>
+											Retry
+										</button>
+									</div>
+								{:else}
+									<div class="mt-3 rounded-lg border border-green-200 bg-green-50 p-4">
+										<h4 class="text-sm font-semibold text-green-900">Your Telegram bot is live!</h4>
+										<p class="mt-1 text-xs text-green-800">Anyone who messages your bot on Telegram will get a response from your AI agent.</p>
+									</div>
+								{/if}
 							{:else}
 								<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
 									<p class="font-semibold text-gray-900">How to set up your Telegram bot:</p>
