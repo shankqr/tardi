@@ -43,6 +43,7 @@ type CloudInitData struct {
 	Provider          string // AI provider: openrouter, anthropic, openai
 	Model             string // Model ID for the provider
 	ConfigVersion     int    // Initial config version to prevent redundant first sync
+	RootPassword      string // Explicitly set root password (overrides Hetzner's auto-generated one)
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
@@ -84,6 +85,15 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable
 log_status "FIREWALL_CONFIGURED"
+
+# --- Set root password explicitly (Hetzner's auto-generated pwd may be expired by cloud-init) ---
+{{- if .RootPassword}}
+echo "root:{{.RootPassword}}" | chpasswd
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+systemctl restart sshd || systemctl restart ssh || true
+log_status "ROOT_PASSWORD_SET"
+{{- end}}
 
 # --- Install Docker from official repository ---
 install -m 0755 -d /etc/apt/keyrings
@@ -661,6 +671,12 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("store openclaw auth token: %w", err)
 	}
 
+	// Generate root password (set explicitly in cloud-init to avoid Hetzner/cloud-init expiry)
+	rootPassword, err := GenerateRootPassword()
+	if err != nil {
+		return fmt.Errorf("generate root password: %w", err)
+	}
+
 	// Fetch API keys from agent config (with defaults for provider/model)
 	ciData := CloudInitData{
 		AgentToken:        agentToken,
@@ -670,6 +686,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		OpenClawImageTag:  p.openClawImageTag,
 		Provider:          "openrouter",
 		Model:             "nvidia/nemotron-3-super-120b-a12b:free",
+		RootPassword:      rootPassword,
 	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, p.pool, inst.ID)
 	if err != nil {
@@ -726,10 +743,9 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("update provider info: %w", err)
 	}
 
-	if server.RootPassword != "" {
-		if err := db.UpdateInstanceRootPassword(ctx, p.pool, inst.ID, server.RootPassword); err != nil {
-			return fmt.Errorf("store root password: %w", err)
-		}
+	// Store our generated password (matches what cloud-init sets via chpasswd)
+	if err := db.UpdateInstanceRootPassword(ctx, p.pool, inst.ID, rootPassword); err != nil {
+		return fmt.Errorf("store root password: %w", err)
 	}
 
 	return nil
@@ -892,6 +908,15 @@ func isAlphaNum(c byte) bool {
 
 func GenerateAgentToken() (string, error) {
 	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate random bytes: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// GenerateRootPassword generates a 24-character hex password for VPS root access.
+func GenerateRootPassword() (string, error) {
+	b := make([]byte, 12)
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generate random bytes: %w", err)
 	}

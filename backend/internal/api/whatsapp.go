@@ -382,6 +382,7 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 				WhatsApp *struct {
 					Linked    bool `json:"linked"`
 					Connected bool `json:"connected"`
+					Running   bool `json:"running"`
 					Self      struct {
 						E164 *string `json:"e164"`
 					} `json:"self"`
@@ -399,9 +400,13 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 		linked := false
 		phone := ""
 		if status.Channels.WhatsApp != nil {
-			linked = status.Channels.WhatsApp.Linked
-			if status.Channels.WhatsApp.Self.E164 != nil {
-				phone = *status.Channels.WhatsApp.Self.E164
+			// "linked" in OpenClaw means "has stored auth credentials" which persists
+			// even after the user unlinks from their phone. We require both linked AND
+			// (connected OR running) to consider it actually working.
+			wa := status.Channels.WhatsApp
+			linked = wa.Linked && (wa.Connected || wa.Running)
+			if wa.Self.E164 != nil {
+				phone = *wa.Self.E164
 			}
 		}
 
