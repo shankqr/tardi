@@ -340,9 +340,8 @@ else
 fi
 
 # Detect current running OpenClaw version (image tag)
-CURRENT_IMAGE=$(docker inspect --format='{{"{{"}}.Config.Image{{"}}"}}' openclaw-openclaw-gateway-1 2>/dev/null || \
-                docker inspect --format='{{"{{"}}.Config.Image{{"}}"}}' openclaw-gateway 2>/dev/null)
-CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://')
+CURRENT_IMAGE=$(docker inspect --format='{{"{{"}}.Config.Image{{"}}"}}' openclaw-gateway 2>/dev/null)
+CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://' | tr -d '[:space:]')
 [ -z "$CURRENT_TAG" ] && CURRENT_TAG="unknown"
 
 # Read update status if mid-update
