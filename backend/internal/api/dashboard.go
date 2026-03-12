@@ -45,6 +45,47 @@ func DashboardHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
+		// Auto-unlock instances stuck in snapshotting/restoring by checking provider state
+		for i, inst := range instances {
+			if inst.Status != models.VpsStatusSnapshotting && inst.Status != models.VpsStatusRestoring {
+				continue
+			}
+			if inst.ProviderServerID == nil {
+				continue
+			}
+			prov, err := deps.Registry.Get(inst.Provider)
+			if err != nil {
+				continue
+			}
+			server, err := prov.GetServer(r.Context(), *inst.ProviderServerID)
+			if err != nil {
+				continue
+			}
+			if server.Status != "running" {
+				continue // operation still in progress at provider
+			}
+
+			// For snapshotting: also check no snapshots are still creating
+			if inst.Status == models.VpsStatusSnapshotting {
+				stillCreating := false
+				for _, s := range snapshots {
+					if s.VpsInstanceID == inst.ID && s.Status == models.SnapshotStatusCreating {
+						stillCreating = true
+						break
+					}
+				}
+				if stillCreating {
+					continue
+				}
+			}
+
+			slog.Info("dashboard: provider shows operation complete, unlocking instance",
+				"instance_id", inst.ID, "was_status", inst.Status,
+			)
+			_ = db.UpdateInstanceStatus(r.Context(), deps.Pool, inst.ID, models.VpsStatusActive)
+			instances[i].Status = models.VpsStatusActive
+		}
+
 		instanceResponses := make([]models.InstanceResponse, 0, len(instances))
 		for _, inst := range instances {
 			instanceResponses = append(instanceResponses, models.ToInstanceResponse(inst))
