@@ -652,20 +652,11 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 				"instance_id", instanceID,
 			)
 
-			// Auto-start: if paired but not running, kick the channel to connect.
+			// Log warning if linked but not running — gateway should auto-connect
 			if wa.Linked && !wa.Running {
-				go func() {
-					startCtx, startCancel := context.WithTimeout(context.Background(), 15*time.Second)
-					defer startCancel()
-					_, err := openclawRPC(startCtx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.start", map[string]any{
-						"channel": "whatsapp",
-					})
-					if err != nil {
-						slog.Warn("whatsapp status: auto-start failed", "error", err, "instance_id", instanceID)
-					} else {
-						slog.Info("whatsapp status: auto-start triggered", "instance_id", instanceID)
-					}
-				}()
+				slog.Warn("whatsapp status: linked but not running — gateway reconnect loop should handle this",
+					"instance_id", instanceID,
+				)
 			}
 		} else {
 			slog.Warn("whatsapp status: WhatsApp struct is nil after unmarshal",
