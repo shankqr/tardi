@@ -639,7 +639,11 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 		phone := ""
 		if status.Channels.WhatsApp != nil {
 			wa := status.Channels.WhatsApp
-			linked = wa.Linked && (wa.Connected || wa.Running)
+			// Use linked alone — it indicates valid stored credentials.
+			// connected/running reflect the live WebSocket to WhatsApp servers,
+			// which may be false even when the pairing is valid (e.g. right after
+			// scanning the QR, before OpenClaw establishes the session).
+			linked = wa.Linked
 			if wa.Self.E164 != nil {
 				phone = *wa.Self.E164
 			}
