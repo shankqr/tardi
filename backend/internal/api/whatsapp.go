@@ -462,27 +462,41 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 
 		force := r.URL.Query().Get("force") == "true"
 
-		// Use config.patch RPC to ensure WhatsApp and web channels are enabled.
-		// config.patch validates, writes config, and restarts the gateway.
-		// This fixes instances where channels got deconfigured (e.g. after logout)
-		// and ensures the Baileys Web channel is active for WhatsApp.
-		// config.patch expects "raw" as a JSON string for the partial config
-		patchJSON := `{"channels":{"web":{"enabled":true},"whatsapp":{"enabled":true,"dmPolicy":"pairing","groupPolicy":"disabled"}}}`
-		patchResult, patchErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "config.patch", map[string]any{
-			"raw": patchJSON,
-		})
-		if patchErr != nil {
-			slog.Warn("whatsapp qr: config.patch failed",
-				"error", patchErr,
-				"instance_id", instanceID,
-			)
+		// Use config.get → config.patch to ensure WhatsApp and web channels are enabled.
+		// config.patch requires a base hash from config.get for optimistic concurrency.
+		configGetResult, configGetErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "config.get", map[string]any{})
+		if configGetErr != nil {
+			slog.Warn("whatsapp qr: config.get failed", "error", configGetErr, "instance_id", instanceID)
 		} else {
-			slog.Info("whatsapp qr: config.patch succeeded",
-				"result", string(patchResult),
-				"instance_id", instanceID,
-			)
-			// Give gateway time to restart after config change
-			time.Sleep(3 * time.Second)
+			// Extract the hash from config.get response
+			var configResp struct {
+				Hash string `json:"hash"`
+			}
+			if err := json.Unmarshal(configGetResult, &configResp); err == nil && configResp.Hash != "" {
+				patchJSON := `{"channels":{"web":{"enabled":true},"whatsapp":{"enabled":true,"dmPolicy":"pairing","groupPolicy":"disabled"}}}`
+				patchResult, patchErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "config.patch", map[string]any{
+					"raw":  patchJSON,
+					"hash": configResp.Hash,
+				})
+				if patchErr != nil {
+					slog.Warn("whatsapp qr: config.patch failed",
+						"error", patchErr,
+						"instance_id", instanceID,
+					)
+				} else {
+					slog.Info("whatsapp qr: config.patch succeeded",
+						"result", string(patchResult),
+						"instance_id", instanceID,
+					)
+					// Give gateway time to restart after config change
+					time.Sleep(5 * time.Second)
+				}
+			} else {
+				slog.Warn("whatsapp qr: config.get response missing hash",
+					"raw", string(configGetResult),
+					"instance_id", instanceID,
+				)
+			}
 		}
 
 		// Log channel status for debugging
