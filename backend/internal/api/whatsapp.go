@@ -462,6 +462,19 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 
 		force := r.URL.Query().Get("force") == "true"
 
+		// Ensure the "web" channel is enabled — WhatsApp runs through Baileys Web
+		// and requires channels.web to be active. Try adding it via RPC; this is
+		// a no-op if already present.
+		_, webErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.add", map[string]any{
+			"channel": "web",
+		})
+		if webErr != nil {
+			slog.Info("whatsapp qr: channels.add web result (may already exist)",
+				"error", webErr,
+				"instance_id", instanceID,
+			)
+		}
+
 		// Check if WhatsApp channel is configured before attempting QR generation.
 		// If it's not configured (e.g. after a previous channels.logout wiped config),
 		// restart the gateway to re-read openclaw.json and re-initialize channels.
@@ -479,22 +492,31 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 				Channels struct {
 					WhatsApp *struct {
 						Configured bool `json:"configured"`
+						Running    bool `json:"running"`
 					} `json:"whatsapp"`
+					Web *struct {
+						Configured bool `json:"configured"`
+					} `json:"web"`
 				} `json:"channels"`
 			}
 			if err := json.Unmarshal(checkData, &statusCheck); err == nil {
+				slog.Info("whatsapp qr: pre-check status",
+					"wa_configured", statusCheck.Channels.WhatsApp != nil && statusCheck.Channels.WhatsApp.Configured,
+					"wa_running", statusCheck.Channels.WhatsApp != nil && statusCheck.Channels.WhatsApp.Running,
+					"web_configured", statusCheck.Channels.Web != nil && statusCheck.Channels.Web.Configured,
+					"instance_id", instanceID,
+				)
 				if statusCheck.Channels.WhatsApp == nil || !statusCheck.Channels.WhatsApp.Configured {
-					slog.Warn("whatsapp qr: channel not configured, restarting gateway to re-read config",
+					slog.Warn("whatsapp qr: channel not configured, restarting gateway",
 						"instance_id", instanceID,
 					)
 					_, restartErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "gateway.restart", map[string]any{})
 					if restartErr != nil {
-						slog.Warn("whatsapp qr: gateway.restart RPC failed, will try QR anyway",
+						slog.Warn("whatsapp qr: gateway.restart RPC failed",
 							"error", restartErr,
 							"instance_id", instanceID,
 						)
 					} else {
-						// Give gateway a moment to reinitialize
 						time.Sleep(3 * time.Second)
 					}
 				}
