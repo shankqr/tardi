@@ -462,16 +462,48 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 
 		force := r.URL.Query().Get("force") == "true"
 
-		// If force, logout first to clear stale WhatsApp credentials,
-		// otherwise web.login.start times out trying to reuse dead session.
-		if force {
-			_, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.logout", map[string]any{
-				"channel": "whatsapp",
-			})
-			if err != nil {
-				slog.Warn("whatsapp qr: logout before relink failed (may be ok)", "error", err, "instance_id", instanceID)
+		// Check if WhatsApp channel is configured before attempting QR generation.
+		// If it's not configured (e.g. after a previous channels.logout wiped config),
+		// restart the gateway to re-read openclaw.json and re-initialize channels.
+		statusResult, healthEvent, statusErr := openclawRPCWithEvents(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.status", map[string]any{
+			"probe":     true,
+			"timeoutMs": 5000,
+		}, "health")
+		if statusErr == nil {
+			// Prefer health event (fresh probe) over response (cached)
+			checkData := statusResult
+			if healthEvent != nil {
+				checkData = healthEvent
+			}
+			var statusCheck struct {
+				Channels struct {
+					WhatsApp *struct {
+						Configured bool `json:"configured"`
+					} `json:"whatsapp"`
+				} `json:"channels"`
+			}
+			if err := json.Unmarshal(checkData, &statusCheck); err == nil {
+				if statusCheck.Channels.WhatsApp == nil || !statusCheck.Channels.WhatsApp.Configured {
+					slog.Warn("whatsapp qr: channel not configured, restarting gateway to re-read config",
+						"instance_id", instanceID,
+					)
+					_, restartErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "gateway.restart", map[string]any{})
+					if restartErr != nil {
+						slog.Warn("whatsapp qr: gateway.restart RPC failed, will try QR anyway",
+							"error", restartErr,
+							"instance_id", instanceID,
+						)
+					} else {
+						// Give gateway a moment to reinitialize
+						time.Sleep(3 * time.Second)
+					}
+				}
 			}
 		}
+
+		// Note: we do NOT call channels.logout on force reconnect — it deconfigures
+		// the channel entirely (sets configured=false). Instead, web.login.start with
+		// force=true handles clearing stale sessions natively.
 
 		// Use openclawRPCKeepAlive to get the QR code while keeping the WebSocket
 		// alive in the background. OpenClaw cancels the login session when the
