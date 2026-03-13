@@ -462,63 +462,66 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 
 		force := r.URL.Query().Get("force") == "true"
 
-		// Ensure the "web" channel is enabled — WhatsApp runs through Baileys Web
-		// and requires channels.web to be active. Try adding it via RPC; this is
-		// a no-op if already present.
-		_, webErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.add", map[string]any{
-			"channel": "web",
+		// Use config.patch RPC to ensure WhatsApp and web channels are enabled.
+		// config.patch validates, writes config, and restarts the gateway.
+		// This fixes instances where channels got deconfigured (e.g. after logout)
+		// and ensures the Baileys Web channel is active for WhatsApp.
+		patchResult, patchErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "config.patch", map[string]any{
+			"patch": map[string]any{
+				"channels": map[string]any{
+					"web": map[string]any{
+						"enabled": true,
+					},
+					"whatsapp": map[string]any{
+						"enabled":     true,
+						"dmPolicy":    "pairing",
+						"groupPolicy": "disabled",
+					},
+				},
+			},
 		})
-		if webErr != nil {
-			slog.Info("whatsapp qr: channels.add web result (may already exist)",
-				"error", webErr,
+		if patchErr != nil {
+			slog.Warn("whatsapp qr: config.patch failed",
+				"error", patchErr,
 				"instance_id", instanceID,
 			)
+		} else {
+			slog.Info("whatsapp qr: config.patch succeeded",
+				"result", string(patchResult),
+				"instance_id", instanceID,
+			)
+			// Give gateway time to restart after config change
+			time.Sleep(3 * time.Second)
 		}
 
-		// Check if WhatsApp channel is configured before attempting QR generation.
-		// If it's not configured (e.g. after a previous channels.logout wiped config),
-		// restart the gateway to re-read openclaw.json and re-initialize channels.
+		// Log channel status for debugging
 		statusResult, healthEvent, statusErr := openclawRPCWithEvents(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.status", map[string]any{
 			"probe":     true,
 			"timeoutMs": 5000,
 		}, "health")
 		if statusErr == nil {
-			// Prefer health event (fresh probe) over response (cached)
 			checkData := statusResult
 			if healthEvent != nil {
 				checkData = healthEvent
 			}
 			var statusCheck struct {
-				Channels struct {
-					WhatsApp *struct {
-						Configured bool `json:"configured"`
-						Running    bool `json:"running"`
-					} `json:"whatsapp"`
-					Web *struct {
-						Configured bool `json:"configured"`
-					} `json:"web"`
-				} `json:"channels"`
+				Channels map[string]json.RawMessage `json:"channels"`
 			}
 			if err := json.Unmarshal(checkData, &statusCheck); err == nil {
-				slog.Info("whatsapp qr: pre-check status",
-					"wa_configured", statusCheck.Channels.WhatsApp != nil && statusCheck.Channels.WhatsApp.Configured,
-					"wa_running", statusCheck.Channels.WhatsApp != nil && statusCheck.Channels.WhatsApp.Running,
-					"web_configured", statusCheck.Channels.Web != nil && statusCheck.Channels.Web.Configured,
+				keys := make([]string, 0, len(statusCheck.Channels))
+				for k := range statusCheck.Channels {
+					keys = append(keys, k)
+				}
+				slog.Info("whatsapp qr: post-patch channel status",
+					"channel_keys", keys,
 					"instance_id", instanceID,
 				)
-				if statusCheck.Channels.WhatsApp == nil || !statusCheck.Channels.WhatsApp.Configured {
-					slog.Warn("whatsapp qr: channel not configured, restarting gateway",
+				for name, data := range statusCheck.Channels {
+					slog.Info("whatsapp qr: channel detail",
+						"channel", name,
+						"data", string(data),
 						"instance_id", instanceID,
 					)
-					_, restartErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "gateway.restart", map[string]any{})
-					if restartErr != nil {
-						slog.Warn("whatsapp qr: gateway.restart RPC failed",
-							"error", restartErr,
-							"instance_id", instanceID,
-						)
-					} else {
-						time.Sleep(3 * time.Second)
-					}
 				}
 			}
 		}
