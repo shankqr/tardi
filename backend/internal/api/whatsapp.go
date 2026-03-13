@@ -466,19 +466,10 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 		// config.patch validates, writes config, and restarts the gateway.
 		// This fixes instances where channels got deconfigured (e.g. after logout)
 		// and ensures the Baileys Web channel is active for WhatsApp.
+		// config.patch expects "raw" as a JSON string for the partial config
+		patchJSON := `{"channels":{"web":{"enabled":true},"whatsapp":{"enabled":true,"dmPolicy":"pairing","groupPolicy":"disabled"}}}`
 		patchResult, patchErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "config.patch", map[string]any{
-			"patch": map[string]any{
-				"channels": map[string]any{
-					"web": map[string]any{
-						"enabled": true,
-					},
-					"whatsapp": map[string]any{
-						"enabled":     true,
-						"dmPolicy":    "pairing",
-						"groupPolicy": "disabled",
-					},
-				},
-			},
+			"raw": patchJSON,
 		})
 		if patchErr != nil {
 			slog.Warn("whatsapp qr: config.patch failed",
