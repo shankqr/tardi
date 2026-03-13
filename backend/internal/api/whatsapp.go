@@ -314,10 +314,26 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		slog.Info("whatsapp qr: raw response",
-			"data_preview", string(result)[:min(500, len(result))],
-			"instance_id", instanceID,
-		)
+		// Log all fields in the response (not just qrDataUrl)
+		var rawResult map[string]json.RawMessage
+		if err := json.Unmarshal(result, &rawResult); err == nil {
+			keys := make([]string, 0, len(rawResult))
+			for k := range rawResult {
+				keys = append(keys, k)
+			}
+			hasQR := false
+			qrLen := 0
+			if qr, ok := rawResult["qrDataUrl"]; ok {
+				hasQR = true
+				qrLen = len(qr)
+			}
+			slog.Info("whatsapp qr: response fields",
+				"keys", keys,
+				"has_qr", hasQR,
+				"qr_length", qrLen,
+				"instance_id", instanceID,
+			)
+		}
 
 		var qrResult struct {
 			QRDataURL string `json:"qrDataUrl"`
@@ -389,9 +405,42 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 		slog.Info("whatsapp status: raw data",
 			"source", source,
 			"has_health_event", healthEvent != nil,
-			"data_preview", string(statusData)[:min(500, len(statusData))],
+			"data_length", len(statusData),
 			"instance_id", instanceID,
 		)
+
+		// Parse outer structure to extract just the WhatsApp channel data
+		var outer struct {
+			Channels map[string]json.RawMessage `json:"channels"`
+		}
+		if err := json.Unmarshal(statusData, &outer); err != nil {
+			slog.Error("whatsapp status: unmarshal outer failed", "error", err, "instance_id", instanceID)
+			WriteJSON(w, http.StatusOK, map[string]any{"linked": false})
+			return
+		}
+
+		// Log all channel keys present
+		channelKeys := make([]string, 0, len(outer.Channels))
+		for k := range outer.Channels {
+			channelKeys = append(channelKeys, k)
+		}
+		slog.Info("whatsapp status: channels present",
+			"keys", channelKeys,
+			"instance_id", instanceID,
+		)
+
+		// Log full WhatsApp channel data (untruncated)
+		if waData, ok := outer.Channels["whatsapp"]; ok {
+			slog.Info("whatsapp status: whatsapp channel data",
+				"data", string(waData),
+				"instance_id", instanceID,
+			)
+		} else {
+			slog.Warn("whatsapp status: NO 'whatsapp' key in channels",
+				"available_keys", channelKeys,
+				"instance_id", instanceID,
+			)
+		}
 
 		var status struct {
 			Channels struct {
@@ -416,14 +465,23 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 		linked := false
 		phone := ""
 		if status.Channels.WhatsApp != nil {
-			// "linked" in OpenClaw means "has stored auth credentials" which persists
-			// even after the user unlinks from their phone. We require both linked AND
-			// (connected OR running) to consider it actually working.
 			wa := status.Channels.WhatsApp
 			linked = wa.Linked && (wa.Connected || wa.Running)
 			if wa.Self.E164 != nil {
 				phone = *wa.Self.E164
 			}
+			slog.Info("whatsapp status: parsed fields",
+				"wa_linked", wa.Linked,
+				"wa_connected", wa.Connected,
+				"wa_running", wa.Running,
+				"result_linked", linked,
+				"phone", phone,
+				"instance_id", instanceID,
+			)
+		} else {
+			slog.Warn("whatsapp status: WhatsApp struct is nil after unmarshal",
+				"instance_id", instanceID,
+			)
 		}
 
 		WriteJSON(w, http.StatusOK, map[string]any{
