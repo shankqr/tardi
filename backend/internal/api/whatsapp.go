@@ -639,10 +639,6 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 		phone := ""
 		if status.Channels.WhatsApp != nil {
 			wa := status.Channels.WhatsApp
-			// Use linked alone — it indicates valid stored credentials.
-			// connected/running reflect the live WebSocket to WhatsApp servers,
-			// which may be false even when the pairing is valid (e.g. right after
-			// scanning the QR, before OpenClaw establishes the session).
 			linked = wa.Linked
 			if wa.Self.E164 != nil {
 				phone = *wa.Self.E164
@@ -655,6 +651,22 @@ func WhatsAppStatusHandler(deps Dependencies) http.HandlerFunc {
 				"phone", phone,
 				"instance_id", instanceID,
 			)
+
+			// Auto-start: if paired but not running, kick the channel to connect.
+			if wa.Linked && !wa.Running {
+				go func() {
+					startCtx, startCancel := context.WithTimeout(context.Background(), 15*time.Second)
+					defer startCancel()
+					_, err := openclawRPC(startCtx, *inst.IPv4, *inst.OpenClawAuthToken, "channels.start", map[string]any{
+						"channel": "whatsapp",
+					})
+					if err != nil {
+						slog.Warn("whatsapp status: auto-start failed", "error", err, "instance_id", instanceID)
+					} else {
+						slog.Info("whatsapp status: auto-start triggered", "instance_id", instanceID)
+					}
+				}()
+			}
 		} else {
 			slog.Warn("whatsapp status: WhatsApp struct is nil after unmarshal",
 				"instance_id", instanceID,
