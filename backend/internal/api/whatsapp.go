@@ -16,6 +16,175 @@ import (
 	"github.com/shanq/tardi/internal/db"
 )
 
+// openclawRPCKeepAlive is like openclawRPC but keeps the WebSocket connection
+// alive in a background goroutine for keepAliveDuration after receiving the RPC
+// response. This is needed for web.login.start because OpenClaw cancels the
+// pending WhatsApp login session when the operator WebSocket disconnects.
+func openclawRPCKeepAlive(ctx context.Context, ipv4, authToken, method string, params any, keepAliveDuration time.Duration, instanceID string) (json.RawMessage, error) {
+	url := fmt.Sprintf("wss://%s/?token=%s", ipv4, authToken)
+
+	dialer := websocket.Dialer{
+		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Self-signed cert on user's VPS
+		HandshakeTimeout: 10 * time.Second,
+	}
+
+	conn, _, err := dialer.DialContext(ctx, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("websocket dial: %w", err)
+	}
+	// NOTE: no defer conn.Close() — connection is closed by the background goroutine
+
+	// Step 1: Read connect.challenge event
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("set read deadline: %w", err)
+	}
+
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("read challenge: %w", err)
+	}
+
+	var event struct {
+		Type  string `json:"type"`
+		Event string `json:"event"`
+	}
+	if err := json.Unmarshal(msg, &event); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("parse challenge: %w", err)
+	}
+	if event.Type != "event" || event.Event != "connect.challenge" {
+		conn.Close()
+		return nil, fmt.Errorf("expected connect.challenge, got %s/%s", event.Type, event.Event)
+	}
+
+	// Step 2: Send connect request
+	connectReq := map[string]any{
+		"type":   "req",
+		"id":     "connect",
+		"method": "connect",
+		"params": map[string]any{
+			"minProtocol": 3,
+			"maxProtocol": 3,
+			"client": map[string]any{
+				"id":       "openclaw-control-ui",
+				"version":  "1.0",
+				"platform": "linux",
+				"mode":     "webchat",
+			},
+			"role":   "operator",
+			"scopes": []string{"operator.admin", "operator.approvals", "operator.pairing"},
+			"caps":   []string{"tool-events"},
+		},
+	}
+	if err := conn.WriteJSON(connectReq); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("send connect: %w", err)
+	}
+
+	// Step 3: Read connect response
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("set read deadline: %w", err)
+	}
+
+	_, msg, err = conn.ReadMessage()
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("read connect response: %w", err)
+	}
+
+	var connectResp struct {
+		Type  string          `json:"type"`
+		ID    string          `json:"id"`
+		OK    bool            `json:"ok"`
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(msg, &connectResp); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("parse connect response: %w", err)
+	}
+	if !connectResp.OK {
+		conn.Close()
+		return nil, fmt.Errorf("connect error: %s", string(connectResp.Error))
+	}
+
+	// Step 4: Send the actual RPC method
+	rpcID := uuid.New().String()
+	rpcReq := map[string]any{
+		"type":   "req",
+		"id":     rpcID,
+		"method": method,
+		"params": params,
+	}
+	if err := conn.WriteJSON(rpcReq); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("send rpc: %w", err)
+	}
+
+	// Step 5: Read RPC response (skip events)
+	deadline := time.Now().Add(35 * time.Second)
+	if err := conn.SetReadDeadline(deadline); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("set read deadline: %w", err)
+	}
+
+	var result json.RawMessage
+	for {
+		_, msg, err = conn.ReadMessage()
+		if err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("read rpc response: %w", err)
+		}
+
+		var resp struct {
+			Type    string          `json:"type"`
+			ID      string          `json:"id"`
+			OK      bool            `json:"ok"`
+			Payload json.RawMessage `json:"payload"`
+			Error   json.RawMessage `json:"error"`
+		}
+		if err := json.Unmarshal(msg, &resp); err != nil {
+			continue
+		}
+
+		if resp.Type == "event" {
+			continue
+		}
+		if resp.Type == "res" && resp.ID == rpcID {
+			if !resp.OK {
+				conn.Close()
+				return nil, fmt.Errorf("rpc error: %s", string(resp.Error))
+			}
+			result = resp.Payload
+			break
+		}
+	}
+
+	// Step 6: Keep the WebSocket alive in a background goroutine so OpenClaw
+	// doesn't cancel the login session. Read and discard any events.
+	go func() {
+		slog.Info("whatsapp qr: keeping WebSocket alive for QR scan window",
+			"duration", keepAliveDuration.String(),
+			"instance_id", instanceID,
+		)
+		_ = conn.SetReadDeadline(time.Now().Add(keepAliveDuration))
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+		}
+		conn.Close()
+		slog.Info("whatsapp qr: background WebSocket closed",
+			"instance_id", instanceID,
+		)
+	}()
+
+	return result, nil
+}
+
 // openclawRPC connects to an OpenClaw gateway via WebSocket (through Caddy),
 // handles the connect handshake, sends an RPC method, and returns the result.
 // OpenClaw uses a custom protocol: requests are {"type":"req","id":"...","method":"...","params":{...}}
@@ -304,17 +473,21 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 			}
 		}
 
-		result, err := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "web.login.start", map[string]any{
+		// Use openclawRPCKeepAlive to get the QR code while keeping the WebSocket
+		// alive in the background. OpenClaw cancels the login session when the
+		// operator WebSocket disconnects, so we hold it open for 35s to allow
+		// the user time to scan.
+		result, err := openclawRPCKeepAlive(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "web.login.start", map[string]any{
 			"force":     force,
 			"timeoutMs": 30000,
-		})
+		}, 35*time.Second, instanceID.String())
 		if err != nil {
 			slog.Error("whatsapp qr: rpc failed", "error", err, "instance_id", instanceID)
 			WriteError(w, http.StatusBadGateway, "gateway_error", "failed to get WhatsApp QR code")
 			return
 		}
 
-		// Log all fields in the response (not just qrDataUrl)
+		// Log response fields for debugging
 		var rawResult map[string]json.RawMessage
 		if err := json.Unmarshal(result, &rawResult); err == nil {
 			keys := make([]string, 0, len(rawResult))
