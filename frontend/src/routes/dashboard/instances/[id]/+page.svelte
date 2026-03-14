@@ -652,27 +652,41 @@
 										<p class="mt-2 text-xs text-green-700">Other people can also message your WhatsApp number to interact with your agent.</p>
 									</div>
 								{:else if whatsappQR}
-									<div class="flex flex-col items-center gap-3">
-										<img src={whatsappQR} alt="WhatsApp QR Code" class="h-48 w-48 rounded-lg" />
-										<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
-											<p class="font-semibold text-gray-900">How to scan this QR code:</p>
-											<ol class="mt-1.5 space-y-1">
-												<li><span class="font-semibold">1.</span> Open <span class="font-semibold">WhatsApp</span> on your phone</li>
-												<li><span class="font-semibold">2.</span> Go to <span class="font-semibold">Settings &gt; Linked Devices</span></li>
-												<li><span class="font-semibold">3.</span> Tap <span class="font-semibold">"Link a Device"</span></li>
-												<li><span class="font-semibold">4.</span> Point your phone camera at the QR code above</li>
-											</ol>
-										</div>
-										{#if whatsappPolling}
-											<p class="text-xs text-gray-400">Waiting for scan...</p>
-										{/if}
-										<button
-											onclick={() => handleWhatsAppConnect(true)}
-											class="text-xs text-gray-500 hover:text-gray-700"
-										>
-											Refresh QR
-										</button>
+									<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
+										<p class="font-semibold text-gray-900">How to link your WhatsApp:</p>
+										<ol class="mt-2 space-y-2">
+											<li><span class="font-semibold">1.</span> Open your agent's <span class="font-semibold">OpenClaw Dashboard</span> by clicking the button below</li>
+											<li><span class="font-semibold">2.</span> You may need to <span class="font-semibold">accept the security certificate</span> on first visit</li>
+											<li><span class="font-semibold">3.</span> In the dashboard, find the <span class="font-semibold">WhatsApp</span> section</li>
+											<li><span class="font-semibold">4.</span> A <span class="font-semibold">QR code</span> will be displayed &mdash; scan it with your phone</li>
+											<li><span class="font-semibold">5.</span> On your phone, open <span class="font-semibold">WhatsApp &gt; Settings &gt; Linked Devices</span></li>
+											<li><span class="font-semibold">6.</span> Tap <span class="font-semibold">&quot;Link a Device&quot;</span> and point your camera at the QR code</li>
+											<li><span class="font-semibold">7.</span> Once linked, return here and click <span class="font-semibold">Refresh</span> to confirm the connection</li>
+										</ol>
 									</div>
+									{#if instance.dashboard_url && instance.openclaw_auth_token}
+										<div class="mt-3 flex items-center gap-3">
+											<a
+												href="{instance.dashboard_url}/?token={instance.openclaw_auth_token}"
+												target="_blank"
+												rel="noopener noreferrer"
+												class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
+													<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
+													<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
+												</svg>
+												Open Dashboard
+											</a>
+											<button
+												onclick={refreshWhatsAppStatus}
+												disabled={whatsappChecking}
+												class="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+											>
+												{whatsappChecking ? 'Checking...' : 'Refresh'}
+											</button>
+										</div>
+									{/if}
 								{:else}
 									{#if showApiKeyRequired}
 										<div class="mb-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
@@ -919,7 +933,7 @@
 						</div>
 					</div>
 
-					{#if (instance.dashboard_url && instance.openclaw_auth_token) || instance.ipv4}
+					{#if instance.ipv4}
 						<div class="rounded-xl border border-gray-200">
 							<button
 								onclick={() => (powerUserOpen = !powerUserOpen)}
@@ -927,7 +941,7 @@
 							>
 								<div class="text-left">
 									<h3 class="text-sm font-semibold text-gray-900">Power User</h3>
-									<p class="mt-1 text-xs text-gray-400">Dashboard access and SSH connection</p>
+									<p class="mt-1 text-xs text-gray-400">Advanced settings and SSH connection</p>
 								</div>
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
@@ -949,29 +963,7 @@
 										</div>
 									</div>
 
-									{#if instance.dashboard_url && instance.openclaw_auth_token}
-										<div class="rounded-lg border border-gray-200 p-4">
-											<h4 class="text-sm font-medium text-gray-900">Dashboard</h4>
-											<p class="mt-1 text-xs text-gray-400">Access your agent's OpenClaw control panel</p>
-											<div class="mt-3">
-												<a
-													href="{instance.dashboard_url}/?token={instance.openclaw_auth_token}"
-													target="_blank"
-													rel="noopener noreferrer"
-													class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
-												>
-													<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
-														<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
-														<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
-													</svg>
-													Open Dashboard
-												</a>
-												<p class="mt-2 text-xs text-gray-400">You may need to accept the security certificate on first visit.</p>
-											</div>
-										</div>
-									{/if}
-
-									{#if instance.ipv4}
+																		{#if instance.ipv4}
 										<div class="rounded-lg border border-gray-200 p-4">
 											<h4 class="text-sm font-medium text-gray-900">SSH Access</h4>
 											<p class="mt-1 text-xs text-gray-400">Connect to your agent's server via SSH</p>
