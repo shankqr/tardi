@@ -142,12 +142,7 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
       "enabled": true,
       "dmPolicy": "pairing",
       "groupPolicy": "disabled"
-    }{{- if .TelegramBotToken}},
-    "telegram": {
-      "enabled": true,
-      "dmPolicy": "open",
-      "allowFrom": ["*"]
-    }{{- end}}
+    }
   }
 }
 CFGEOF
@@ -403,14 +398,13 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         mv /opt/openclaw/.env.tmp /opt/openclaw/.env
         chmod 600 /opt/openclaw/.env
 
-        # Update openclaw.json to enable/disable telegram channel
+        # Remove channels.telegram from openclaw.json if present — OpenClaw auto-detects
+        # the TELEGRAM_BOT_TOKEN env var. Having both causes duplicate channel handlers.
         OC_CONFIG="/opt/openclaw/data/openclaw/openclaw.json"
-        if [ -n "$NEW_TG_TOKEN" ]; then
-            jq '.channels.telegram = {"enabled": true, "dmPolicy": "open", "allowFrom": ["*"]}' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
-        else
+        if jq -e '.channels.telegram' "$OC_CONFIG" >/dev/null 2>&1; then
             jq 'del(.channels.telegram)' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
+            chown 1000:1000 "$OC_CONFIG"
         fi
-        chown 1000:1000 "$OC_CONFIG"
 
         # Recreate container to pick up new env (restart does not reload env_file)
         cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
