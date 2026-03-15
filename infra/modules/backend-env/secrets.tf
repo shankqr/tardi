@@ -88,3 +88,60 @@ resource "google_secret_manager_secret_version" "hetzner_api_token" {
     ignore_changes = [secret_data]
   }
 }
+
+# Cloudflare API token — for DNS record management (Let's Encrypt domains)
+resource "google_secret_manager_secret" "cloudflare_api_token" {
+  secret_id = "${var.environment}-cloudflare-api-token"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "cloudflare_api_token" {
+  secret      = google_secret_manager_secret.cloudflare_api_token.id
+  secret_data = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+# Cloudflare zone ID — for tardi.ai DNS zone
+resource "google_secret_manager_secret" "cloudflare_zone_id" {
+  secret_id = "${var.environment}-cloudflare-zone-id"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "cloudflare_zone_id" {
+  secret      = google_secret_manager_secret.cloudflare_zone_id.id
+  secret_data = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+# Cloudflare base domain — subdomain pattern for agent instances
+resource "google_secret_manager_secret" "cloudflare_base_domain" {
+  secret_id = "${var.environment}-cloudflare-base-domain"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "cloudflare_base_domain" {
+  secret      = google_secret_manager_secret.cloudflare_base_domain.id
+  secret_data = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}

@@ -86,6 +86,33 @@ resource "google_cloud_run_v2_service" "api" {
           }
         }
       }
+      env {
+        name = "CLOUDFLARE_API_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.cloudflare_api_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "CLOUDFLARE_ZONE_ID"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.cloudflare_zone_id.secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "CLOUDFLARE_BASE_DOMAIN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.cloudflare_base_domain.secret_id
+            version = "latest"
+          }
+        }
+      }
 
       resources {
         limits = {
