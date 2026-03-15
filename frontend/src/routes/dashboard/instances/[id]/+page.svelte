@@ -489,7 +489,7 @@
 							<dd class="text-gray-900">{new Date(instance.created_at).toLocaleDateString()}</dd>
 						</div>
 					</dl>
-					{#if instance.dashboard_url && instance.openclaw_auth_token}
+					{#if instance.status === 'active' && instance.dashboard_url && instance.openclaw_auth_token}
 						<div class="mt-4 border-t border-gray-100 pt-4">
 							<a
 								href="{instance.dashboard_url}/?token={instance.openclaw_auth_token}"
