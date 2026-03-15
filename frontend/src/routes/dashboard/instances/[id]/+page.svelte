@@ -9,8 +9,6 @@
 		createSnapshot,
 		restoreSnapshot,
 		deleteSnapshot,
-		getWhatsAppQR,
-		getWhatsAppStatus,
 		getAgentConfig,
 		connectTelegram,
 		disconnectTelegram,
@@ -57,15 +55,6 @@
 	let confirmRestoreId = $state<string | null>(null);
 	let confirmDeleteId = $state<string | null>(null);
 	let confirmDeleteInput = $state('');
-
-	// WhatsApp state
-	let whatsappQR = $state<string | null>(null);
-	let whatsappLoading = $state(false);
-	let whatsappError = $state<string | null>(null);
-	let whatsappLinked = $state(false);
-	let whatsappPhone = $state('');
-	let whatsappPolling = $state(false);
-	let whatsappPollTimer = $state<ReturnType<typeof setInterval> | null>(null);
 
 	// Telegram state
 	let telegramToken = $state('');
@@ -266,111 +255,6 @@
 			deletingSnapshotId = null;
 		}
 	}
-
-	let showApiKeyRequired = $state(false);
-	let showApiKeyGuide = $state(false);
-
-	async function handleWhatsAppConnect(force = false) {
-		if (!instance) return;
-		whatsappLoading = true;
-		whatsappError = null;
-		whatsappQR = null;
-		whatsappLinked = false;
-		showApiKeyRequired = false;
-		try {
-			const token = await getIdToken();
-			if (!token) throw new Error('Not authenticated');
-
-			// Check if an API key is configured before allowing WhatsApp connect
-			const agentCfg = await getAgentConfig(token, instance.id);
-			const cfg = agentCfg.config;
-			const hasKey =
-				(cfg.openrouter_api_key && typeof cfg.openrouter_api_key === 'string' && cfg.openrouter_api_key.length > 0) ||
-				(cfg.anthropic_api_key && typeof cfg.anthropic_api_key === 'string' && cfg.anthropic_api_key.length > 0) ||
-				(cfg.openai_api_key && typeof cfg.openai_api_key === 'string' && cfg.openai_api_key.length > 0);
-
-			if (!hasKey) {
-				showApiKeyRequired = true;
-				whatsappLoading = false;
-				return;
-			}
-
-			const result = await getWhatsAppQR(token, instance.id, force);
-			if (result.qr_data_url) {
-				whatsappQR = result.qr_data_url;
-				startWhatsAppPolling();
-			} else {
-				whatsappError = result.message || 'No QR code returned';
-			}
-		} catch (err) {
-			if (err instanceof DOMException && err.name === 'AbortError') {
-				whatsappError = 'Request timed out — please try again';
-			} else if (err instanceof TypeError && err.message === 'Failed to fetch') {
-				whatsappError = 'Connection timed out — please try again';
-			} else {
-				whatsappError = err instanceof Error ? err.message : 'Failed to get QR code';
-			}
-		} finally {
-			whatsappLoading = false;
-		}
-	}
-
-	function startWhatsAppPolling() {
-		stopWhatsAppPolling();
-		whatsappPolling = true;
-		whatsappPollTimer = setInterval(async () => {
-			if (!instance) return;
-			try {
-				const token = await getIdToken();
-				if (!token) return;
-				const status = await getWhatsAppStatus(token, instance.id);
-				if (status.linked) {
-					whatsappLinked = true;
-					whatsappPhone = status.phone;
-					whatsappQR = null;
-					stopWhatsAppPolling();
-				}
-			} catch {
-				// ignore polling errors
-			}
-		}, 5000);
-		// Stop polling after 2 minutes
-		setTimeout(() => stopWhatsAppPolling(), 120000);
-	}
-
-	function stopWhatsAppPolling() {
-		if (whatsappPollTimer) {
-			clearInterval(whatsappPollTimer);
-			whatsappPollTimer = null;
-		}
-		whatsappPolling = false;
-	}
-
-	let whatsappChecking = $state(false);
-
-	async function refreshWhatsAppStatus() {
-		if (!instance) return;
-		whatsappChecking = true;
-		try {
-			const token = await getIdToken();
-			if (!token) return;
-			const status = await getWhatsAppStatus(token, instance.id);
-			whatsappLinked = status.linked;
-			whatsappPhone = status.phone;
-		} catch {
-			// ignore
-		} finally {
-			whatsappChecking = false;
-		}
-	}
-
-	// Check WhatsApp status on load
-	$effect(() => {
-		if (instance?.status === 'active' && instance.openclaw_auth_token && instance.ipv4) {
-			refreshWhatsAppStatus();
-		}
-		return () => stopWhatsAppPolling();
-	});
 
 	async function triggerTelegramSync() {
 		if (!instance) return;
@@ -625,141 +509,6 @@
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
 					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} />
-
-					{#if instance.openclaw_auth_token && instance.ipv4}
-						<div class="rounded-xl border border-gray-200 p-5">
-							<h3 class="text-sm font-semibold text-gray-900">WhatsApp</h3>
-							<p class="mt-1 text-xs text-gray-400">Link your WhatsApp account to enable messaging through your agent</p>
-							<div class="mt-4">
-								{#if whatsappLinked}
-									<div class="flex items-center justify-between">
-										<div class="flex items-center gap-2 text-sm text-green-700">
-											<span class="h-2 w-2 rounded-full bg-green-500"></span>
-											Linked{whatsappPhone ? ` (${whatsappPhone})` : ''}
-										</div>
-										<div class="flex items-center gap-2">
-											<button
-												onclick={refreshWhatsAppStatus}
-												disabled={whatsappChecking}
-												class="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
-												title="Refresh status"
-											>
-												{whatsappChecking ? 'Checking...' : 'Refresh'}
-											</button>
-											<button
-												onclick={() => handleWhatsAppConnect(true)}
-												disabled={whatsappLoading}
-												class="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
-												title="Reconnect with a different WhatsApp account"
-											>
-												Reconnect
-											</button>
-										</div>
-									</div>
-									<div class="mt-4 rounded-lg border border-green-200 bg-green-50 p-4">
-										<h4 class="text-sm font-semibold text-green-900">Start chatting with your agent</h4>
-										<p class="mt-1 text-xs text-green-800">Your WhatsApp is now linked. To talk to your AI agent, message yourself on WhatsApp:</p>
-										<ol class="mt-2 space-y-1.5 text-xs text-green-800">
-											<li><span class="font-semibold">1.</span> Open <span class="font-semibold">WhatsApp</span> on your phone</li>
-											<li><span class="font-semibold">2.</span> Tap <span class="font-semibold">New Chat</span> (or the compose button)</li>
-											<li><span class="font-semibold">3.</span> Search for your own name or number &mdash; you'll see <span class="font-semibold">"Message yourself"</span></li>
-											<li><span class="font-semibold">4.</span> Send any message &mdash; your agent will reply!</li>
-										</ol>
-										<p class="mt-2 text-xs text-green-700">Other people can also message your WhatsApp number to interact with your agent.</p>
-									</div>
-								{:else if whatsappQR}
-									<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
-										<p class="font-semibold text-gray-900">How to link your WhatsApp:</p>
-										<ol class="mt-2 space-y-2">
-											<li><span class="font-semibold">1.</span> Open your agent's <span class="font-semibold">OpenClaw Dashboard</span> by clicking the button below</li>
-											<li><span class="font-semibold">2.</span> You may need to <span class="font-semibold">accept the security certificate</span> on first visit</li>
-											<li><span class="font-semibold">3.</span> In the dashboard, find the <span class="font-semibold">WhatsApp</span> section</li>
-											<li><span class="font-semibold">4.</span> A <span class="font-semibold">QR code</span> will be displayed &mdash; scan it with your phone</li>
-											<li><span class="font-semibold">5.</span> On your phone, open <span class="font-semibold">WhatsApp &gt; Settings &gt; Linked Devices</span></li>
-											<li><span class="font-semibold">6.</span> Tap <span class="font-semibold">&quot;Link a Device&quot;</span> and point your camera at the QR code</li>
-											<li><span class="font-semibold">7.</span> Once linked, return here and click <span class="font-semibold">Refresh</span> to confirm the connection</li>
-										</ol>
-									</div>
-									{#if instance.dashboard_url && instance.openclaw_auth_token}
-										<div class="mt-3 flex items-center gap-3">
-											<a
-												href="{instance.dashboard_url}/?token={instance.openclaw_auth_token}"
-												target="_blank"
-												rel="noopener noreferrer"
-												class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
-											>
-												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
-													<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
-													<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
-												</svg>
-												Open Dashboard
-											</a>
-											<button
-												onclick={refreshWhatsAppStatus}
-												disabled={whatsappChecking}
-												class="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-											>
-												{whatsappChecking ? 'Checking...' : 'Refresh'}
-											</button>
-										</div>
-									{/if}
-								{:else}
-									{#if showApiKeyRequired}
-										<div class="mb-3 rounded-lg border border-orange-200 bg-orange-50 p-3">
-											<p class="text-sm font-medium text-orange-800">API key required</p>
-											<p class="mt-1 text-xs text-orange-700">
-												Your agent needs an AI model API key to respond to WhatsApp messages. Set your OpenRouter API key in the <strong>AI Provider</strong> section above, then try again.
-											</p>
-											<div class="mt-2 flex items-center gap-3">
-												<button
-													type="button"
-													onclick={() => (showApiKeyGuide = !showApiKeyGuide)}
-													class="inline-flex items-center gap-1 text-xs font-medium text-orange-800 underline hover:text-orange-900"
-												>
-													{showApiKeyGuide ? 'Hide Guide' : 'Guide Me'}
-												</button>
-												<a
-													href="https://openrouter.ai/keys"
-													target="_blank"
-													rel="noopener noreferrer"
-													class="inline-flex items-center gap-1 text-xs font-medium text-orange-800 underline hover:text-orange-900"
-												>
-													Get an OpenRouter API key
-													<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3 w-3">
-														<path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd" />
-														<path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd" />
-													</svg>
-												</a>
-											</div>
-											{#if showApiKeyGuide}
-												<ol class="mt-3 space-y-1.5 text-xs text-orange-800">
-													<li><span class="font-semibold">1.</span> Go to <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" class="underline hover:text-orange-900">openrouter.ai</a> and click <span class="font-semibold">Sign Up</span></li>
-													<li><span class="font-semibold">2.</span> Create an account using your email, Google, or GitHub</li>
-													<li><span class="font-semibold">3.</span> Go to <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="underline hover:text-orange-900">openrouter.ai/keys</a></li>
-													<li><span class="font-semibold">4.</span> Click <span class="font-semibold">Create Key</span> and name it (e.g. "Tardi")</li>
-													<li><span class="font-semibold">5.</span> Copy the key (starts with <code class="rounded bg-orange-100 px-1 py-0.5">sk-or-v1-...</code>) and paste it in the <strong>AI Provider</strong> section above</li>
-													<li><span class="font-semibold">6.</span> Click <span class="font-semibold">Save</span>, then come back here to connect WhatsApp</li>
-												</ol>
-											{/if}
-										</div>
-									{/if}
-									{#if whatsappError}
-										<p class="mb-3 text-xs text-red-600">{whatsappError}</p>
-									{/if}
-									<button
-										onclick={() => handleWhatsAppConnect(true)}
-										disabled={whatsappLoading || instance.status !== 'active'}
-										class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-									>
-										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-4 w-4">
-											<path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-										</svg>
-										{whatsappLoading ? 'Loading...' : 'Connect WhatsApp'}
-									</button>
-								{/if}
-							</div>
-						</div>
-					{/if}
 
 					<div class="rounded-xl border border-gray-200 p-5">
 						<div class="flex items-center gap-2">
