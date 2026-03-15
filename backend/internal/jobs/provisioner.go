@@ -153,9 +153,6 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
     }
   },
   "channels": {
-    "web": {
-      "enabled": true
-    },
     "whatsapp": {
       "enabled": true,
       "dmPolicy": "pairing",
@@ -411,18 +408,6 @@ CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://' | tr -d '[:space:]')
 # Read update status if mid-update
 UPDATE_STATUS=$(cat /opt/openclaw/.update_status 2>/dev/null || echo "")
 UPDATE_ERROR=$(cat /opt/openclaw/.update_error 2>/dev/null || echo "")
-
-# Ensure channels.web is enabled (required for WhatsApp Baileys Web)
-OC_CONFIG="/opt/openclaw/data/openclaw/openclaw.json"
-if [ -f "$OC_CONFIG" ]; then
-    HAS_WEB=$(jq -r '.channels.web.enabled // false' "$OC_CONFIG" 2>/dev/null)
-    if [ "$HAS_WEB" != "true" ]; then
-        jq '.channels.web = {"enabled": true}' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
-        chown 1000:1000 "$OC_CONFIG"
-        cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
-        sleep 10  # wait for gateway to reinitialize
-    fi
-fi
 
 # Send heartbeat with version info and capture response
 RESPONSE=$(curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
