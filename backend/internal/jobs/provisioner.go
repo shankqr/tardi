@@ -20,6 +20,11 @@ import (
 	"github.com/shanq/tardi/internal/provider"
 )
 
+// frameworkCodes maps agent framework names to short codes for server naming.
+var frameworkCodes = map[string]string{
+	"openclaw": "oc",
+}
+
 // Per-step timeouts per the architecture spec.
 var stepTimeouts = map[models.ProvisioningStep]time.Duration{
 	models.StepSelectProvider:  2 * time.Minute,
@@ -762,7 +767,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
-		Name:       fmt.Sprintf("openclaw-%s", inst.ID.String()[:8]),
+		Name:       buildServerName("openclaw", user.Email, inst.ID.String()[:8]),
 		ServerType: mapping.ProviderServerType,
 		Region:     mapping.ProviderRegion,
 		Image:      mapping.ProviderImage,
@@ -942,6 +947,48 @@ func SanitizeLabelValue(s string) string {
 
 func isAlphaNum(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+}
+
+// frameworkCode returns the short code for a framework name, or the name itself as fallback.
+func frameworkCode(framework string) string {
+	if code, ok := frameworkCodes[framework]; ok {
+		return code
+	}
+	return framework
+}
+
+// buildServerName creates an RFC 1123 compliant server name: {frameworkCode}-{sanitizedEmail}-{uniqueID}.
+// Max 63 chars; the email portion is truncated if the total exceeds the limit.
+func buildServerName(framework, email, uniqueID string) string {
+	code := frameworkCode(framework)
+	sanitizedEmail := SanitizeLabelValue(email)
+
+	// Format: {code}-{email}-{uniqueID}
+	name := fmt.Sprintf("%s-%s-%s", code, sanitizedEmail, uniqueID)
+
+	// Truncate to 63 chars by trimming the email if needed
+	maxLen := 63
+	if len(name) > maxLen {
+		// Reserve space for code + "-" + "-" + uniqueID
+		overhead := len(code) + 1 + 1 + len(uniqueID)
+		maxEmail := maxLen - overhead
+		if maxEmail < 1 {
+			// Edge case: just use code-uniqueID
+			name = fmt.Sprintf("%s-%s", code, uniqueID)
+		} else {
+			trimmed := sanitizedEmail
+			if len(trimmed) > maxEmail {
+				trimmed = trimmed[:maxEmail]
+			}
+			// Trim trailing non-alphanumeric from the truncated email
+			for len(trimmed) > 0 && !isAlphaNum(trimmed[len(trimmed)-1]) {
+				trimmed = trimmed[:len(trimmed)-1]
+			}
+			name = fmt.Sprintf("%s-%s-%s", code, trimmed, uniqueID)
+		}
+	}
+
+	return name
 }
 
 func GenerateAgentToken() (string, error) {
