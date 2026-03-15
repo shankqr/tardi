@@ -126,12 +126,12 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
     log_status "SANDBOX_BUILD_SKIPPED"
 log_status "SANDBOX_READY"
 
-# --- Create openclaw user (UID 1000) for container security ---
+# --- Create openclaw user (UID 1000) with Docker access ---
 useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
+usermod -aG docker openclaw
 
-# --- Directory structure (granular subdirs for selective backup) ---
-# Backup priority: credentials (critical) > config (high) > workspace (medium) > state (low)
-mkdir -p /opt/openclaw/data/openclaw/{config,workspace,state,credentials,agents}
+# --- Directory structure ---
+mkdir -p /opt/openclaw/data/openclaw
 chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
@@ -165,7 +165,9 @@ CFGEOF
 chown 1000:1000 /opt/openclaw/data/openclaw/openclaw.json
 
 # --- Environment file ---
-cat > /opt/openclaw/.env <<'ENVEOF'
+DOCKER_GID=$(getent group docker | cut -d: -f3)
+cat > /opt/openclaw/.env <<ENVEOF
+DOCKER_GID=${DOCKER_GID}
 AGENT_TOKEN={{.AgentToken}}
 API_URL={{.APIURL}}
 INSTANCE_ID={{.InstanceID}}
@@ -210,22 +212,12 @@ services:
     container_name: openclaw-gateway
     restart: unless-stopped
     user: "1000:1000"
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    group_add:
+      - "${DOCKER_GID}"
     networks:
       - openclaw-net
     volumes:
-      # Granular mounts for selective backup/restore
-      # Backup priority: credentials (critical) > config (high) > workspace (medium) > state (low)
-      - ./data/openclaw/openclaw.json:/home/node/.openclaw/openclaw.json:rw
-      - ./data/openclaw/config:/home/node/.openclaw/config:rw
-      - ./data/openclaw/workspace:/home/node/.openclaw/workspace:rw
-      - ./data/openclaw/state:/home/node/.openclaw/state:rw
-      - ./data/openclaw/credentials:/home/node/.openclaw/credentials:rw
-      - ./data/openclaw/agents:/home/node/.openclaw/agents:rw
-      # Docker socket for sandbox container management (tool execution)
+      - ./data/openclaw:/home/node/.openclaw:rw
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "127.0.0.1:18789:18789"
