@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -950,7 +951,22 @@ func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("no IPv4 address available")
 	}
 
-	healthURL := fmt.Sprintf("http://%s/health", *inst.IPv4)
+	// Use domain-based health check when available (Let's Encrypt TLS);
+	// fall back to IP-based HTTP check for legacy instances.
+	var healthURL string
+	if inst.Domain != nil && *inst.Domain != "" {
+		healthURL = fmt.Sprintf("https://%s/health", *inst.Domain)
+	} else {
+		healthURL = fmt.Sprintf("http://%s/health", *inst.IPv4)
+	}
+
+	// TLS client that tolerates in-progress cert provisioning
+	tlsClient := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // health check to our own VPS
+		},
+	}
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -960,7 +976,7 @@ func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.Provisio
 		case <-ctx.Done():
 			return fmt.Errorf("timeout waiting for agent health: %w", ctx.Err())
 		case <-ticker.C:
-			resp, err := http.Get(healthURL) //nolint:gosec // Health check URL is constructed from our own DB
+			resp, err := tlsClient.Get(healthURL) //nolint:gosec // Health check URL is constructed from our own DB
 			if err != nil {
 				p.logger.Debug("provisioner: agent not ready yet", "error", err, "instance_id", job.VpsInstanceID)
 				continue
