@@ -131,7 +131,7 @@ useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
 
 # --- Directory structure (granular subdirs for selective backup) ---
 # Backup priority: credentials (critical) > config (high) > workspace (medium) > state (low)
-mkdir -p /opt/openclaw/data/openclaw/{config,workspace,state,credentials}
+mkdir -p /opt/openclaw/data/openclaw/{config,workspace,state,credentials,agents}
 chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
@@ -224,6 +224,7 @@ services:
       - ./data/openclaw/workspace:/home/node/.openclaw/workspace:rw
       - ./data/openclaw/state:/home/node/.openclaw/state:rw
       - ./data/openclaw/credentials:/home/node/.openclaw/credentials:rw
+      - ./data/openclaw/agents:/home/node/.openclaw/agents:rw
       # Docker socket for sandbox container management (tool execution)
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
