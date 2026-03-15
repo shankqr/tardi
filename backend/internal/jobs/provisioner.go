@@ -158,6 +158,11 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
       "enabled": true,
       "dmPolicy": "pairing",
       "groupPolicy": "disabled"
+    },
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "open",
+      "groupPolicy": "disabled"
     }
   }
 }
