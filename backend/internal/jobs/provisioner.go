@@ -50,6 +50,7 @@ type CloudInitData struct {
 	ConfigVersion     int    // Initial config version to prevent redundant first sync
 	RootPassword      string // Explicitly set root password (overrides Hetzner's auto-generated one)
 	TelegramBotToken  string // Optional Telegram bot token
+	Domain            string // Optional domain for Let's Encrypt (e.g. "abc123.agents.tardi.ai"); empty = self-signed
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
@@ -113,11 +114,22 @@ systemctl enable docker
 systemctl start docker
 log_status "DOCKER_INSTALLED"
 
+# --- Build sandbox image for OpenClaw tool execution ---
+# The sandbox image is required for executing tools in chat sessions.
+# Try the built-in setup command first, fall back to pulling pre-built image.
+docker pull ghcr.io/openclaw/openclaw:{{.OpenClawImageTag}}
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+    ghcr.io/openclaw/openclaw:{{.OpenClawImageTag}} openclaw setup --build-sandbox 2>/dev/null || \
+    docker pull ghcr.io/openclaw/openclaw-sandbox:bookworm-slim 2>/dev/null || \
+    log_status "SANDBOX_BUILD_SKIPPED"
+log_status "SANDBOX_READY"
+
 # --- Create openclaw user (UID 1000) for container security ---
 useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
 
-# --- Directory structure ---
-mkdir -p /opt/openclaw/data/openclaw
+# --- Directory structure (granular subdirs for selective backup) ---
+# Backup priority: credentials (critical) > config (high) > workspace (medium) > state (low)
+mkdir -p /opt/openclaw/data/openclaw/{config,workspace,state,credentials}
 chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
@@ -176,7 +188,11 @@ chmod 600 /opt/openclaw/.env
 echo "{{.ConfigVersion}}" > /opt/openclaw/.config_version
 {{- end}}
 
-# --- Generate self-signed TLS certificate ---
+{{- if .Domain}}
+# --- TLS: Let's Encrypt via Caddy (automatic for domain {{.Domain}}) ---
+log_status "TLS_LETSENCRYPT_DOMAIN"
+{{- else}}
+# --- TLS: Self-signed certificate (no domain configured) ---
 mkdir -p /opt/openclaw/certs
 SERVER_IP=$(hostname -I | awk '{print $1}')
 openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
@@ -185,6 +201,7 @@ openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
     -subj "/CN=${SERVER_IP}" \
     -addext "subjectAltName=IP:${SERVER_IP}"
 log_status "TLS_CERT_GENERATED"
+{{- end}}
 
 # --- Docker Compose ---
 cat > /opt/openclaw/docker-compose.yml <<'COMPOSEEOF'
@@ -201,7 +218,15 @@ services:
     networks:
       - openclaw-net
     volumes:
-      - ./data/openclaw:/home/node/.openclaw:rw
+      # Granular mounts for selective backup/restore
+      # Backup priority: credentials (critical) > config (high) > workspace (medium) > state (low)
+      - ./data/openclaw/openclaw.json:/home/node/.openclaw/openclaw.json:rw
+      - ./data/openclaw/config:/home/node/.openclaw/config:rw
+      - ./data/openclaw/workspace:/home/node/.openclaw/workspace:rw
+      - ./data/openclaw/state:/home/node/.openclaw/state:rw
+      - ./data/openclaw/credentials:/home/node/.openclaw/credentials:rw
+      # Docker socket for sandbox container management (tool execution)
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "127.0.0.1:18789:18789"
     env_file:
@@ -224,7 +249,11 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+{{- if not .Domain}}
       - ./certs:/etc/caddy/certs:ro
+{{- end}}
+      - caddy_data:/data
+      - caddy_config:/config
     env_file:
       - .env
     depends_on:
@@ -234,6 +263,10 @@ services:
 networks:
   openclaw-net:
     driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
 COMPOSEEOF
 
 # --- Caddyfile ---
@@ -243,8 +276,12 @@ COMPOSEEOF
 # 3. Static assets (/assets/*, favicon) are public (no secrets, just bundled JS/CSS)
 # 4. Unauthenticated requests get 401
 cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
+{{- if .Domain}}
+{{.Domain}} {
+{{- else}}
 :443 {
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+{{- end}}
 
 	# Static assets - no auth needed (bundled JS/CSS/images)
 	@static {
@@ -290,6 +327,19 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	respond 401
 }
 
+{{- if .Domain}}
+
+http://{{.Domain}} {
+	@health path /health
+	handle @health {
+		reverse_proxy openclaw-gateway:18789
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}
+{{- else}}
+
 :80 {
 	@health path /health
 	handle @health {
@@ -299,6 +349,7 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 		redir https://{host}{uri} permanent
 	}
 }
+{{- end}}
 CADDYEOF
 log_status "FILES_WRITTEN"
 
