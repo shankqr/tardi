@@ -14,6 +14,9 @@ type Config struct {
 	StripeSecretKey     string
 	StripeWebhookSecret string
 	HetznerAPIToken     string
+	CloudflareAPIToken  string
+	CloudflareZoneID    string
+	CloudflareBaseDomain string // e.g. "agents.tardi.ai" — instances get <id>.agents.tardi.ai
 	Environment         string
 	LogLevel            string
 	APIURL              string
@@ -37,6 +40,9 @@ func Load() *Config {
 		StripeSecretKey:    os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		HetznerAPIToken:    secretOrEmpty("HETZNER_API_TOKEN"),
+		CloudflareAPIToken:  secretOrEmpty("CLOUDFLARE_API_TOKEN"),
+		CloudflareZoneID:    os.Getenv("CLOUDFLARE_ZONE_ID"),
+		CloudflareBaseDomain: os.Getenv("CLOUDFLARE_BASE_DOMAIN"),
 		Environment:        envOrDefault("ENVIRONMENT", "dev"),
 		LogLevel:           envOrDefault("LOG_LEVEL", "info"),
 		APIURL:             envOrDefault("API_URL", "http://localhost:8080"),

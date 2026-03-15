@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/dns"
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
 )
@@ -591,6 +592,7 @@ type Provisioner struct {
 	logger           *slog.Logger
 	apiURL           string
 	openClawImageTag string
+	dnsClient        *dns.Client // nil if Cloudflare DNS not configured
 }
 
 // Execute runs through the provisioning steps for a job.
@@ -768,6 +770,13 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("generate root password: %w", err)
 	}
 
+	// Compute domain if DNS is configured (known before server creation since it's based on instance ID)
+	var domain string
+	if p.dnsClient != nil {
+		subdomain := inst.ID.String()[:8]
+		domain = fmt.Sprintf("%s.%s", subdomain, p.dnsClient.BaseDomain())
+	}
+
 	// Fetch API keys from agent config (with defaults for provider/model)
 	ciData := CloudInitData{
 		AgentToken:        agentToken,
@@ -778,6 +787,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		Provider:          "openrouter",
 		Model:             "nvidia/nemotron-3-super-120b-a12b:free",
 		RootPassword:      rootPassword,
+		Domain:            domain,
 	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, p.pool, inst.ID)
 	if err != nil {
@@ -842,7 +852,54 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("store root password: %w", err)
 	}
 
+	// Create DNS A record now that we have the IP.
+	// Cloud-init already has the domain baked in — Caddy will retry ACME until DNS propagates.
+	if _, err := p.createDNSRecord(ctx, inst.ID.String(), server.IPv4); err != nil {
+		p.logger.Warn("provisioner: DNS record creation failed (instance will use self-signed TLS)",
+			"instance_id", inst.ID, "error", err)
+		// Non-fatal: instance works with self-signed cert if DNS fails
+	}
+
 	return nil
+}
+
+// createDNSRecord creates a Cloudflare DNS A record for the instance.
+// Returns the domain (e.g. "abc12345.agents.tardi.ai") or empty string if DNS is not configured.
+func (p *Provisioner) createDNSRecord(ctx context.Context, instanceID string, ip string) (domain string, err error) {
+	if p.dnsClient == nil {
+		return "", nil
+	}
+
+	// Use first 8 chars of instance UUID as subdomain
+	subdomain := instanceID
+	if len(subdomain) > 8 {
+		subdomain = subdomain[:8]
+	}
+
+	recordID, err := p.dnsClient.CreateARecord(ctx, subdomain, ip)
+	if err != nil {
+		return "", fmt.Errorf("create DNS A record: %w", err)
+	}
+
+	domain = fmt.Sprintf("%s.%s", subdomain, p.dnsClient.BaseDomain())
+
+	// Parse UUID for DB update
+	instUUID, err := uuid.Parse(instanceID)
+	if err != nil {
+		return "", fmt.Errorf("parse instance ID: %w", err)
+	}
+
+	if err := db.UpdateInstanceDomain(ctx, p.pool, instUUID, domain, recordID); err != nil {
+		return "", fmt.Errorf("store domain: %w", err)
+	}
+
+	p.logger.Info("provisioner: DNS record created",
+		"instance_id", instanceID,
+		"domain", domain,
+		"ip", ip,
+	)
+
+	return domain, nil
 }
 
 func (p *Provisioner) stepWaitServerReady(ctx context.Context, job *models.ProvisioningJob) error {
@@ -951,6 +1008,7 @@ func GetInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 		       name, host(ipv4)::text, region, status,
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
+		       domain, dns_record_id,
 		       created_at, updated_at
 		FROM vps_instances WHERE id = $1
 	`, instanceID).Scan(
@@ -959,6 +1017,7 @@ func GetInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 		&inst.Region, &inst.Status,
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
 		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
+		&inst.Domain, &inst.DNSRecordID,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if err != nil {

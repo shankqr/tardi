@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/dns"
 	"github.com/shanq/tardi/internal/provider"
 )
 
@@ -19,7 +20,7 @@ type Worker struct {
 	provisioner *Provisioner
 }
 
-func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag string) *Worker {
+func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag string, dnsClient *dns.Client) *Worker {
 	return &Worker{
 		pool:     pool,
 		registry: registry,
@@ -31,6 +32,7 @@ func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Log
 			logger:           logger,
 			apiURL:           apiURL,
 			openClawImageTag: openClawImageTag,
+			dnsClient:        dnsClient,
 		},
 	}
 }

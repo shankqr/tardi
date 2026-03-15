@@ -10,18 +10,20 @@ import (
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/billing"
 	"github.com/shanq/tardi/internal/config"
+	"github.com/shanq/tardi/internal/dns"
 	"github.com/shanq/tardi/internal/jobs"
 	"github.com/shanq/tardi/internal/provider"
 )
 
 type Dependencies struct {
-	Pool     *pgxpool.Pool
-	Logger   *slog.Logger
-	Config   *config.Config
-	Billing  *billing.StripeService
-	Registry *provider.Registry
-	Resumer  *jobs.Resumer
-	BGTasks  *sync.WaitGroup // Tracks background goroutines (snapshots, restores) for graceful shutdown
+	Pool      *pgxpool.Pool
+	Logger    *slog.Logger
+	Config    *config.Config
+	Billing   *billing.StripeService
+	Registry  *provider.Registry
+	Resumer   *jobs.Resumer
+	DNSClient *dns.Client   // nil if Cloudflare DNS not configured
+	BGTasks   *sync.WaitGroup // Tracks background goroutines (snapshots, restores) for graceful shutdown
 }
 
 func NewRouter(deps Dependencies) http.Handler {

@@ -104,6 +104,8 @@ type VpsInstance struct {
 	TargetOpenClawVersion    *string
 	OpenClawUpdateStatus     *string
 	OpenClawUpdateError      *string
+	Domain                   *string
+	DNSRecordID              *string
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 }

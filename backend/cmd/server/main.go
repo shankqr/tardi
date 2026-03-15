@@ -19,6 +19,7 @@ import (
 	"github.com/shanq/tardi/internal/billing"
 	"github.com/shanq/tardi/internal/config"
 	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/dns"
 	"github.com/shanq/tardi/internal/jobs"
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
@@ -103,8 +104,14 @@ func main() {
 		)
 	}
 
+	// Cloudflare DNS client (nil if not configured — instances will use self-signed TLS)
+	dnsClient := dns.NewClient(cfg.CloudflareAPIToken, cfg.CloudflareZoneID, cfg.CloudflareBaseDomain)
+	if dnsClient != nil {
+		logger.Info("cloudflare DNS configured", "base_domain", cfg.CloudflareBaseDomain)
+	}
+
 	// Start background workers
-	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag)
+	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, dnsClient)
 	go worker.Start(ctx)
 
 	reconciler := jobs.NewReconciler(pool, registry, logger)
@@ -120,13 +127,14 @@ func main() {
 
 	// Build router with all endpoints
 	deps := api.Dependencies{
-		Pool:     pool,
-		Logger:   logger,
-		Config:   cfg,
-		Billing:  stripeSvc,
-		Registry: registry,
-		Resumer:  resumer,
-		BGTasks:  &bgTasks,
+		Pool:      pool,
+		Logger:    logger,
+		Config:    cfg,
+		Billing:   stripeSvc,
+		Registry:  registry,
+		Resumer:   resumer,
+		DNSClient: dnsClient,
+		BGTasks:   &bgTasks,
 	}
 	handler := api.NewRouter(deps)
 

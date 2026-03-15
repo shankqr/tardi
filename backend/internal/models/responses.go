@@ -62,7 +62,10 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 	r.OpenClawAuthToken = inst.OpenClawAuthToken
 	r.OpenClawVersion = inst.OpenClawVersion
 	r.OpenClawUpdateStatus = inst.OpenClawUpdateStatus
-	if inst.IPv4 != nil && *inst.IPv4 != "" {
+	if inst.Domain != nil && *inst.Domain != "" {
+		url := fmt.Sprintf("https://%s", *inst.Domain)
+		r.DashboardURL = &url
+	} else if inst.IPv4 != nil && *inst.IPv4 != "" {
 		url := fmt.Sprintf("https://%s", *inst.IPv4)
 		r.DashboardURL = &url
 	}

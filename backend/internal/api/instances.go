@@ -406,7 +406,7 @@ func executeRestart(deps Dependencies, inst *models.VpsInstance) {
 	}
 }
 
-// executeDelete calls the provider to delete the server and updates status.
+// executeDelete calls the provider to delete the server, cleans up DNS, and updates status.
 func executeDelete(deps Dependencies, inst *models.VpsInstance) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -415,10 +415,19 @@ func executeDelete(deps Dependencies, inst *models.VpsInstance) {
 		prov, err := deps.Registry.Get(inst.Provider)
 		if err != nil {
 			slog.Error("delete: provider not found", "provider", inst.Provider, "error", err)
-			// Still mark terminated since user requested deletion
 		} else if err := prov.DeleteServer(ctx, *inst.ProviderServerID); err != nil {
 			slog.Error("delete: provider call failed", "instance_id", inst.ID, "error", err)
 			// Still mark terminated — we don't want orphaned instances in our DB
+		}
+	}
+
+	// Clean up Cloudflare DNS record
+	if deps.DNSClient != nil && inst.DNSRecordID != nil && *inst.DNSRecordID != "" {
+		if err := deps.DNSClient.DeleteRecord(ctx, *inst.DNSRecordID); err != nil {
+			slog.Error("delete: DNS cleanup failed", "instance_id", inst.ID, "dns_record_id", *inst.DNSRecordID, "error", err)
+			// Non-fatal: orphaned DNS record is harmless (points to deleted IP)
+		} else {
+			slog.Info("delete: DNS record removed", "instance_id", inst.ID, "domain", inst.Domain)
 		}
 	}
 
