@@ -150,8 +150,10 @@ func removeTelegramChannelConfig(ctx context.Context, ipv4, authToken string) er
 		return err
 	}
 
-	// Step 2: config.patch to remove channels.telegram (set to null = delete)
-	patchJSON := `{"channels":{"telegram":null}}`
+	// Step 2: config.patch to explicitly disable channels.telegram.
+	// Setting to null doesn't persist — OpenClaw's internal config reload
+	// revives it. Setting enabled:false is a persistent disable.
+	patchJSON := `{"channels":{"telegram":{"enabled":false}}}`
 	_, err = openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
 		"raw":  patchJSON,
 		"hash": configResp.Hash,
