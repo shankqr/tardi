@@ -35,6 +35,7 @@ infra/*.tfvars
 
 # Go
 /backend/tmp/
+/backend/server
 
 # Logs
 *.log
