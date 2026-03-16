@@ -85,11 +85,22 @@ func (s *StripeService) GetSubscriptionPlanTier(subscriptionID string) (models.P
 }
 
 // CreateCustomerPortalSession creates a Stripe Billing Portal session and returns its URL.
-func (s *StripeService) CreateCustomerPortalSession(customerID, returnURL string) (string, error) {
+// If subscriptionID is non-empty, the session deep-links to the plan update flow.
+func (s *StripeService) CreateCustomerPortalSession(customerID, returnURL, subscriptionID string) (string, error) {
 	params := &stripe.BillingPortalSessionParams{
 		Customer:  stripe.String(customerID),
 		ReturnURL: stripe.String(returnURL),
 	}
+
+	if subscriptionID != "" {
+		params.FlowData = &stripe.BillingPortalSessionFlowDataParams{
+			Type: stripe.String("subscription_update"),
+			SubscriptionUpdate: &stripe.BillingPortalSessionFlowDataSubscriptionUpdateParams{
+				Subscription: stripe.String(subscriptionID),
+			},
+		}
+	}
+
 	sess, err := portalsession.New(params)
 	if err != nil {
 		return "", fmt.Errorf("create portal session: %w", err)

@@ -443,13 +443,14 @@ export async function disconnectTelegram(
 	);
 }
 
-export async function createPortalSession(token: string): Promise<{ url: string }> {
+export async function createPortalSession(token: string, flow?: string): Promise<{ url: string }> {
 	if (USE_MOCK) {
 		return { url: '/dashboard/billing' };
 	}
 
+	const params = flow ? `?flow=${flow}` : '';
 	return apiFetch(
-		`${getApiUrl()}/api/billing/portal`,
+		`${getApiUrl()}/api/billing/portal${params}`,
 		{ method: 'POST', headers: authHeaders(token) },
 		'createPortalSession'
 	);

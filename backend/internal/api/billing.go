@@ -37,7 +37,13 @@ func BillingPortalHandler(deps Dependencies) http.HandlerFunc {
 			returnURL = deps.Config.AllowedOrigins[0] + "/dashboard/billing"
 		}
 
-		url, err := deps.Billing.CreateCustomerPortalSession(sub.StripeCustomerID, returnURL)
+		// If flow=subscription_update, deep-link to plan change page
+		var stripeSubID string
+		if r.URL.Query().Get("flow") == "subscription_update" {
+			stripeSubID = sub.StripeSubscriptionID
+		}
+
+		url, err := deps.Billing.CreateCustomerPortalSession(sub.StripeCustomerID, returnURL, stripeSubID)
 		if err != nil {
 			slog.Error("billing portal: create session", "error", err)
 			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to create billing portal session")

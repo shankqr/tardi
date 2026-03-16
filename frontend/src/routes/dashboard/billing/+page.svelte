@@ -23,6 +23,19 @@
 			loadingPortal = false;
 		}
 	}
+
+	async function handleChangePlan() {
+		loadingPortal = true;
+		try {
+			const token = await getIdToken();
+			if (!token) return;
+			const { url } = await createPortalSession(token, 'subscription_update');
+			window.location.href = url;
+		} catch {
+			alert('Failed to open billing portal. Please try again.');
+			loadingPortal = false;
+		}
+	}
 </script>
 
 <a href="/dashboard" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to dashboard</a>
@@ -79,7 +92,7 @@
 						</p>
 					</div>
 					<button
-						onclick={handleManageBilling}
+						onclick={handleChangePlan}
 						disabled={loadingPortal}
 						class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
 					>
@@ -97,7 +110,7 @@
 						</p>
 					</div>
 					<button
-						onclick={handleManageBilling}
+						onclick={handleChangePlan}
 						disabled={loadingPortal}
 						class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
 					>
