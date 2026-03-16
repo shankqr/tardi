@@ -14,7 +14,8 @@
 		disconnectTelegram,
 		cleanupTelegramConfig,
 		syncConfig,
-		getSyncStatus
+		getSyncStatus,
+		runDoctor
 	} from '$lib/api/client';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
@@ -68,6 +69,11 @@
 	let telegramSyncElapsed = $state(0);
 	let telegramSyncTimer: ReturnType<typeof setInterval> | null = null;
 	let telegramPollTimer: ReturnType<typeof setInterval> | null = null;
+
+	// Doctor state
+	let doctorRunning = $state(false);
+	let doctorOutput = $state<string | null>(null);
+	let doctorError = $state<string | null>(null);
 
 	function startTelegramSyncTimer() {
 		telegramSyncElapsed = 0;
@@ -328,6 +334,27 @@
 		} catch (err) {
 			telegramError = err instanceof Error ? err.message : 'Failed to disconnect Telegram';
 			telegramLoading = false;
+		}
+	}
+
+	async function handleRunDoctor() {
+		if (!instance) return;
+		doctorRunning = true;
+		doctorOutput = null;
+		doctorError = null;
+		try {
+			const token = await getIdToken();
+			if (!token) throw new Error('Not authenticated');
+			const result = await runDoctor(token, instance.id);
+			if (result.error) {
+				doctorError = result.detail || result.error;
+			} else {
+				doctorOutput = result.output ?? '';
+			}
+		} catch (err) {
+			doctorError = err instanceof Error ? err.message : 'Doctor check failed';
+		} finally {
+			doctorRunning = false;
 		}
 	}
 
@@ -795,6 +822,19 @@
 						</div>
 					{/if}
 
+					{#if instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
+						<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 flex items-center justify-between">
+							<span>Your agent appears {instance.agent_status === 'unhealthy' ? 'unhealthy' : 'stopped'}. Run a health check to diagnose the issue.</span>
+							<button
+								onclick={handleRunDoctor}
+								disabled={doctorRunning || instance.status !== 'active'}
+								class="ml-3 shrink-0 rounded-md bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
+							>
+								{doctorRunning ? 'Running...' : 'Run Doctor'}
+							</button>
+						</div>
+					{/if}
+
 					<div class="flex gap-3">
 						<button
 							onclick={handleRestart}
@@ -803,7 +843,33 @@
 						>
 							{instance.status === 'restarting' ? 'Restarting...' : restarting ? 'Restarting...' : 'Restart'}
 						</button>
+						<button
+							onclick={handleRunDoctor}
+							disabled={doctorRunning || instance.status !== 'active'}
+							class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+						>
+							{doctorRunning ? 'Running...' : 'Run Doctor'}
+						</button>
 					</div>
+
+					{#if doctorOutput !== null || doctorError !== null}
+						<div class="rounded-xl border border-gray-200 p-5">
+							<div class="flex items-center justify-between">
+								<h3 class="text-sm font-semibold text-gray-900">Doctor Results</h3>
+								<button
+									onclick={() => { doctorOutput = null; doctorError = null; }}
+									class="text-xs text-gray-400 hover:text-gray-600"
+								>Dismiss</button>
+							</div>
+							{#if doctorError}
+								<div class="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+									{doctorError}
+								</div>
+							{:else}
+								<pre class="mt-3 max-h-80 overflow-auto rounded-lg bg-gray-900 p-4 text-xs text-green-400 font-mono whitespace-pre-wrap">{doctorOutput}</pre>
+							{/if}
+						</div>
+					{/if}
 				{/if}
 			</div>
 

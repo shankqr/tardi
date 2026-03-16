@@ -443,6 +443,24 @@ export async function disconnectTelegram(
 	);
 }
 
+export async function runDoctor(
+	token: string,
+	instanceId: string
+): Promise<{ output?: string; error?: string; detail?: string }> {
+	if (USE_MOCK) {
+		return {
+			output:
+				'OpenClaw Doctor\n================\n[OK] Container running\n[OK] Config valid\n[OK] API key configured\n[OK] Telegram connected\n\nAll checks passed.'
+		};
+	}
+
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/doctor`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'runDoctor'
+	);
+}
+
 export async function createPortalSession(token: string, flow?: string): Promise<{ url: string }> {
 	if (USE_MOCK) {
 		return { url: '/dashboard/billing' };
