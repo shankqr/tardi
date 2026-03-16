@@ -45,16 +45,34 @@ export const mockDashboardState: DashboardState = {
 	snapshots: mockSnapshots
 };
 
-export const plan: PlanInfo = {
-	tier: 'standard',
-	name: 'Standard',
-	price_monthly: 29,
-	features: [
-		'Your own AI agent, always online',
-		'Dedicated cloud infrastructure',
-		'Deploy in under 2 minutes',
-		'Full dashboard & live monitoring',
-		'One-click restarts & updates',
-		'Priority support'
-	]
+export const plans: Record<string, PlanInfo> = {
+	standard: {
+		tier: 'standard',
+		name: 'Standard',
+		price_monthly: 29,
+		features: [
+			'Your own AI agent, always online',
+			'Shared cloud infrastructure',
+			'Deploy in under 2 minutes',
+			'Full dashboard & live monitoring',
+			'One-click restarts & updates',
+			'Priority support'
+		]
+	},
+	pro: {
+		tier: 'pro',
+		name: 'Pro',
+		price_monthly: 45,
+		features: [
+			'Everything in Standard',
+			'Dedicated CPU for faster performance',
+			'Your own AI agent, always online',
+			'Deploy in under 2 minutes',
+			'Full dashboard & live monitoring',
+			'One-click restarts & updates',
+			'Priority support'
+		]
+	}
 };
+
+export const plan: PlanInfo = plans.standard;

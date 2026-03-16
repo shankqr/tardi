@@ -7,7 +7,10 @@ import (
 
 	"github.com/stripe/stripe-go/v82"
 	portalsession "github.com/stripe/stripe-go/v82/billingportal/session"
+	"github.com/stripe/stripe-go/v82/subscription"
 	"github.com/stripe/stripe-go/v82/webhook"
+
+	"github.com/shanq/tardi/internal/models"
 )
 
 // StripeService handles Stripe billing operations.
@@ -48,6 +51,37 @@ func (s *StripeService) VerifyWebhookSignature(payload []byte, sigHeader string)
 		return nil, fmt.Errorf("verify webhook signature: %w", err)
 	}
 	return &event, nil
+}
+
+// GetSubscriptionPlanTier fetches a Stripe subscription and reads the plan_tier metadata
+// from the first line item's price. Falls back to PlanStandard if metadata is missing.
+func (s *StripeService) GetSubscriptionPlanTier(subscriptionID string) (models.PlanTier, error) {
+	if s.secretKey == "" {
+		return models.PlanStandard, nil
+	}
+
+	params := &stripe.SubscriptionParams{}
+	params.AddExpand("items.data.price")
+	sub, err := subscription.Get(subscriptionID, params)
+	if err != nil {
+		return "", fmt.Errorf("get subscription: %w", err)
+	}
+
+	if sub.Items != nil && len(sub.Items.Data) > 0 {
+		price := sub.Items.Data[0].Price
+		if price != nil && price.Metadata != nil {
+			if tier, ok := price.Metadata["plan_tier"]; ok {
+				switch tier {
+				case "pro":
+					return models.PlanPro, nil
+				case "standard":
+					return models.PlanStandard, nil
+				}
+			}
+		}
+	}
+
+	return models.PlanStandard, nil
 }
 
 // CreateCustomerPortalSession creates a Stripe Billing Portal session and returns its URL.

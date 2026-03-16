@@ -2,9 +2,12 @@
 	import { dashboardState } from '$lib/stores/dashboard';
 	import { getIdToken } from '$lib/stores/auth';
 	import { createPortalSession } from '$lib/api/client';
-	import { plan } from '$lib/api/mock';
+	import { plans } from '$lib/api/mock';
 
 	const subscription = $derived($dashboardState?.subscription ?? null);
+	const currentPlan = $derived(subscription ? plans[subscription.plan] ?? plans.standard : plans.standard);
+	const isStandard = $derived(subscription?.plan === 'standard');
+	const isPro = $derived(subscription?.plan === 'pro');
 
 	let loadingPortal = $state(false);
 
@@ -31,7 +34,7 @@
 		<div class="flex items-center justify-between">
 			<div>
 				<p class="text-sm text-gray-500">Current Plan</p>
-				<p class="mt-1 text-2xl font-bold text-gray-900">{plan.name} — ${plan.price_monthly}/mo</p>
+				<p class="mt-1 text-2xl font-bold text-gray-900">{currentPlan.name} — ${currentPlan.price_monthly}/mo</p>
 			</div>
 			<span
 				class="rounded-full px-3 py-1 text-sm font-medium {subscription.cancel_at_period_end
@@ -64,6 +67,47 @@
 		</div>
 	{/if}
 
+	<!-- Plan change CTA -->
+	{#if subscription.status === 'active' && !subscription.cancel_at_period_end}
+		{#if isStandard}
+			<div class="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-6">
+				<div class="flex items-center justify-between">
+					<div>
+						<h3 class="text-sm font-semibold text-blue-900">Upgrade to Pro — ${plans.pro.price_monthly}/mo</h3>
+						<p class="mt-1 text-sm text-blue-700">
+							Dedicated CPU for faster performance. Your agent data will be preserved during the upgrade.
+						</p>
+					</div>
+					<button
+						onclick={handleManageBilling}
+						disabled={loadingPortal}
+						class="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+					>
+						{loadingPortal ? 'Opening...' : 'Upgrade'}
+					</button>
+				</div>
+			</div>
+		{:else if isPro}
+			<div class="mt-6 rounded-xl border border-gray-200 p-6">
+				<div class="flex items-center justify-between">
+					<div>
+						<h3 class="text-sm font-semibold text-gray-900">Downgrade to Standard — ${plans.standard.price_monthly}/mo</h3>
+						<p class="mt-1 text-sm text-red-600">
+							Warning: Downgrading will delete all agent data. A new server will be provisioned from scratch.
+						</p>
+					</div>
+					<button
+						onclick={handleManageBilling}
+						disabled={loadingPortal}
+						class="shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+					>
+						{loadingPortal ? 'Opening...' : 'Downgrade'}
+					</button>
+				</div>
+			</div>
+		{/if}
+	{/if}
+
 	<!-- Manage subscription via Stripe Customer Portal -->
 	<div class="mt-6 rounded-xl border border-gray-200 p-6">
 		<h3 class="text-sm font-semibold text-gray-900">Manage Subscription</h3>
@@ -84,7 +128,7 @@
 	<h3 class="text-lg font-semibold text-gray-900">Plan Details</h3>
 	<div class="mt-4 rounded-xl border border-gray-200 p-6">
 		<ul class="space-y-3">
-			{#each plan.features as feature}
+			{#each currentPlan.features as feature}
 				<li class="flex items-start gap-2 text-sm text-gray-600">
 					<svg class="h-5 w-5 shrink-0 text-green-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />

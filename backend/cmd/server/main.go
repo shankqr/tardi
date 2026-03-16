@@ -121,6 +121,7 @@ func main() {
 	go enforcer.Start(ctx)
 
 	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag)
+	upgrader := jobs.NewUpgrader(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, dnsClient)
 
 	// WaitGroup for background goroutines (snapshot create/restore/delete, restart, etc.)
 	var bgTasks sync.WaitGroup
@@ -133,6 +134,7 @@ func main() {
 		Billing:   stripeSvc,
 		Registry:  registry,
 		Resumer:   resumer,
+		Upgrader:  upgrader,
 		DNSClient: dnsClient,
 		BGTasks:   &bgTasks,
 	}

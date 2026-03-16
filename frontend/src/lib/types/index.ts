@@ -7,6 +7,8 @@ export type VpsStatus =
 	| 'restarting'
 	| 'snapshotting'
 	| 'restoring'
+	| 'upgrading'
+	| 'downgrading'
 	| 'suspending'
 	| 'suspended'
 	| 'resuming'
@@ -22,7 +24,7 @@ export type ProvisioningStep =
 	| 'install_agent'
 	| 'activate';
 
-export type PlanTier = 'standard';
+export type PlanTier = 'standard' | 'pro';
 
 export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'suspended';
 

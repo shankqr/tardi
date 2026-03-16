@@ -5,6 +5,7 @@
 	import { createInstance } from '$lib/api/client';
 	import InstanceCard from '$lib/components/InstanceCard.svelte';
 	import SubscriptionCard from '$lib/components/SubscriptionCard.svelte';
+	import { plans } from '$lib/api/mock';
 
 	const activeInstance = $derived(
 		$dashboardState?.instances.find(
@@ -50,7 +51,7 @@
 			<h2 class="text-lg font-semibold text-gray-900">Your Agent</h2>
 
 			{#if activeInstance}
-				<InstanceCard instance={activeInstance} />
+				<InstanceCard instance={activeInstance} planName={plans[$dashboardState.subscription?.plan ?? 'standard']?.name ?? 'Standard'} />
 			{:else if $dashboardState.subscription}
 				<!-- Has subscription but no instance — show deploy card -->
 				<div class="rounded-xl border border-gray-200 p-6">

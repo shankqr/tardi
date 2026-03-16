@@ -22,6 +22,8 @@ const (
 	VpsStatusTerminated      VpsStatus = "terminated"
 	VpsStatusSnapshotting    VpsStatus = "snapshotting"
 	VpsStatusRestoring       VpsStatus = "restoring"
+	VpsStatusUpgrading       VpsStatus = "upgrading"
+	VpsStatusDowngrading     VpsStatus = "downgrading"
 	VpsStatusError           VpsStatus = "error"
 )
 
@@ -49,6 +51,7 @@ type PlanTier string
 
 const (
 	PlanStandard PlanTier = "standard"
+	PlanPro      PlanTier = "pro"
 )
 
 type JobStatus string

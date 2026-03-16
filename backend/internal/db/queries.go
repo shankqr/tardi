@@ -961,6 +961,17 @@ func UpdateInstanceDomain(ctx context.Context, pool *pgxpool.Pool, instanceID uu
 	return nil
 }
 
+// UpdateSubscriptionPlanTier changes the plan tier for a subscription.
+func UpdateSubscriptionPlanTier(ctx context.Context, pool *pgxpool.Pool, subID uuid.UUID, planTier models.PlanTier) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE subscriptions SET plan_tier = $1, updated_at = now() WHERE id = $2
+	`, planTier, subID)
+	if err != nil {
+		return fmt.Errorf("update subscription plan tier: %w", err)
+	}
+	return nil
+}
+
 // SetInstanceTargetVersion sets a per-instance target version override (nil to clear).
 func SetInstanceTargetVersion(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, version *string) error {
 	_, err := pool.Exec(ctx, `

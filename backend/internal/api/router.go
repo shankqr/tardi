@@ -22,6 +22,7 @@ type Dependencies struct {
 	Billing   *billing.StripeService
 	Registry  *provider.Registry
 	Resumer   *jobs.Resumer
+	Upgrader  *jobs.Upgrader
 	DNSClient *dns.Client   // nil if Cloudflare DNS not configured
 	BGTasks   *sync.WaitGroup // Tracks background goroutines (snapshots, restores) for graceful shutdown
 }

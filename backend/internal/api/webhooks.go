@@ -98,12 +98,20 @@ func handleCheckoutCompleted(r *http.Request, deps Dependencies, event *stripe.E
 	subID := getSubscriptionID(&session)
 	custID := getCustomerID(&session)
 
+	// Determine plan tier from Stripe price metadata
+	planTier, err := deps.Billing.GetSubscriptionPlanTier(subID)
+	if err != nil {
+		slog.Warn("stripe webhook: could not determine plan tier, defaulting to standard",
+			"stripe_sub", subID, "error", err)
+		planTier = models.PlanStandard
+	}
+
 	sub := &models.Subscription{
 		ID:                   uuid.New(),
 		UserID:               user.ID,
 		StripeSubscriptionID: subID,
 		StripeCustomerID:     custID,
-		PlanTier:             models.PlanStandard,
+		PlanTier:             planTier,
 		Status:               models.SubStatusActive,
 	}
 
@@ -162,6 +170,30 @@ func handleSubscriptionUpdated(r *http.Request, deps Dependencies, event *stripe
 					slog.Info("stripe webhook: triggering resume for suspended instance",
 						"instance_id", instances[i].ID, "stripe_sub", sub.ID)
 					deps.Resumer.ResumeInstance(&instances[i])
+				}
+			}
+		}
+	}
+
+	// Detect plan tier change (upgrade/downgrade via Stripe Customer Portal)
+	if status == models.SubStatusActive && !wasSuspended && deps.Upgrader != nil {
+		newTier := extractPlanTierFromSubscription(&sub)
+		if newTier != "" {
+			prevSub, _ := db.GetSubscriptionByStripeSubID(r.Context(), deps.Pool, sub.ID)
+			if prevSub != nil && prevSub.PlanTier != newTier {
+				instances, _ := db.GetInstancesBySubscriptionID(r.Context(), deps.Pool, prevSub.ID)
+				for i := range instances {
+					if instances[i].Status == models.VpsStatusActive {
+						if newTier == models.PlanPro && prevSub.PlanTier == models.PlanStandard {
+							slog.Info("stripe webhook: triggering upgrade to pro",
+								"instance_id", instances[i].ID, "stripe_sub", sub.ID)
+							deps.Upgrader.UpgradeInstance(&instances[i], newTier)
+						} else if newTier == models.PlanStandard && prevSub.PlanTier == models.PlanPro {
+							slog.Info("stripe webhook: triggering downgrade to standard",
+								"instance_id", instances[i].ID, "stripe_sub", sub.ID)
+							deps.Upgrader.DowngradeInstance(&instances[i], newTier)
+						}
+					}
 				}
 			}
 		}
@@ -243,6 +275,24 @@ func getSubscriptionID(session *stripe.CheckoutSession) string {
 func getCustomerID(session *stripe.CheckoutSession) string {
 	if session.Customer != nil {
 		return session.Customer.ID
+	}
+	return ""
+}
+
+// extractPlanTierFromSubscription reads plan_tier from the first item's price metadata.
+func extractPlanTierFromSubscription(sub *stripe.Subscription) models.PlanTier {
+	if sub.Items != nil && len(sub.Items.Data) > 0 {
+		price := sub.Items.Data[0].Price
+		if price != nil && price.Metadata != nil {
+			if tier, ok := price.Metadata["plan_tier"]; ok {
+				switch tier {
+				case "pro":
+					return models.PlanPro
+				case "standard":
+					return models.PlanStandard
+				}
+			}
+		}
 	}
 	return ""
 }
