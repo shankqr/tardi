@@ -413,6 +413,21 @@ export async function connectTelegram(
 	);
 }
 
+export async function cleanupTelegramConfig(
+	token: string,
+	instanceId: string
+): Promise<{ cleaned: boolean; error?: string }> {
+	if (USE_MOCK) {
+		return { cleaned: true };
+	}
+
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/telegram/cleanup`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'cleanupTelegramConfig'
+	);
+}
+
 export async function disconnectTelegram(
 	token: string,
 	instanceId: string

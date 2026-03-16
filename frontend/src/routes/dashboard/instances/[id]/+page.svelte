@@ -12,6 +12,7 @@
 		getAgentConfig,
 		connectTelegram,
 		disconnectTelegram,
+		cleanupTelegramConfig,
 		syncConfig,
 		getSyncStatus
 	} from '$lib/api/client';
@@ -88,6 +89,11 @@
 			if (result.status === 'completed') {
 				stopTelegramSyncTimer();
 				stopTelegramPollTimer();
+				// Remove channels.telegram from OpenClaw's internal config to prevent
+				// duplicate handlers (internal config + env var auto-detection = double replies)
+				try {
+					await cleanupTelegramConfig(token, instance.id);
+				} catch { /* non-critical, env var handler still works */ }
 				telegramSyncPhase = 'success';
 				setTimeout(() => { if (telegramSyncPhase === 'success') telegramSyncPhase = 'idle'; }, 8000);
 			} else if (result.status === 'failed') {
