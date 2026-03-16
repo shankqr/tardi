@@ -32,10 +32,7 @@ func BillingPortalHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		returnURL := r.Header.Get("Referer")
-		if returnURL == "" {
-			returnURL = deps.Config.AllowedOrigins[0] + "/dashboard/billing"
-		}
+		returnURL := deps.Config.AllowedOrigins[0] + "/dashboard"
 
 		// If flow=subscription_update, deep-link to plan change page
 		var stripeSubID string
