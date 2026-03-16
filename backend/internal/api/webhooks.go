@@ -183,25 +183,35 @@ func handleSubscriptionUpdated(r *http.Request, deps Dependencies, event *stripe
 		if tierErr != nil {
 			slog.Error("stripe webhook: get plan tier from stripe API", "stripe_sub", sub.ID, "error", tierErr)
 		}
-		if tierErr == nil && newTier != "" {
-			prevSub, _ := db.GetSubscriptionByStripeSubID(r.Context(), deps.Pool, sub.ID)
-			if prevSub != nil && prevSub.PlanTier != newTier {
-				// Update plan tier immediately so the billing page reflects the change
-				if err := db.UpdateSubscriptionPlanTier(r.Context(), deps.Pool, prevSub.ID, newTier); err != nil {
-					slog.Error("stripe webhook: update plan tier", "error", err)
-				}
-				instances, _ := db.GetInstancesBySubscriptionID(r.Context(), deps.Pool, prevSub.ID)
-				for i := range instances {
-					if instances[i].Status == models.VpsStatusActive {
-						if newTier == models.PlanPro && prevSub.PlanTier == models.PlanStandard {
-							slog.Info("stripe webhook: triggering upgrade to pro",
-								"instance_id", instances[i].ID, "stripe_sub", sub.ID)
-							deps.Upgrader.UpgradeInstance(&instances[i], newTier)
-						} else if newTier == models.PlanStandard && prevSub.PlanTier == models.PlanPro {
-							slog.Info("stripe webhook: triggering downgrade to standard",
-								"instance_id", instances[i].ID, "stripe_sub", sub.ID)
-							deps.Upgrader.DowngradeInstance(&instances[i], newTier)
-						}
+		prevSub, _ := db.GetSubscriptionByStripeSubID(r.Context(), deps.Pool, sub.ID)
+		var dbTier models.PlanTier
+		if prevSub != nil {
+			dbTier = prevSub.PlanTier
+		}
+		slog.Info("stripe webhook: plan tier check",
+			"stripe_sub", sub.ID,
+			"new_tier_from_stripe", newTier,
+			"current_tier_in_db", dbTier,
+			"tier_lookup_err", tierErr,
+		)
+		if tierErr == nil && newTier != "" && prevSub != nil && prevSub.PlanTier != newTier {
+			// Update plan tier immediately so the billing page reflects the change
+			slog.Info("stripe webhook: plan tier changed, updating",
+				"stripe_sub", sub.ID, "from", prevSub.PlanTier, "to", newTier)
+			if err := db.UpdateSubscriptionPlanTier(r.Context(), deps.Pool, prevSub.ID, newTier); err != nil {
+				slog.Error("stripe webhook: update plan tier", "error", err)
+			}
+			instances, _ := db.GetInstancesBySubscriptionID(r.Context(), deps.Pool, prevSub.ID)
+			for i := range instances {
+				if instances[i].Status == models.VpsStatusActive {
+					if newTier == models.PlanPro && prevSub.PlanTier == models.PlanStandard {
+						slog.Info("stripe webhook: triggering upgrade to pro",
+							"instance_id", instances[i].ID, "stripe_sub", sub.ID)
+						deps.Upgrader.UpgradeInstance(&instances[i], newTier)
+					} else if newTier == models.PlanStandard && prevSub.PlanTier == models.PlanPro {
+						slog.Info("stripe webhook: triggering downgrade to standard",
+							"instance_id", instances[i].ID, "stripe_sub", sub.ID)
+						deps.Upgrader.DowngradeInstance(&instances[i], newTier)
 					}
 				}
 			}
