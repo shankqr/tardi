@@ -98,6 +98,12 @@ func (s *StripeService) CreateCustomerPortalSession(customerID, returnURL, subsc
 			SubscriptionUpdate: &stripe.BillingPortalSessionFlowDataSubscriptionUpdateParams{
 				Subscription: stripe.String(subscriptionID),
 			},
+			AfterCompletion: &stripe.BillingPortalSessionFlowDataAfterCompletionParams{
+				Type: stripe.String("redirect"),
+				Redirect: &stripe.BillingPortalSessionFlowDataAfterCompletionRedirectParams{
+					ReturnURL: stripe.String(returnURL),
+				},
+			},
 		}
 	}
 
