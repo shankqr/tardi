@@ -58,16 +58,35 @@ cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
 echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
 echo "config sync complete (version=$REMOTE_VERSION)"
 
-# Wait for healthy, then update default model if provider+model are set
+# Wait for healthy, then apply post-startup config
 # This runs AFTER the completion message so frontend polling detects success early
-if [ -n "$NEW_PROVIDER" ] && [ -n "$NEW_MODEL" ]; then
-    for i in $(seq 1 12); do
-        sleep 5
-        if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
-            docker exec openclaw-gateway openclaw models set "${NEW_PROVIDER}/${NEW_MODEL}" 2>/dev/null
-            break
-        fi
-    done
+HEALTHY=false
+for i in $(seq 1 12); do
+    sleep 5
+    if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+        HEALTHY=true
+        break
+    fi
+done
+
+if [ "$HEALTHY" = true ]; then
+    # Fix Telegram config if bot token is set:
+    # - streaming:"off" prevents double replies (OpenClaw defaults to "partial")
+    # - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
+    # - groupPolicy:"disabled" ignores group messages
+    # Must set allowFrom before dmPolicy (validation requires it)
+    if [ -n "$NEW_TG_TOKEN" ]; then
+        docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
+        docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
+        docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
+        docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
+        echo "telegram config patched"
+    fi
+
+    # Update default model if provider+model are set
+    if [ -n "$NEW_PROVIDER" ] && [ -n "$NEW_MODEL" ]; then
+        docker exec openclaw-gateway openclaw models set "${NEW_PROVIDER}/${NEW_MODEL}" 2>/dev/null
+    fi
 fi
 `
 

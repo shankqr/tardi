@@ -436,19 +436,35 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
 
         # Recreate container to pick up new env (restart does not reload env_file)
         # NOTE: Do NOT edit openclaw.json — OpenClaw owns that file and overwrites
-        # it on startup. Telegram config (streaming:off) is applied via config.patch
-        # RPC from the /telegram/cleanup endpoint after the container is healthy.
+        # it on startup. Config changes must go through openclaw CLI after healthy.
         cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
 
-        # Wait for healthy, then update default model if provider+model are set
-        if [ -n "$NEW_PROVIDER" ] && [ -n "$NEW_MODEL" ]; then
-            for i in $(seq 1 12); do
-                sleep 5
-                if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
-                    docker exec openclaw-gateway openclaw models set "${NEW_PROVIDER}/${NEW_MODEL}" 2>/dev/null
-                    break
-                fi
-            done
+        # Wait for healthy, then apply post-startup config
+        HEALTHY=false
+        for i in $(seq 1 12); do
+            sleep 5
+            if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+                HEALTHY=true
+                break
+            fi
+        done
+
+        if [ "$HEALTHY" = true ]; then
+            # Fix Telegram config if bot token is set:
+            # - streaming:"off" prevents double replies (OpenClaw defaults to "partial")
+            # - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
+            # - groupPolicy:"disabled" ignores group messages
+            if [ -n "$NEW_TG_TOKEN" ]; then
+                docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
+                docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
+                docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
+                docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
+            fi
+
+            # Update default model if provider+model are set
+            if [ -n "$NEW_PROVIDER" ] && [ -n "$NEW_MODEL" ]; then
+                docker exec openclaw-gateway openclaw models set "${NEW_PROVIDER}/${NEW_MODEL}" 2>/dev/null
+            fi
         fi
 
         echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
