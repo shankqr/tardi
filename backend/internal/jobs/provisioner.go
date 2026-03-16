@@ -434,16 +434,22 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         mv /opt/openclaw/.env.tmp /opt/openclaw/.env
         chmod 600 /opt/openclaw/.env
 
-        # Remove channels.telegram from openclaw.json if present — OpenClaw auto-detects
-        # the TELEGRAM_BOT_TOKEN env var. Having both causes duplicate channel handlers.
+        # Kill container (SIGKILL) to prevent OpenClaw from writing runtime config
+        # back to openclaw.json during graceful shutdown.
+        cd /opt/openclaw && docker compose kill openclaw-gateway 2>/dev/null || true
+        docker compose rm -f openclaw-gateway 2>/dev/null || true
+
+        # Remove channels.telegram from openclaw.json AFTER container is dead.
+        # OpenClaw auto-detects the TELEGRAM_BOT_TOKEN env var; having both
+        # causes duplicate channel handlers and double replies.
         OC_CONFIG="/opt/openclaw/data/openclaw/openclaw.json"
         if jq -e '.channels.telegram' "$OC_CONFIG" >/dev/null 2>&1; then
             jq 'del(.channels.telegram)' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
             chown 1000:1000 "$OC_CONFIG"
         fi
 
-        # Recreate container to pick up new env (restart does not reload env_file)
-        cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
+        # Start fresh container to pick up new env
+        docker compose up -d openclaw-gateway
 
         # Wait for healthy, then update default model if provider+model are set
         if [ -n "$NEW_PROVIDER" ] && [ -n "$NEW_MODEL" ]; then
