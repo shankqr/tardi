@@ -176,9 +176,14 @@ func handleSubscriptionUpdated(r *http.Request, deps Dependencies, event *stripe
 	}
 
 	// Detect plan tier change (upgrade/downgrade via Stripe Customer Portal)
+	// NOTE: We use the Stripe API (GetSubscriptionPlanTier) instead of extractPlanTierFromSubscription
+	// because webhook payloads don't include expanded price metadata.
 	if status == models.SubStatusActive && !wasSuspended && deps.Upgrader != nil {
-		newTier := extractPlanTierFromSubscription(&sub)
-		if newTier != "" {
+		newTier, tierErr := deps.Billing.GetSubscriptionPlanTier(sub.ID)
+		if tierErr != nil {
+			slog.Error("stripe webhook: get plan tier from stripe API", "stripe_sub", sub.ID, "error", tierErr)
+		}
+		if tierErr == nil && newTier != "" {
 			prevSub, _ := db.GetSubscriptionByStripeSubID(r.Context(), deps.Pool, sub.ID)
 			if prevSub != nil && prevSub.PlanTier != newTier {
 				// Update plan tier immediately so the billing page reflects the change
