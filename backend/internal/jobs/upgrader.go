@@ -250,15 +250,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	}
 	_ = db.UpdateSnapshotStatus(ctx, u.pool, snap.ID, models.SnapshotStatusDeleted)
 
-	// Step 9: Update subscription plan tier
-	sub, err := db.GetSubscriptionByID(ctx, u.pool, inst.SubscriptionID)
-	if err != nil {
-		u.logger.Error("upgrader: get subscription", "error", err)
-	} else {
-		_ = db.UpdateSubscriptionPlanTier(ctx, u.pool, sub.ID, newTier)
-	}
-
-	// Step 10: Mark instance active
+	// Step 9: Mark instance active (plan tier already updated by webhook)
 	_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusActive)
 	_ = db.UpdateInstanceOpenClawVersion(ctx, u.pool, inst.ID, u.openClawImageTag, nil, nil)
 
@@ -313,16 +305,7 @@ func (u *Upgrader) executeDowngrade(inst *models.VpsInstance, newTier models.Pla
 		_ = db.UpdateInstanceDomain(ctx, u.pool, inst.ID, "", "")
 	}
 
-	// Step 3: Update subscription plan tier
-	sub, err := db.GetSubscriptionByID(ctx, u.pool, inst.SubscriptionID)
-	if err != nil {
-		u.logger.Error("upgrader: get subscription", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
-		return
-	}
-	_ = db.UpdateSubscriptionPlanTier(ctx, u.pool, sub.ID, newTier)
-
-	// Step 4: Reset instance for fresh provisioning
+	// Step 3: Reset instance for fresh provisioning (plan tier already updated by webhook)
 	_ = db.ClearInstanceProviderInfo(ctx, u.pool, inst.ID)
 	_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusRequested)
 

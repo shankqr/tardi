@@ -181,6 +181,10 @@ func handleSubscriptionUpdated(r *http.Request, deps Dependencies, event *stripe
 		if newTier != "" {
 			prevSub, _ := db.GetSubscriptionByStripeSubID(r.Context(), deps.Pool, sub.ID)
 			if prevSub != nil && prevSub.PlanTier != newTier {
+				// Update plan tier immediately so the billing page reflects the change
+				if err := db.UpdateSubscriptionPlanTier(r.Context(), deps.Pool, prevSub.ID, newTier); err != nil {
+					slog.Error("stripe webhook: update plan tier", "error", err)
+				}
 				instances, _ := db.GetInstancesBySubscriptionID(r.Context(), deps.Pool, prevSub.ID)
 				for i := range instances {
 					if instances[i].Status == models.VpsStatusActive {
