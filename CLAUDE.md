@@ -90,6 +90,65 @@ make db-reset        # Reset local PostgreSQL
 - `infra/environments/prod/` — Prod root (main.tf, variables.tf, terraform.tfvars)
 - `infra/modules/backend-env/` — Reusable env module (Cloud Run, Cloud SQL, VPC, AR, Secrets, IAM, Monitoring)
 
+## OpenClaw (Agent Runtime)
+
+OpenClaw is the AI agent runtime that runs on each user's VPS inside a Docker container.
+
+### Key Behaviors
+
+- **OpenClaw owns `openclaw.json`** — it overwrites the file on startup with its internal config. Do NOT rely on editing this file externally; changes will be lost.
+- **Config changes** must go through OpenClaw's `config.patch` WebSocket RPC (see `whatsapp.go` for examples), or be set before the very first boot.
+- **Telegram bot token** is passed via `TELEGRAM_BOT_TOKEN` env var. OpenClaw auto-detects it and configures the Telegram channel automatically.
+
+### Telegram Double Replies — Root Cause & Fix
+
+**Root cause**: OpenClaw's `streaming: "partial"` setting for Telegram causes double message delivery — it sends an initial streaming chunk as one message, then sends the accumulated response as a second message.
+
+**Fix**: The Telegram channel config must have `streaming: "off"`. The correct Telegram channel settings are:
+```json
+{
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "open",
+      "allowFrom": ["*"],
+      "groupPolicy": "disabled",
+      "streaming": "off"
+    }
+  }
+}
+```
+
+**Important notes**:
+- Do NOT include `channels.telegram` in the cloud-init `openclaw.json` template — OpenClaw auto-detects from `TELEGRAM_BOT_TOKEN` env var
+- OpenClaw's auto-detection defaults to `streaming: "partial"` which causes double replies
+- After container starts, use `config.patch` RPC to set `streaming: "off"` on the telegram channel
+- `dmPolicy: "open"` requires `allowFrom: ["*"]` — omitting this causes a config validation error and crash loop
+- The `config.patch` RPC uses WebSocket protocol (see `openclawRPC` in `whatsapp.go`)
+
+### Debugging OpenClaw on VPS
+
+```bash
+# SSH into VPS
+ssh root@<ip>
+
+# Check current config (OpenClaw's actual runtime config)
+cat /opt/openclaw/data/openclaw/openclaw.json | jq .
+
+# Container logs
+docker logs openclaw-gateway 2>&1
+
+# Detailed log file (inside container)
+docker exec openclaw-gateway cat /tmp/openclaw/openclaw-$(date +%Y-%m-%d).log
+
+# Check Telegram webhook status (should be empty URL for polling)
+TG_TOKEN=$(grep "^TELEGRAM_BOT_TOKEN=" /opt/openclaw/.env | cut -d= -f2-)
+curl -sf "https://api.telegram.org/bot${TG_TOKEN}/getWebhookInfo" | jq .
+
+# Data directory structure
+ls -la /opt/openclaw/data/openclaw/
+```
+
 ## CI/CD
 
 GitHub Actions with two branches as source of truth:

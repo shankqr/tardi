@@ -49,34 +49,11 @@ grep -v -E '_API_KEY=|TELEGRAM_BOT_TOKEN=' /opt/openclaw/.env > /opt/openclaw/.e
 mv /opt/openclaw/.env.tmp /opt/openclaw/.env
 chmod 600 /opt/openclaw/.env
 
-# Kill container with SIGKILL (not graceful stop) to prevent OpenClaw from
-# writing its runtime config back to openclaw.json during shutdown, which
-# would re-add channels.telegram and undo our cleanup.
-cd /opt/openclaw && docker compose kill openclaw-gateway 2>/dev/null || true
-docker compose rm -f openclaw-gateway 2>/dev/null || true
-
-# NOW remove channels.telegram from openclaw.json — safe because container is dead.
-# OpenClaw auto-detects the TELEGRAM_BOT_TOKEN env var; having channels.telegram
-# in the config too causes duplicate handlers and double replies.
-OC_CONFIG="/opt/openclaw/data/openclaw/openclaw.json"
-if jq -e '.channels.telegram' "$OC_CONFIG" >/dev/null 2>&1; then
-    jq 'del(.channels.telegram)' "$OC_CONFIG" > "${OC_CONFIG}.tmp" && mv "${OC_CONFIG}.tmp" "$OC_CONFIG"
-    chown 1000:1000 "$OC_CONFIG"
-    echo "telegram: removed explicit config from openclaw.json"
-fi
-
-# Also scan for channels.telegram in any other JSON config files OpenClaw may use
-for f in /opt/openclaw/data/openclaw/*.json; do
-    [ "$f" = "$OC_CONFIG" ] && continue
-    if jq -e '.channels.telegram' "$f" >/dev/null 2>&1; then
-        jq 'del(.channels.telegram)' "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
-        chown 1000:1000 "$f"
-        echo "telegram: also cleaned $f"
-    fi
-done
-
-# Start fresh container
-docker compose up -d openclaw-gateway
+# Recreate container to pick up new env
+# NOTE: Do NOT edit openclaw.json — OpenClaw owns that file and overwrites it
+# on startup. Config changes must go through config.patch RPC (the /telegram/cleanup
+# endpoint does this after the container is healthy).
+cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
 
 echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
 echo "config sync complete (version=$REMOTE_VERSION)"

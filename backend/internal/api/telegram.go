@@ -130,13 +130,14 @@ func TelegramDisconnectHandler(deps Dependencies) http.HandlerFunc {
 	}
 }
 
-// removeTelegramChannelConfig uses OpenClaw's config.patch RPC to remove
-// channels.telegram from the internal persistent config. Editing openclaw.json
-// on disk is NOT sufficient — OpenClaw merges the file into its own internal
-// config store on first boot and uses that going forward. Having channels.telegram
-// in the internal config AND TELEGRAM_BOT_TOKEN in the env var causes OpenClaw
-// to create two Telegram handlers, resulting in double replies.
-func removeTelegramChannelConfig(ctx context.Context, ipv4, authToken string) error {
+// patchTelegramConfig uses OpenClaw's config.patch RPC to set the correct
+// Telegram channel settings. OpenClaw auto-detects TELEGRAM_BOT_TOKEN from
+// the env var and defaults to streaming:"partial", which causes double replies
+// (initial chunk + full response sent as separate messages). This patches the
+// config to streaming:"off" and dmPolicy:"open".
+// NOTE: OpenClaw owns openclaw.json and overwrites it on startup — editing
+// the file directly is useless. Config changes MUST go through config.patch RPC.
+func patchTelegramConfig(ctx context.Context, ipv4, authToken string) error {
 	// Step 1: config.get to obtain the concurrency hash
 	getResult, err := openclawRPC(ctx, ipv4, authToken, "config.get", map[string]any{})
 	if err != nil {
@@ -150,11 +151,10 @@ func removeTelegramChannelConfig(ctx context.Context, ipv4, authToken string) er
 		return err
 	}
 
-	// Step 2: config.patch to remove channels.telegram from internal config.
-	// The primary fix is killing the container before editing openclaw.json
-	// (prevents OpenClaw from writing config back on shutdown). This RPC
-	// call is belt-and-suspenders cleanup of the internal config store.
-	patchJSON := `{"channels":{"telegram":null}}`
+	// Step 2: config.patch to fix Telegram settings.
+	// - streaming:"off" prevents double replies (the actual root cause)
+	// - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
+	patchJSON := `{"channels":{"telegram":{"streaming":"off","dmPolicy":"open","allowFrom":["*"],"groupPolicy":"disabled"}}}`
 	_, err = openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
 		"raw":  patchJSON,
 		"hash": configResp.Hash,
@@ -194,7 +194,7 @@ func TelegramCleanupHandler(deps Dependencies) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
 
-		if err := removeTelegramChannelConfig(ctx, *inst.IPv4, *inst.OpenClawAuthToken); err != nil {
+		if err := patchTelegramConfig(ctx, *inst.IPv4, *inst.OpenClawAuthToken); err != nil {
 			slog.Warn("telegram cleanup: config.patch failed",
 				"error", err,
 				"instance_id", instanceID,
