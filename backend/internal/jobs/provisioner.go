@@ -562,16 +562,34 @@ systemctl start openclaw-stack
 systemctl enable openclaw-heartbeat.timer
 systemctl start openclaw-heartbeat.timer
 
-# --- Set default model after gateway is healthy ---
-{{- if and .Provider .Model}}
+# --- Wait for gateway to be healthy, then apply post-startup config ---
+HEALTHY=false
 for i in $(seq 1 30); do
     if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
-        docker exec openclaw-gateway openclaw models set "{{.Provider}}/{{.Model}}" 2>/dev/null && break
-        sleep 2
+        HEALTHY=true
+        break
     fi
     sleep 2
 done
+
+if [ "$HEALTHY" = true ]; then
+{{- if and .Provider .Model}}
+    # Set default model
+    docker exec openclaw-gateway openclaw models set "{{.Provider}}/{{.Model}}" 2>/dev/null
 {{- end}}
+
+    # Fix Telegram config if bot token is set:
+    # - streaming:"off" prevents double replies (OpenClaw defaults to "partial")
+    # - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
+    # - groupPolicy:"disabled" ignores group messages
+    # Must set allowFrom before dmPolicy (validation requires it)
+    if grep -q '^TELEGRAM_BOT_TOKEN=.' /opt/openclaw/.env 2>/dev/null; then
+        docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
+        docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
+        docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
+        docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
+    fi
+fi
 
 log_status "COMPLETED"
 `))

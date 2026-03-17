@@ -147,13 +147,29 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		return
 	}
 
+	// Generate root password for the new server (cloud-init sets it via chpasswd)
+	rootPassword, err := GenerateAgentToken()
+	if err != nil {
+		u.logger.Error("upgrader: generate root password", "error", err)
+		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		return
+	}
+	_ = db.UpdateInstanceRootPassword(ctx, u.pool, inst.ID, rootPassword)
+
 	ciData := CloudInitData{
 		AgentToken:        agentToken,
 		APIURL:            u.apiURL,
 		InstanceID:        inst.ID.String(),
 		OpenClawAuthToken: openClawAuthToken,
 		OpenClawImageTag:  u.openClawImageTag,
+		RootPassword:      rootPassword,
 	}
+
+	// Preserve domain for Let's Encrypt TLS
+	if inst.Domain != nil && *inst.Domain != "" {
+		ciData.Domain = *inst.Domain
+	}
+
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, u.pool, inst.ID)
 	if err != nil {
 		u.logger.Error("upgrader: get agent config", "error", err)
@@ -161,6 +177,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		return
 	}
 	if agentCfg != nil {
+		ciData.ConfigVersion = agentCfg.Version
 		if v, ok := agentCfg.Config["openrouter_api_key"].(string); ok {
 			ciData.OpenRouterAPIKey = v
 		}
@@ -172,6 +189,12 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		}
 		if v, ok := agentCfg.Config["telegram_bot_token"].(string); ok {
 			ciData.TelegramBotToken = v
+		}
+		if v, ok := agentCfg.Config["provider"].(string); ok {
+			ciData.Provider = v
+		}
+		if v, ok := agentCfg.Config["model"].(string); ok {
+			ciData.Model = v
 		}
 	}
 
