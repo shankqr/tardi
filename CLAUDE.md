@@ -100,11 +100,14 @@ OpenClaw is the AI agent runtime that runs on each user's VPS inside a Docker co
 - **Config changes** must go through OpenClaw's `config.patch` WebSocket RPC (see `whatsapp.go` for examples), or be set before the very first boot.
 - **Telegram bot token** is passed via `TELEGRAM_BOT_TOKEN` env var. OpenClaw auto-detects it and configures the Telegram channel automatically.
 
-### Telegram Double Replies — Root Cause & Fix
+### Telegram Config Issues — Root Causes & Fixes
 
-**Root cause**: OpenClaw's `streaming: "partial"` setting for Telegram causes double message delivery — it sends an initial streaming chunk as one message, then sends the accumulated response as a second message.
+When OpenClaw auto-detects `TELEGRAM_BOT_TOKEN` from the env var, it creates a Telegram channel with **bad defaults** that cause two issues:
 
-**Fix**: The Telegram channel config must have `streaming: "off"`. The correct Telegram channel settings are:
+1. **Double replies**: Default `streaming: "partial"` sends an initial streaming chunk as one message, then the full response as a second message.
+2. **Pairing prompt required**: Default `dmPolicy` is not `"open"`, so users see "access not configured" and must manually run a pairing command.
+
+**Required Telegram channel settings** (applied post-startup via CLI or RPC):
 ```json
 {
   "channels": {
@@ -119,12 +122,25 @@ OpenClaw is the AI agent runtime that runs on each user's VPS inside a Docker co
 }
 ```
 
-**Important notes**:
+### Telegram Config Sync Flow
+
+The config is applied through **two mechanisms** that work together:
+
+1. **SSH sync script** (`backend/internal/api/sync.go` — `configSyncScript`): Triggered when user enters bot token in dashboard. Recreates the container, waits for health, then applies config via `openclaw config set` CLI commands.
+2. **Cleanup RPC** (`backend/internal/api/telegram.go` — `patchTelegramConfig`): Called by frontend after sync completes. Uses WebSocket `config.patch` RPC as a safety net to ensure the same settings.
+
+**Critical ordering**: The sync script MUST print `"config sync complete"` only AFTER the Telegram config CLI commands have run. The frontend polls for this message to detect completion. If it appears before config is applied, the frontend shows success prematurely and the user messages the bot before `dmPolicy:"open"` is set — resulting in the pairing prompt.
+
+**Previous bug (fixed 2026-03-17)**: The sync script printed completion BEFORE waiting for health and applying config. The frontend detected early completion, called the cleanup RPC (which failed since the container wasn't ready), and showed success. The user saw "Telegram bot connected" but the bot still required pairing because `dmPolicy:"open"` was never applied.
+
+### Telegram Config — Important Notes
+
 - Do NOT include `channels.telegram` in the cloud-init `openclaw.json` template — OpenClaw auto-detects from `TELEGRAM_BOT_TOKEN` env var
-- OpenClaw's auto-detection defaults to `streaming: "partial"` which causes double replies
-- After container starts, use `config.patch` RPC to set `streaming: "off"` on the telegram channel
-- `dmPolicy: "open"` requires `allowFrom: ["*"]` — omitting this causes a config validation error and crash loop
+- OpenClaw's auto-detection defaults to `streaming: "partial"` and a restrictive `dmPolicy` — both must be overridden post-startup
+- `dmPolicy: "open"` requires `allowFrom: ["*"]` — omitting `allowFrom` causes a config validation error and crash loop
+- `allowFrom` must be set BEFORE `dmPolicy` when using sequential CLI commands (validation order dependency)
 - The `config.patch` RPC uses WebSocket protocol (see `openclawRPC` in `whatsapp.go`)
+- The heartbeat script (`provisioner.go`) has its own config sync section that correctly applies config before writing the version file — this was not affected by the bug
 
 ### Debugging OpenClaw on VPS
 
