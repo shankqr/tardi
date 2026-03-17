@@ -15,7 +15,8 @@
 		cleanupTelegramConfig,
 		syncConfig,
 		getSyncStatus,
-		runDoctor
+		runDoctor,
+		type HealthCheck
 	} from '$lib/api/client';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
@@ -72,7 +73,8 @@
 
 	// Doctor state
 	let doctorRunning = $state(false);
-	let doctorOutput = $state<string | null>(null);
+	let doctorChecks = $state<HealthCheck[] | null>(null);
+	let doctorRaw = $state<string | null>(null);
 	let doctorError = $state<string | null>(null);
 
 	function startTelegramSyncTimer() {
@@ -340,7 +342,8 @@
 	async function handleRunDoctor() {
 		if (!instance) return;
 		doctorRunning = true;
-		doctorOutput = null;
+		doctorChecks = null;
+		doctorRaw = null;
 		doctorError = null;
 		try {
 			const token = await getIdToken();
@@ -348,11 +351,13 @@
 			const result = await runDoctor(token, instance.id);
 			if (result.error) {
 				doctorError = result.detail || result.error;
-			} else {
-				doctorOutput = result.output ?? '';
+			} else if (result.checks) {
+				doctorChecks = result.checks;
+			} else if (result.raw) {
+				doctorRaw = result.raw;
 			}
 		} catch (err) {
-			doctorError = err instanceof Error ? err.message : 'Doctor check failed';
+			doctorError = err instanceof Error ? err.message : 'Health check failed';
 		} finally {
 			doctorRunning = false;
 		}
@@ -830,7 +835,7 @@
 								disabled={doctorRunning || instance.status !== 'active'}
 								class="ml-3 shrink-0 rounded-md bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
 							>
-								{doctorRunning ? 'Running...' : 'Run Doctor'}
+								{doctorRunning ? 'Checking...' : 'Health Check'}
 							</button>
 						</div>
 					{/if}
@@ -848,16 +853,16 @@
 							disabled={doctorRunning || instance.status !== 'active'}
 							class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
 						>
-							{doctorRunning ? 'Running...' : 'Run Doctor'}
+							{doctorRunning ? 'Checking...' : 'Health Check'}
 						</button>
 					</div>
 
-					{#if doctorOutput !== null || doctorError !== null}
+					{#if doctorChecks !== null || doctorRaw !== null || doctorError !== null}
 						<div class="rounded-xl border border-gray-200 p-5">
 							<div class="flex items-center justify-between">
-								<h3 class="text-sm font-semibold text-gray-900">Doctor Results</h3>
+								<h3 class="text-sm font-semibold text-gray-900">Health Check Results</h3>
 								<button
-									onclick={() => { doctorOutput = null; doctorError = null; }}
+									onclick={() => { doctorChecks = null; doctorRaw = null; doctorError = null; }}
 									class="text-xs text-gray-400 hover:text-gray-600"
 								>Dismiss</button>
 							</div>
@@ -865,8 +870,40 @@
 								<div class="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
 									{doctorError}
 								</div>
-							{:else}
-								<pre class="mt-3 max-h-80 overflow-auto rounded-lg bg-gray-900 p-4 text-xs text-green-400 font-mono whitespace-pre-wrap">{doctorOutput}</pre>
+							{:else if doctorChecks}
+								<div class="mt-3 space-y-1.5">
+									{#each doctorChecks as check (check.name)}
+										<div class="flex items-start gap-2.5 rounded-lg px-3 py-2 {check.status === 'fail' ? 'bg-red-50' : check.status === 'warn' ? 'bg-yellow-50' : ''}">
+											<span class="mt-0.5 shrink-0 text-sm">
+												{#if check.status === 'pass'}
+													<span class="text-green-600">&#10003;</span>
+												{:else if check.status === 'fail'}
+													<span class="text-red-600">&#10007;</span>
+												{:else if check.status === 'warn'}
+													<span class="text-yellow-600">&#9888;</span>
+												{:else}
+													<span class="text-gray-400">&#8226;</span>
+												{/if}
+											</span>
+											<div class="min-w-0 flex-1">
+												<div class="flex items-baseline gap-2">
+													<span class="text-xs font-medium text-gray-500">{check.name}</span>
+													<span class="text-xs {check.status === 'fail' ? 'text-red-700 font-medium' : check.status === 'warn' ? 'text-yellow-700' : 'text-gray-700'}">{check.message}</span>
+												</div>
+												{#if check.detail}
+													<p class="mt-0.5 text-xs text-gray-400 whitespace-pre-wrap break-words">{check.detail}</p>
+												{/if}
+											</div>
+										</div>
+									{/each}
+								</div>
+								{#if doctorChecks.some(c => c.status === 'fail')}
+									<div class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500">
+										Issues found. Try <button onclick={handleRestart} class="font-medium text-gray-700 hover:underline">restarting your agent</button> if problems persist.
+									</div>
+								{/if}
+							{:else if doctorRaw}
+								<pre class="mt-3 max-h-80 overflow-auto rounded-lg bg-gray-900 p-4 text-xs text-green-400 font-mono whitespace-pre-wrap">{doctorRaw}</pre>
 							{/if}
 						</div>
 					{/if}

@@ -443,14 +443,43 @@ export async function disconnectTelegram(
 	);
 }
 
-export async function runDoctor(
-	token: string,
-	instanceId: string
-): Promise<{ output?: string; error?: string; detail?: string }> {
+export interface HealthCheck {
+	name: string;
+	status: 'pass' | 'fail' | 'warn' | 'info';
+	message: string;
+	detail: string;
+}
+
+export interface DoctorResult {
+	checks?: HealthCheck[];
+	raw?: string;
+	error?: string;
+	detail?: string;
+}
+
+export async function runDoctor(token: string, instanceId: string): Promise<DoctorResult> {
 	if (USE_MOCK) {
 		return {
-			output:
-				'OpenClaw Doctor\n================\n[OK] Container running\n[OK] Config valid\n[OK] API key configured\n[OK] Telegram connected\n\nAll checks passed.'
+			checks: [
+				{ name: 'Container', status: 'pass', message: 'Running and healthy', detail: 'Restarts: 0' },
+				{
+					name: 'Telegram: Double Replies',
+					status: 'pass',
+					message: 'Streaming is off',
+					detail: "Messages won't be sent twice"
+				},
+				{
+					name: 'Telegram: Pairing',
+					status: 'pass',
+					message: 'DM policy is open',
+					detail: 'Users can message the bot without pairing'
+				},
+				{ name: 'API Keys', status: 'pass', message: 'OpenRouter', detail: '' },
+				{ name: 'Config Sync', status: 'pass', message: 'In sync (version 3)', detail: '' },
+				{ name: 'Recent Logs', status: 'pass', message: 'No errors in last 50 log lines', detail: '' },
+				{ name: 'Disk Space', status: 'pass', message: '42% used (11G free)', detail: '' },
+				{ name: 'Memory', status: 'pass', message: '312MB / 1024MB (30%)', detail: '' }
+			]
 		};
 	}
 
