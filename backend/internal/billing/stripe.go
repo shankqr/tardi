@@ -69,18 +69,29 @@ func (s *StripeService) GetSubscriptionPlanTier(subscriptionID string) (models.P
 
 	if sub.Items != nil && len(sub.Items.Data) > 0 {
 		price := sub.Items.Data[0].Price
-		if price != nil && price.Metadata != nil {
-			if tier, ok := price.Metadata["plan_tier"]; ok {
-				switch tier {
-				case "pro":
-					return models.PlanPro, nil
-				case "standard":
-					return models.PlanStandard, nil
+		if price != nil {
+			s.logger.Info("stripe: subscription price details",
+				"subscription_id", subscriptionID,
+				"price_id", price.ID,
+				"metadata", price.Metadata,
+			)
+			if price.Metadata != nil {
+				if tier, ok := price.Metadata["plan_tier"]; ok {
+					switch tier {
+					case "pro":
+						return models.PlanPro, nil
+					case "standard":
+						return models.PlanStandard, nil
+					}
 				}
 			}
 		}
+	} else {
+		s.logger.Warn("stripe: subscription has no items", "subscription_id", subscriptionID)
 	}
 
+	s.logger.Warn("stripe: no plan_tier metadata found, defaulting to standard",
+		"subscription_id", subscriptionID)
 	return models.PlanStandard, nil
 }
 
