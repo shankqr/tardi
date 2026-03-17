@@ -56,10 +56,8 @@ chmod 600 /opt/openclaw/.env
 cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
 
 echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
-echo "config sync complete (version=$REMOTE_VERSION)"
 
-# Wait for healthy, then apply post-startup config
-# This runs AFTER the completion message so frontend polling detects success early
+# Wait for healthy, then apply post-startup config before reporting completion
 HEALTHY=false
 for i in $(seq 1 12); do
     sleep 5
@@ -88,6 +86,10 @@ if [ "$HEALTHY" = true ]; then
         docker exec openclaw-gateway openclaw models set "${NEW_PROVIDER}/${NEW_MODEL}" 2>/dev/null
     fi
 fi
+
+# Report completion AFTER all config patches are applied so the frontend
+# does not show success before Telegram dmPolicy/streaming are set
+echo "config sync complete (version=$REMOTE_VERSION)"
 `
 
 // SyncConfigHandler triggers an immediate config sync on the VPS by
