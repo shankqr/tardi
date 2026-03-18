@@ -95,10 +95,14 @@
 		</button>
 
 		{#if ipv4}
-			{@const host = dashboardUrl ? new URL(dashboardUrl).hostname : ipv4}
+			{@const previewHost = dashboardUrl ? new URL(dashboardUrl).hostname.replace('.a.tardi.ai', '.b.tardi.ai') : null}
 			<p class="mt-3 text-xs text-gray-400 text-center">
 				After your agent finishes, visit
-				<a href="http://{host}:3000" target="_blank" rel="noopener noreferrer" class="font-mono text-gray-500 underline hover:text-gray-700">http://{host}:3000</a>
+				{#if previewHost}
+					<a href="https://{previewHost}" target="_blank" rel="noopener noreferrer" class="font-mono text-gray-500 underline hover:text-gray-700">https://{previewHost}</a>
+				{:else}
+					<span class="font-mono text-gray-500">http://{ipv4}:3000</span>
+				{/if}
 				to see what it built
 			</p>
 		{/if}
