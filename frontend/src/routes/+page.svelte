@@ -1,8 +1,3 @@
-<script lang="ts">
-	import PricingCard from '$lib/components/PricingCard.svelte';
-	import { plan } from '$lib/api/mock';
-</script>
-
 <!-- Hero -->
 <section class="bg-white py-20 sm:py-28">
 	<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
@@ -65,19 +60,6 @@
 					Your dedicated VPS is provisioned automatically. Manage everything from your dashboard.
 				</p>
 			</div>
-		</div>
-	</div>
-</section>
-
-<!-- Pricing -->
-<section id="pricing" class="bg-white py-20">
-	<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-		<div class="text-center">
-			<h2 class="text-3xl font-bold text-gray-900">Simple, transparent pricing</h2>
-			<p class="mt-3 text-gray-500">Dedicated infrastructure for your AI agents. No hidden fees.</p>
-		</div>
-		<div class="mt-14 max-w-md mx-auto">
-			<PricingCard {plan} />
 		</div>
 	</div>
 </section>
