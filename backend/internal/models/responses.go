@@ -29,6 +29,7 @@ type InstanceResponse struct {
 	OpenClawAuthToken    *string `json:"openclaw_auth_token,omitempty"`
 	OpenClawVersion      *string `json:"openclaw_version,omitempty"`
 	OpenClawUpdateStatus *string `json:"openclaw_update_status,omitempty"`
+	PreviewURL           *string `json:"preview_url,omitempty"`
 	CreatedAt            string  `json:"created_at"`
 }
 
@@ -68,6 +69,10 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 	} else if inst.IPv4 != nil && *inst.IPv4 != "" {
 		url := fmt.Sprintf("https://%s", *inst.IPv4)
 		r.DashboardURL = &url
+	}
+	if inst.PreviewDomain != nil && *inst.PreviewDomain != "" {
+		url := fmt.Sprintf("https://%s", *inst.PreviewDomain)
+		r.PreviewURL = &url
 	}
 	if inst.Step != nil {
 		s := string(*inst.Step)

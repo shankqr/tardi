@@ -41,6 +41,7 @@ export interface VpsInstance {
 	last_heartbeat_at: string | null;
 	dashboard_url: string | null;
 	openclaw_auth_token?: string | null;
+	preview_url?: string | null;
 	created_at: string;
 }
 

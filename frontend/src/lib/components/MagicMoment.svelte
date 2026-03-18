@@ -2,10 +2,10 @@
 	interface Props {
 		dashboardUrl: string;
 		authToken: string;
-		ipv4: string;
+		previewUrl?: string | null;
 	}
 
-	let { dashboardUrl, authToken, ipv4 }: Props = $props();
+	let { dashboardUrl, authToken, previewUrl }: Props = $props();
 
 	let copiedIndex = $state<number | null>(null);
 
@@ -94,15 +94,10 @@
 			Open Agent Dashboard
 		</button>
 
-		{#if ipv4}
-			{@const previewHost = dashboardUrl ? new URL(dashboardUrl).hostname.replace('.a.tardi.ai', '.b.tardi.ai') : null}
+		{#if previewUrl}
 			<p class="mt-3 text-xs text-gray-400 text-center">
 				After your agent finishes, visit
-				{#if previewHost}
-					<a href="https://{previewHost}" target="_blank" rel="noopener noreferrer" class="font-mono text-gray-500 underline hover:text-gray-700">https://{previewHost}</a>
-				{:else}
-					<span class="font-mono text-gray-500">http://{ipv4}:3000</span>
-				{/if}
+				<a href={previewUrl} target="_blank" rel="noopener noreferrer" class="font-mono text-gray-500 underline hover:text-gray-700">{previewUrl}</a>
 				to see what it built
 			</p>
 		{/if}

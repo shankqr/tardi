@@ -30,8 +30,9 @@ export const mockDashboardState: DashboardState = {
 			region: 'eu-central',
 			agent_status: 'running',
 			last_heartbeat_at: new Date(Date.now() - 15000).toISOString(),
-			dashboard_url: 'https://203.0.113.10',
+			dashboard_url: 'https://abcd1234.a.tardi.ai',
 			openclaw_auth_token: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+			preview_url: 'https://abcd1234.b.tardi.ai',
 			created_at: '2026-01-15T10:30:00Z'
 		}
 	],

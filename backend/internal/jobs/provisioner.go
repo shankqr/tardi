@@ -53,6 +53,7 @@ type CloudInitData struct {
 	RootPassword      string // Explicitly set root password (overrides Hetzner's auto-generated one)
 	TelegramBotToken  string // Optional Telegram bot token
 	Domain            string // Optional domain for Let's Encrypt (e.g. "abc123.agents.tardi.ai"); empty = self-signed
+	PreviewDomain     string // Optional preview domain (e.g. "abc123.b.tardi.ai") for user-built apps on port 3000
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
@@ -340,6 +341,17 @@ http://{{.Domain}} {
 	handle {
 		redir https://{host}{uri} permanent
 	}
+}
+{{- end}}
+
+{{- if .PreviewDomain}}
+
+{{.PreviewDomain}} {
+	reverse_proxy localhost:3000
+}
+
+http://{{.PreviewDomain}} {
+	redir https://{host}{uri} permanent
 }
 {{- end}}
 CADDYEOF
@@ -779,10 +791,12 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	// Compute domain if DNS is configured (known before server creation since it's based on instance ID)
-	var domain string
+	var domain, previewDomain string
 	if p.dnsClient != nil {
 		subdomain := inst.ID.String()[:8]
 		domain = fmt.Sprintf("%s.%s", subdomain, p.dnsClient.BaseDomain())
+		// Preview domain: replace base domain prefix (a.tardi.ai → b.tardi.ai)
+		previewDomain = fmt.Sprintf("%s.b.tardi.ai", subdomain)
 	}
 
 	// Fetch API keys from agent config (with defaults for provider/model)
@@ -796,6 +810,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		Model:             "nvidia/nemotron-3-super-120b-a12b:free",
 		RootPassword:      rootPassword,
 		Domain:            domain,
+		PreviewDomain:     previewDomain,
 	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, p.pool, inst.ID)
 	if err != nil {
@@ -899,6 +914,21 @@ func (p *Provisioner) createDNSRecord(ctx context.Context, instanceID string, ip
 
 	if err := db.UpdateInstanceDomain(ctx, p.pool, instUUID, domain, recordID); err != nil {
 		return "", fmt.Errorf("store domain: %w", err)
+	}
+
+	// Create preview DNS record (b.tardi.ai) for user-built apps
+	previewDomain := fmt.Sprintf("%s.b.tardi.ai", subdomain)
+	previewRecordID, err := p.dnsClient.CreateARecordForDomain(ctx, previewDomain, ip)
+	if err != nil {
+		p.logger.Warn("provisioner: preview DNS record creation failed",
+			"instance_id", instanceID, "preview_domain", previewDomain, "error", err)
+		// Non-fatal: preview URL just won't work
+	} else {
+		if err := db.UpdateInstancePreviewDNS(ctx, p.pool, instUUID, previewDomain, previewRecordID); err != nil {
+			p.logger.Warn("provisioner: store preview DNS failed", "instance_id", instanceID, "error", err)
+		}
+		p.logger.Info("provisioner: preview DNS record created",
+			"instance_id", instanceID, "preview_domain", previewDomain, "ip", ip)
 	}
 
 	p.logger.Info("provisioner: DNS record created",

@@ -145,7 +145,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running','failed') ORDER BY updated_at DESC LIMIT 1),
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
-		       domain, dns_record_id,
+		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
 		FROM vps_instances v
 		WHERE user_id = $1 AND status != 'terminated'
@@ -165,7 +165,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 			&inst.Region, &inst.Status, &inst.Step,
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
 			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
-			&inst.Domain, &inst.DNSRecordID,
+			&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -184,7 +184,7 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running','failed') ORDER BY updated_at DESC LIMIT 1),
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
-		       domain, dns_record_id,
+		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
 		FROM vps_instances v
 		WHERE id = $1 AND user_id = $2
@@ -194,7 +194,7 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		&inst.Region, &inst.Status, &inst.Step,
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
 		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
-		&inst.Domain, &inst.DNSRecordID,
+		&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -495,7 +495,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 		       name, host(ipv4)::text, region, status,
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
-		       domain, dns_record_id,
+		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
 		FROM vps_instances
 		WHERE status = $1
@@ -514,7 +514,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 			&inst.Region, &inst.Status,
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
 			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
-			&inst.Domain, &inst.DNSRecordID,
+			&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -659,7 +659,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 		       name, host(ipv4)::text, region, status,
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
-		       domain, dns_record_id,
+		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
 		FROM vps_instances
 		WHERE subscription_id = $1 AND status NOT IN ('terminated', 'terminating')
@@ -678,7 +678,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 			&inst.Region, &inst.Status,
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
 			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
-			&inst.Domain, &inst.DNSRecordID,
+			&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -887,7 +887,7 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 		       name, host(ipv4)::text, region, status,
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
-		       domain, dns_record_id,
+		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
 		FROM vps_instances
 		WHERE agent_token_secret_name = $1
@@ -897,7 +897,7 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 		&inst.Region, &inst.Status,
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
 		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
-		&inst.Domain, &inst.DNSRecordID,
+		&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -957,6 +957,17 @@ func UpdateInstanceDomain(ctx context.Context, pool *pgxpool.Pool, instanceID uu
 	`, domain, dnsRecordID, instanceID)
 	if err != nil {
 		return fmt.Errorf("update instance domain: %w", err)
+	}
+	return nil
+}
+
+// UpdateInstancePreviewDNS stores the preview domain and Cloudflare DNS record ID for an instance.
+func UpdateInstancePreviewDNS(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, domain, dnsRecordID string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET preview_domain = $1, preview_dns_record_id = $2, updated_at = now() WHERE id = $3
+	`, domain, dnsRecordID, instanceID)
+	if err != nil {
+		return fmt.Errorf("update instance preview DNS: %w", err)
 	}
 	return nil
 }

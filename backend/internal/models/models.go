@@ -109,6 +109,8 @@ type VpsInstance struct {
 	OpenClawUpdateError      *string
 	Domain                   *string
 	DNSRecordID              *string
+	PreviewDomain            *string
+	PreviewDNSRecordID       *string
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 }

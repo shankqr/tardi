@@ -262,7 +262,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	_ = db.UpdateInstanceRootPassword(ctx, u.pool, inst.ID, newPassword)
 	u.logger.Info("upgrader: root password reset on new server", "instance_id", inst.ID)
 
-	// Step 6: Update DNS record to point to new server IP
+	// Step 6: Update DNS records to point to new server IP
 	if u.dnsClient != nil && inst.DNSRecordID != nil && inst.Domain != nil {
 		subdomain := inst.ID.String()[:8]
 		if err := u.dnsClient.UpdateARecord(ctx, *inst.DNSRecordID, subdomain, server.IPv4); err != nil {
@@ -270,6 +270,13 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 			// Non-fatal — continue with upgrade
 		} else {
 			u.logger.Info("upgrader: DNS record updated", "domain", *inst.Domain, "ip", server.IPv4)
+		}
+	}
+	if u.dnsClient != nil && inst.PreviewDNSRecordID != nil && inst.PreviewDomain != nil {
+		if err := u.dnsClient.UpdateARecordForDomain(ctx, *inst.PreviewDNSRecordID, *inst.PreviewDomain, server.IPv4); err != nil {
+			u.logger.Error("upgrader: update preview DNS record", "instance_id", inst.ID, "error", err)
+		} else {
+			u.logger.Info("upgrader: preview DNS record updated", "domain", *inst.PreviewDomain, "ip", server.IPv4)
 		}
 	}
 
@@ -333,12 +340,18 @@ func (u *Upgrader) executeDowngrade(inst *models.VpsInstance, newTier models.Pla
 		}
 	}
 
-	// Step 2: Delete DNS record
+	// Step 2: Delete DNS records
 	if u.dnsClient != nil && inst.DNSRecordID != nil {
 		if err := u.dnsClient.DeleteRecord(ctx, *inst.DNSRecordID); err != nil {
 			u.logger.Error("upgrader: delete DNS record", "instance_id", inst.ID, "error", err)
 		}
 		_ = db.UpdateInstanceDomain(ctx, u.pool, inst.ID, "", "")
+	}
+	if u.dnsClient != nil && inst.PreviewDNSRecordID != nil {
+		if err := u.dnsClient.DeleteRecord(ctx, *inst.PreviewDNSRecordID); err != nil {
+			u.logger.Error("upgrader: delete preview DNS record", "instance_id", inst.ID, "error", err)
+		}
+		_ = db.UpdateInstancePreviewDNS(ctx, u.pool, inst.ID, "", "")
 	}
 
 	// Step 3: Reset instance for fresh provisioning (plan tier already updated by webhook)

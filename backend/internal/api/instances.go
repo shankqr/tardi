@@ -421,13 +421,20 @@ func executeDelete(deps Dependencies, inst *models.VpsInstance) {
 		}
 	}
 
-	// Clean up Cloudflare DNS record
+	// Clean up Cloudflare DNS records
 	if deps.DNSClient != nil && inst.DNSRecordID != nil && *inst.DNSRecordID != "" {
 		if err := deps.DNSClient.DeleteRecord(ctx, *inst.DNSRecordID); err != nil {
 			slog.Error("delete: DNS cleanup failed", "instance_id", inst.ID, "dns_record_id", *inst.DNSRecordID, "error", err)
 			// Non-fatal: orphaned DNS record is harmless (points to deleted IP)
 		} else {
 			slog.Info("delete: DNS record removed", "instance_id", inst.ID, "domain", inst.Domain)
+		}
+	}
+	if deps.DNSClient != nil && inst.PreviewDNSRecordID != nil && *inst.PreviewDNSRecordID != "" {
+		if err := deps.DNSClient.DeleteRecord(ctx, *inst.PreviewDNSRecordID); err != nil {
+			slog.Error("delete: preview DNS cleanup failed", "instance_id", inst.ID, "error", err)
+		} else {
+			slog.Info("delete: preview DNS record removed", "instance_id", inst.ID, "domain", inst.PreviewDomain)
 		}
 	}
 
