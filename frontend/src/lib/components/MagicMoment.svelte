@@ -95,9 +95,10 @@
 		</button>
 
 		{#if ipv4}
+			{@const host = dashboardUrl ? new URL(dashboardUrl).hostname : ipv4}
 			<p class="mt-3 text-xs text-gray-400 text-center">
 				After your agent finishes, visit
-				<span class="font-mono text-gray-500">http://{ipv4}:3000</span>
+				<a href="http://{host}:3000" target="_blank" rel="noopener noreferrer" class="font-mono text-gray-500 underline hover:text-gray-700">http://{host}:3000</a>
 				to see what it built
 			</p>
 		{/if}
