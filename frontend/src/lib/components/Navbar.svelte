@@ -6,7 +6,7 @@
 	<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 		<div class="flex h-16 items-center justify-between">
 			<div class="flex items-center gap-8">
-				<a href="/" class="text-xl font-bold text-gray-900">Tardi</a>
+				<a href="https://tardi.ai" class="text-xl font-bold text-gray-900">Tardi</a>
 			</div>
 			<div class="hidden sm:flex items-center gap-4">
 				<a href="/login" class="text-sm text-gray-600 hover:text-gray-900">Log in</a>
