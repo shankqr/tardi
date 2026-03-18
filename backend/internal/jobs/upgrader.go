@@ -215,7 +215,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 
 	// Step 4: Create new server from snapshot on the new tier
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
-		Name:       "openclaw",
+		Name:       buildServerName("openclaw", user.Email, inst.ID.String()[:8]),
 		ServerType: mapping.ProviderServerType,
 		Region:     mapping.ProviderRegion,
 		ImageID:    result.ProviderImageID,
