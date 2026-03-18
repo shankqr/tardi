@@ -79,7 +79,7 @@ if [ -n "$TG_TOKEN" ]; then
         fi
 
         # allowFrom: must include "*" (required for dmPolicy:open to work)
-        if echo "$TG_ALLOW" | grep -q '"\\*"'; then
+        if echo "$TG_ALLOW" | grep -q '"\*"'; then
             add "Telegram: Allow From" "pass" "Accepting messages from all users" ""
         else
             add "Telegram: Allow From" "fail" "Restricted to: ${TG_ALLOW}" "Without allowFrom:[\"*\"], dmPolicy:open won't work and may crash. Fix: set allowFrom to [\"*\"]"
@@ -114,9 +114,9 @@ else
 fi
 
 # ── 3. API Keys ─────────────────────────────────────────────────────
-HAS_OR=$(grep -c '^OPENROUTER_API_KEY=' /opt/openclaw/.env 2>/dev/null || echo 0)
-HAS_AN=$(grep -c '^ANTHROPIC_API_KEY=' /opt/openclaw/.env 2>/dev/null || echo 0)
-HAS_OA=$(grep -c '^OPENAI_API_KEY=' /opt/openclaw/.env 2>/dev/null || echo 0)
+HAS_OR=$(grep -c '^OPENROUTER_API_KEY=' /opt/openclaw/.env 2>/dev/null) || HAS_OR=0
+HAS_AN=$(grep -c '^ANTHROPIC_API_KEY=' /opt/openclaw/.env 2>/dev/null) || HAS_AN=0
+HAS_OA=$(grep -c '^OPENAI_API_KEY=' /opt/openclaw/.env 2>/dev/null) || HAS_OA=0
 KEY_TOTAL=$((HAS_OR + HAS_AN + HAS_OA))
 if [ "$KEY_TOTAL" -gt 0 ]; then
     PROVIDERS=""
