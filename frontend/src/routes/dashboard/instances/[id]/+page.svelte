@@ -941,7 +941,6 @@
 					<MagicMoment
 						dashboardUrl={instance.dashboard_url}
 						authToken={instance.openclaw_auth_token}
-						instanceId={instance.id}
 						ipv4={instance.ipv4 ?? ''}
 					/>
 				{/if}
