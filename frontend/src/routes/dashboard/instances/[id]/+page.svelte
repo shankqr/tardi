@@ -22,6 +22,7 @@
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
 	import AIProviderConfig from '$lib/components/AIProviderConfig.svelte';
 	import AIProviderAdvanced from '$lib/components/AIProviderAdvanced.svelte';
+	import MagicMoment from '$lib/components/MagicMoment.svelte';
 
 	const instance = $derived(
 		$dashboardState?.instances.find((i) => i.id === page.params.id) ?? null
@@ -949,6 +950,15 @@
 							</div>
 						</div>
 					</div>
+				{/if}
+
+				{#if instance.status === 'active' && instance.agent_status === 'running' && instance.dashboard_url && instance.openclaw_auth_token}
+					<MagicMoment
+						dashboardUrl={instance.dashboard_url}
+						authToken={instance.openclaw_auth_token}
+						instanceId={instance.id}
+						ipv4={instance.ipv4 ?? ''}
+					/>
 				{/if}
 
 				{#if instance.status === 'active' || instance.status === 'snapshotting' || instance.status === 'restoring' || instance.status === 'restarting'}
