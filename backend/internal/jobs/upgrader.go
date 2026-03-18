@@ -249,6 +249,19 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		return
 	}
 
+	// Step 5b: Reset root password via provider API.
+	// Cloud-init doesn't re-run on snapshot-based servers (it detects prior execution),
+	// so the password set via chpasswd in cloud-init is never applied. We must reset
+	// the password through the provider API to get a working credential.
+	newPassword, err := prov.ResetPassword(ctx, server.ProviderServerID)
+	if err != nil {
+		u.logger.Error("upgrader: reset password after upgrade", "instance_id", inst.ID, "error", err)
+		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		return
+	}
+	_ = db.UpdateInstanceRootPassword(ctx, u.pool, inst.ID, newPassword)
+	u.logger.Info("upgrader: root password reset on new server", "instance_id", inst.ID)
+
 	// Step 6: Update DNS record to point to new server IP
 	if u.dnsClient != nil && inst.DNSRecordID != nil && inst.Domain != nil {
 		subdomain := inst.ID.String()[:8]
