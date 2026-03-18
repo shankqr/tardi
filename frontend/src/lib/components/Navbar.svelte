@@ -8,8 +8,8 @@
 			<div class="flex items-center gap-8">
 				<a href="/" class="text-xl font-bold text-gray-900">Tardi</a>
 				<div class="hidden sm:flex items-center gap-6">
-					<a href="/#features" class="text-sm text-gray-600 hover:text-gray-900">Features</a>
-					<a href="/#pricing" class="text-sm text-gray-600 hover:text-gray-900">Pricing</a>
+					<a href="https://tardi.ai" class="text-sm text-gray-600 hover:text-gray-900">Features</a>
+					<a href="https://tardi.ai" class="text-sm text-gray-600 hover:text-gray-900">Pricing</a>
 				</div>
 			</div>
 			<div class="hidden sm:flex items-center gap-4">
@@ -38,8 +38,8 @@
 	</div>
 	{#if mobileMenuOpen}
 		<div class="sm:hidden border-t border-gray-100 px-4 py-4 space-y-3">
-			<a href="/#features" class="block text-sm text-gray-600">Features</a>
-			<a href="/#pricing" class="block text-sm text-gray-600">Pricing</a>
+			<a href="https://tardi.ai" class="block text-sm text-gray-600">Features</a>
+			<a href="https://tardi.ai" class="block text-sm text-gray-600">Pricing</a>
 			<a href="/login" class="block text-sm text-gray-600">Log in</a>
 			<a
 				href="/signup"

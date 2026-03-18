@@ -8,8 +8,8 @@
 			<div>
 				<p class="text-sm font-semibold text-gray-900">Product</p>
 				<ul class="mt-3 space-y-2">
-					<li><a href="/#features" class="text-sm text-gray-500 hover:text-gray-700">Features</a></li>
-					<li><a href="/#pricing" class="text-sm text-gray-500 hover:text-gray-700">Pricing</a></li>
+					<li><a href="https://tardi.ai" class="text-sm text-gray-500 hover:text-gray-700">Features</a></li>
+					<li><a href="https://tardi.ai" class="text-sm text-gray-500 hover:text-gray-700">Pricing</a></li>
 				</ul>
 			</div>
 			<div>

@@ -21,7 +21,7 @@
 				Get Started
 			</a>
 			<a
-				href="/#features"
+				href="https://tardi.ai"
 				class="rounded-lg border border-gray-300 px-6 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
 			>
 				Learn More
