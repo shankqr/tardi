@@ -444,6 +444,7 @@ if [ "$HEALTHY" = true ]; then
     # - groupPolicy:"disabled" ignores group messages
     # Must set allowFrom before dmPolicy (validation requires it)
     if grep -q '^TELEGRAM_BOT_TOKEN=.' /opt/openclaw/.env 2>/dev/null; then
+        docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null

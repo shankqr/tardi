@@ -48,8 +48,11 @@ RESPONSE=$(curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
 # Check actual config and fix if drifted. Cost: 1 cat+jq when config is fine.
 TG_TOKEN_SET=$(grep -c '^TELEGRAM_BOT_TOKEN=.\+' /opt/openclaw/.env 2>/dev/null || echo "0")
 if [ "$TG_TOKEN_SET" -gt 0 ] && [ "$STATUS" = "running" ]; then
-    TG_STREAMING=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.channels.telegram.streaming // "unknown"' 2>/dev/null)
-    if [ "$TG_STREAMING" != "off" ]; then
+    TG_CONFIG=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null)
+    TG_STREAMING=$(echo "$TG_CONFIG" | jq -r '.channels.telegram.streaming // "unknown"' 2>/dev/null)
+    TG_ENABLED=$(echo "$TG_CONFIG" | jq -r '.channels.telegram.enabled // false' 2>/dev/null)
+    if [ "$TG_STREAMING" != "off" ] || [ "$TG_ENABLED" != "true" ]; then
+        docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
@@ -103,6 +106,7 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
             # - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
             # - groupPolicy:"disabled" ignores group messages
             if [ -n "$NEW_TG_TOKEN" ]; then
+                docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
                 docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
                 docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
                 docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
@@ -172,6 +176,7 @@ if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
         # restrictive dmPolicy) which causes double replies and pairing prompts.
         TG_TOKEN_SET=$(grep -c '^TELEGRAM_BOT_TOKEN=.\+' /opt/openclaw/.env 2>/dev/null || echo "0")
         if [ "$TG_TOKEN_SET" -gt 0 ]; then
+            docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
             docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
             docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
             docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null

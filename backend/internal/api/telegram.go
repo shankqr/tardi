@@ -154,7 +154,7 @@ func patchTelegramConfig(ctx context.Context, ipv4, authToken string) error {
 	// Step 2: config.patch to fix Telegram settings.
 	// - streaming:"off" prevents double replies (the actual root cause)
 	// - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
-	patchJSON := `{"channels":{"telegram":{"streaming":"off","dmPolicy":"open","allowFrom":["*"],"groupPolicy":"disabled"}}}`
+	patchJSON := `{"channels":{"telegram":{"enabled":true,"streaming":"off","dmPolicy":"open","allowFrom":["*"],"groupPolicy":"disabled"}}}`
 	_, err = openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
 		"raw":  patchJSON,
 		"hash": configResp.Hash,
@@ -162,9 +162,11 @@ func patchTelegramConfig(ctx context.Context, ipv4, authToken string) error {
 	return err
 }
 
-// TelegramCleanupHandler removes channels.telegram from OpenClaw's internal
-// config via RPC. The frontend calls this after a config sync completes to
-// ensure the env var auto-detection is the sole Telegram handler.
+// TelegramCleanupHandler patches Telegram channel settings in OpenClaw's
+// internal config via RPC. The frontend calls this after a config sync
+// completes as a safety net to ensure correct settings (streaming:off,
+// dmPolicy:open, enabled:true) even if the CLI commands in the sync script
+// were interrupted or failed.
 // POST /api/instances/{id}/telegram/cleanup
 func TelegramCleanupHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
