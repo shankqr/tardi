@@ -60,6 +60,9 @@
 	let confirmDeleteId = $state<string | null>(null);
 	let confirmDeleteInput = $state('');
 
+	// API key gate
+	let hasApiKey = $state(false);
+
 	// Telegram state
 	let telegramToken = $state('');
 	let telegramLoading = $state(false);
@@ -376,12 +379,27 @@
 					if (!token) return;
 					const cfg = await getAgentConfig(token, instance.id);
 					telegramConnected = !!(cfg.config.telegram_bot_token && typeof cfg.config.telegram_bot_token === 'string' && cfg.config.telegram_bot_token.length > 0);
+					const hasKey = (k: string): boolean => !!(cfg.config[k] && typeof cfg.config[k] === 'string' && (cfg.config[k] as string).length > 0);
+					hasApiKey = hasKey('openrouter_api_key') || hasKey('anthropic_api_key') || hasKey('openai_api_key');
 				} catch {
 					// ignore
 				}
 			})();
 		}
 	});
+
+	async function recheckConfig() {
+		if (!instance) return;
+		try {
+			const token = await getIdToken();
+			if (!token) return;
+			const cfg = await getAgentConfig(token, instance.id);
+			const hasKey = (k: string): boolean => !!(cfg.config[k] && typeof cfg.config[k] === 'string' && (cfg.config[k] as string).length > 0);
+			hasApiKey = hasKey('openrouter_api_key') || hasKey('anthropic_api_key') || hasKey('openai_api_key');
+		} catch {
+			// ignore
+		}
+	}
 
 	function timeAgo(dateStr: string | null): string {
 		if (!dateStr) return 'Never';
@@ -534,7 +552,7 @@
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
-					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} />
+					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsaved={recheckConfig} />
 
 					<div class="rounded-xl border border-gray-200 p-5">
 						<div class="flex items-center gap-2">
@@ -546,7 +564,11 @@
 						<p class="mt-1 text-xs text-gray-400">Link a Telegram bot to enable messaging through your agent</p>
 
 						<div class="mt-4">
-							{#if telegramConnected}
+							{#if !hasApiKey && !telegramConnected}
+								<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+									<p class="text-xs text-gray-500">Set up your AI provider key above before connecting Telegram.</p>
+								</div>
+							{:else if telegramConnected}
 								<div class="flex items-center justify-between">
 									<div class="flex items-center gap-2 text-sm {telegramSyncPhase === 'syncing' || telegramSyncPhase === 'finishing' ? 'text-amber-700' : 'text-green-700'}">
 										{#if telegramSyncPhase === 'syncing'}

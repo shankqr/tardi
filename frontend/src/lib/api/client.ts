@@ -483,11 +483,24 @@ export async function runDoctor(token: string, instanceId: string): Promise<Doct
 		};
 	}
 
-	return apiFetch(
-		`${getApiUrl()}/api/instances/${instanceId}/doctor`,
-		{ method: 'POST', headers: authHeaders(token) },
-		'runDoctor'
-	);
+	// Doctor SSHes into VPS and runs checks (~45s). Use AbortController
+	// to prevent the request from hanging forever if the backend is slow.
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 60_000);
+	try {
+		return await apiFetch(
+			`${getApiUrl()}/api/instances/${instanceId}/doctor`,
+			{ method: 'POST', headers: authHeaders(token), signal: controller.signal },
+			'runDoctor'
+		);
+	} catch (err) {
+		if (err instanceof DOMException && err.name === 'AbortError') {
+			return { error: 'Health check timed out', detail: 'Could not reach your agent within 60 seconds. The VPS may be unreachable.' };
+		}
+		throw err;
+	} finally {
+		clearTimeout(timeout);
+	}
 }
 
 export async function createPortalSession(token: string, flow?: string): Promise<{ url: string }> {
