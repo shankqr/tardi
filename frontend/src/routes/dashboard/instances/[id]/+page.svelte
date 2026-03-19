@@ -66,7 +66,7 @@
 	let telegramError = $state<string | null>(null);
 	let telegramConnected = $state(false);
 	let showUpdateToken = $state(false);
-	type TelegramSyncPhase = 'idle' | 'syncing' | 'success' | 'failed';
+	type TelegramSyncPhase = 'idle' | 'syncing' | 'finishing' | 'success' | 'failed';
 	let telegramSyncPhase = $state<TelegramSyncPhase>('idle');
 	let telegramSyncElapsed = $state(0);
 	let telegramSyncTimer: ReturnType<typeof setInterval> | null = null;
@@ -103,8 +103,11 @@
 				try {
 					await cleanupTelegramConfig(token, instance.id);
 				} catch { /* non-critical, env var handler still works */ }
-				telegramSyncPhase = 'success';
-				setTimeout(() => { if (telegramSyncPhase === 'success') telegramSyncPhase = 'idle'; }, 8000);
+				telegramSyncPhase = 'finishing';
+				setTimeout(() => {
+					telegramSyncPhase = 'success';
+					setTimeout(() => { if (telegramSyncPhase === 'success') telegramSyncPhase = 'idle'; }, 8000);
+				}, 15000);
 			} else if (result.status === 'failed') {
 				stopTelegramSyncTimer();
 				stopTelegramPollTimer();
@@ -545,19 +548,25 @@
 						<div class="mt-4">
 							{#if telegramConnected}
 								<div class="flex items-center justify-between">
-									<div class="flex items-center gap-2 text-sm {telegramSyncPhase === 'syncing' ? 'text-amber-700' : 'text-green-700'}">
+									<div class="flex items-center gap-2 text-sm {telegramSyncPhase === 'syncing' || telegramSyncPhase === 'finishing' ? 'text-amber-700' : 'text-green-700'}">
 										{#if telegramSyncPhase === 'syncing'}
 											<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 											</svg>
 											Deploying to your agent...
+										{:else if telegramSyncPhase === 'finishing'}
+											<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+											</svg>
+											Finalizing setup...
 										{:else}
 											<span class="h-2 w-2 rounded-full bg-green-500"></span>
 											Telegram bot connected
 										{/if}
 									</div>
-									{#if telegramSyncPhase !== 'syncing'}
+									{#if telegramSyncPhase !== 'syncing' && telegramSyncPhase !== 'finishing'}
 										<div class="flex items-center gap-3">
 											<button
 												onclick={() => { showUpdateToken = !showUpdateToken; telegramError = null; }}
@@ -624,6 +633,28 @@
 												></div>
 											</div>
 											<p class="text-xs text-gray-400">This usually takes about a minute. Please wait before messaging the bot.</p>
+										</div>
+									</div>
+								{:else if telegramSyncPhase === 'finishing'}
+									<div class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+										<div class="space-y-3">
+											<div class="flex items-center gap-3">
+												<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+												</svg>
+												<div class="flex-1">
+													<p class="text-sm font-medium text-gray-900">Finalizing Telegram bot setup...</p>
+													<p class="text-xs text-gray-500">Almost ready</p>
+												</div>
+											</div>
+											<div class="h-1 overflow-hidden rounded-full bg-gray-200">
+												<div
+													class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
+													style="width: 95%"
+												></div>
+											</div>
+											<p class="text-xs text-gray-400">Please wait before messaging the bot.</p>
 										</div>
 									</div>
 								{:else if telegramSyncPhase === 'success'}

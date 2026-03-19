@@ -21,7 +21,7 @@
 	let showGuide = $state(false);
 
 	// Sync progress state
-	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'success' | 'failed';
+	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'finishing' | 'success' | 'failed';
 	let syncPhase = $state<SyncPhase>('idle');
 	let syncError = $state<string | null>(null);
 	let syncElapsed = $state(0);
@@ -47,8 +47,11 @@
 			if (result.status === 'completed') {
 				stopSyncTimer();
 				stopPollTimer();
-				syncPhase = 'success';
-				setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 8000);
+				syncPhase = 'finishing';
+				setTimeout(() => {
+					syncPhase = 'success';
+					setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 8000);
+				}, 15000);
 			} else if (result.status === 'failed') {
 				stopSyncTimer();
 				stopPollTimer();
@@ -218,6 +221,26 @@
 							</div>
 							<p class="text-xs text-gray-400">This usually takes about a minute. Please don't close this page.</p>
 						</div>
+					{:else if syncPhase === 'finishing'}
+						<div class="space-y-3">
+							<div class="flex items-center gap-3">
+								<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+								</svg>
+								<div class="flex-1">
+									<p class="text-sm font-medium text-gray-900">Finalizing configuration...</p>
+									<p class="text-xs text-gray-500">Almost ready</p>
+								</div>
+							</div>
+							<div class="h-1 overflow-hidden rounded-full bg-gray-200">
+								<div
+									class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
+									style="width: 95%"
+								></div>
+							</div>
+							<p class="text-xs text-gray-400">Please don't close this page.</p>
+						</div>
 					{:else if syncPhase === 'success'}
 						<div class="flex items-center justify-between">
 							<div class="flex items-center gap-3">
@@ -276,7 +299,7 @@
 							value={openrouterKey}
 							oninput={(e) => { openrouterKey = e.currentTarget.value; keyDirty = true; }}
 							placeholder="sk-or-v1-..."
-							disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing'}
+							disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
 							class="block w-full rounded-lg border border-gray-300 px-3 py-2 pr-16 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
 						/>
 						<button
@@ -298,10 +321,10 @@
 				<button
 					type="button"
 					onclick={handleSave}
-					disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing'}
+					disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
 					class="rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
 				>
-					{syncPhase === 'saving' || syncPhase === 'syncing' ? 'Applying...' : 'Save'}
+					{syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing' ? 'Applying...' : 'Save'}
 				</button>
 				<a
 					href="https://openrouter.ai/keys"
