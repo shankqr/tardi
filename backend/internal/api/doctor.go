@@ -113,10 +113,10 @@ else
     add "Telegram" "info" "Not configured" "No Telegram bot token set in environment"
 fi
 
-# ── 3. API Keys ─────────────────────────────────────────────────────
-HAS_OR=$(grep -c '^OPENROUTER_API_KEY=' /opt/openclaw/.env 2>/dev/null) || HAS_OR=0
-HAS_AN=$(grep -c '^ANTHROPIC_API_KEY=' /opt/openclaw/.env 2>/dev/null) || HAS_AN=0
-HAS_OA=$(grep -c '^OPENAI_API_KEY=' /opt/openclaw/.env 2>/dev/null) || HAS_OA=0
+# ── 3. API Keys (require non-empty values) ─────────────────────────
+HAS_OR=$(grep -c '^OPENROUTER_API_KEY=.\+' /opt/openclaw/.env 2>/dev/null) || HAS_OR=0
+HAS_AN=$(grep -c '^ANTHROPIC_API_KEY=.\+' /opt/openclaw/.env 2>/dev/null) || HAS_AN=0
+HAS_OA=$(grep -c '^OPENAI_API_KEY=.\+' /opt/openclaw/.env 2>/dev/null) || HAS_OA=0
 KEY_TOTAL=$((HAS_OR + HAS_AN + HAS_OA))
 if [ "$KEY_TOTAL" -gt 0 ]; then
     PROVIDERS=""
@@ -125,7 +125,25 @@ if [ "$KEY_TOTAL" -gt 0 ]; then
     [ "$HAS_OA" -gt 0 ] && PROVIDERS="${PROVIDERS:+$PROVIDERS, }OpenAI"
     add "API Keys" "pass" "${PROVIDERS}" ""
 else
-    add "API Keys" "fail" "No API keys configured" "Your agent cannot make AI calls without at least one API key"
+    add "API Keys" "fail" "No API keys configured" "Your agent cannot make AI calls without at least one API key. Set one in the AI Provider section."
+fi
+
+# ── 3b. Model Configuration ───────────────────────────────────────
+if [ "$C_STATUS" = "running" ] 2>/dev/null; then
+    MODEL_OUT=$(docker exec openclaw-gateway openclaw models list 2>&1 || echo "")
+    if [ -n "$MODEL_OUT" ] && ! echo "$MODEL_OUT" | grep -qi 'error\|not found\|no model'; then
+        DEFAULT_MODEL=$(echo "$MODEL_OUT" | head -1)
+        add "AI Model" "pass" "Model configured" "${DEFAULT_MODEL}"
+    else
+        # Fallback: check openclaw.json for model-related fields
+        OC_CFG_FOR_MODEL=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null)
+        MODEL_JSON=$(echo "$OC_CFG_FOR_MODEL" | jq -r '(.models // .defaultModel // .ai // empty)' 2>/dev/null)
+        if [ -n "$MODEL_JSON" ] && [ "$MODEL_JSON" != "null" ]; then
+            add "AI Model" "pass" "Model found in config" "${MODEL_JSON}"
+        else
+            add "AI Model" "warn" "No model detected" "The agent may not know which AI model to use. Try re-saving your AI Provider settings."
+        fi
+    fi
 fi
 
 # ── 4. Config Version Sync ──────────────────────────────────────────
