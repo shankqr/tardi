@@ -63,7 +63,7 @@ export const plans: Record<string, PlanInfo> = {
 	pro: {
 		tier: 'pro',
 		name: 'Pro',
-		price_monthly: 45,
+		price_monthly: 65,
 		features: [
 			'Everything in Standard',
 			'Dedicated CPU for faster performance',
