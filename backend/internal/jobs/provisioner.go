@@ -530,6 +530,18 @@ if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
     if [ "$HEALTHY" = true ]; then
         echo "completed" > /opt/openclaw/.update_status
         rm -f /opt/openclaw/.update_error
+
+        # Re-apply Telegram config after version update — OpenClaw auto-detects
+        # TELEGRAM_BOT_TOKEN on startup and resets to bad defaults (streaming:"partial",
+        # restrictive dmPolicy) which causes double replies and pairing prompts.
+        TG_TOKEN_SET=$(grep -c '^TELEGRAM_BOT_TOKEN=.\+' /opt/openclaw/.env 2>/dev/null || echo "0")
+        if [ "$TG_TOKEN_SET" -gt 0 ]; then
+            docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
+            docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
+            docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
+            docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
+        fi
+
         # Clean up old images to save disk space
         docker image prune -f >/dev/null 2>&1
     else
