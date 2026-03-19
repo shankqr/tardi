@@ -131,8 +131,10 @@ fi
 # ── 3b. Model Configuration ───────────────────────────────────────
 if [ "$C_STATUS" = "running" ] 2>/dev/null; then
     MODEL_OUT=$(docker exec openclaw-gateway openclaw models list 2>&1 || echo "")
-    if [ -n "$MODEL_OUT" ] && ! echo "$MODEL_OUT" | grep -qi 'error\|not found\|no model'; then
-        DEFAULT_MODEL=$(echo "$MODEL_OUT" | head -1)
+    # Check that output has at least 2 lines (header + model row) and no errors
+    MODEL_LINES=$(echo "$MODEL_OUT" | wc -l | tr -d ' ')
+    if [ -n "$MODEL_OUT" ] && [ "$MODEL_LINES" -gt 1 ] && ! echo "$MODEL_OUT" | grep -qi 'error\|not found\|no model'; then
+        DEFAULT_MODEL=$(echo "$MODEL_OUT" | sed -n '2p')
         add "AI Model" "pass" "Model configured" "${DEFAULT_MODEL}"
     else
         # Fallback: check openclaw.json for model-related fields

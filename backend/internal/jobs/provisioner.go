@@ -433,9 +433,10 @@ for i in $(seq 1 30); do
 done
 
 if [ "$HEALTHY" = true ]; then
-{{- if and .Provider .Model}}
-    # Set default model
-    docker exec openclaw-gateway openclaw models set "{{.Provider}}/{{.Model}}" 2>/dev/null
+{{- if .Model}}
+    # Set default model (OpenClaw infers provider from API key; do NOT prepend
+    # provider — OpenRouter model IDs already contain a slash)
+    docker exec openclaw-gateway openclaw models set "{{.Model}}" 2>/dev/null
 {{- end}}
 
     # Fix Telegram config if bot token is set:

@@ -89,9 +89,11 @@ if [ "$HEALTHY" = true ]; then
         echo "telegram config patched"
     fi
 
-    # Update default model if provider+model are set
-    if [ -n "$NEW_PROVIDER" ] && [ -n "$NEW_MODEL" ]; then
-        docker exec openclaw-gateway openclaw models set "${NEW_PROVIDER}/${NEW_MODEL}" 2>/dev/null
+    # Update default model if set (OpenClaw infers provider from API key;
+    # do NOT prepend provider — OpenRouter model IDs already contain a
+    # slash e.g. "nvidia/nemotron-..." and adding "openrouter/" breaks it)
+    if [ -n "$NEW_MODEL" ]; then
+        docker exec openclaw-gateway openclaw models set "${NEW_MODEL}" 2>/dev/null
     fi
 fi
 
