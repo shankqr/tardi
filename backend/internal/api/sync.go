@@ -62,8 +62,6 @@ chmod 600 /opt/openclaw/.env
 # endpoint does this after the container is healthy).
 cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
 
-echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
-
 # Wait for healthy, then apply post-startup config before reporting completion
 HEALTHY=false
 for i in $(seq 1 12); do
@@ -93,13 +91,20 @@ if [ "$HEALTHY" = true ]; then
     # do NOT prepend provider — OpenRouter model IDs already contain a
     # slash e.g. "nvidia/nemotron-..." and adding "openrouter/" breaks it)
     if [ -n "$NEW_MODEL" ]; then
-        docker exec openclaw-gateway openclaw models set "${NEW_MODEL}" 2>/dev/null
+        docker exec openclaw-gateway openclaw models set "${NEW_MODEL}"
+        echo "model set to ${NEW_MODEL}"
     fi
-fi
 
-# Report completion AFTER all config patches are applied so the frontend
-# does not show success before Telegram dmPolicy/streaming are set
-echo "config sync complete (version=$REMOTE_VERSION)"
+    # Write config version AFTER all patches applied so heartbeat retries
+    # if this script is interrupted before reaching this point
+    echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
+
+    # Report completion AFTER all config patches are applied so the frontend
+    # does not show success before Telegram dmPolicy/streaming are set
+    echo "config sync complete (version=$REMOTE_VERSION)"
+else
+    echo "ERROR: container did not become healthy after recreate"
+fi
 `
 }
 
@@ -221,8 +226,7 @@ func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Check systemd unit state + grab last 5 lines from journal (completion message
-		// may not be the very last line since model-set runs after it)
+		// Check systemd unit state + grab last 5 lines from journal
 		cmd := `STATE=$(systemctl show tardi-config-sync --property=ActiveState --value 2>/dev/null || echo "not-found"); RESULT=$(systemctl show tardi-config-sync --property=Result --value 2>/dev/null || echo ""); LOG=$(journalctl -u tardi-config-sync --no-pager -n 5 -o cat 2>/dev/null || echo ""); printf '{"state":"%s","result":"%s","log":"%s"}' "$STATE" "$RESULT" "$LOG"`
 		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, cmd, 10*time.Second)
 		if err != nil {
@@ -235,9 +239,6 @@ func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
 
 		// Parse the state from the output
 		// ActiveState: active (running), inactive (finished), failed, not-found
-		// The "config sync complete" message is written to journal BEFORE the
-		// model-set health wait loop, so the unit may still be active when the
-		// config has already been applied. Check journal content first.
 		status := "running"
 		message := ""
 		if strings.Contains(out, "config sync complete") {

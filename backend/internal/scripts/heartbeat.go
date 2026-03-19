@@ -60,6 +60,23 @@ if [ "$TG_TOKEN_SET" -gt 0 ] && [ "$STATUS" = "running" ]; then
     fi
 fi
 
+# --- Model drift guard (runs every heartbeat) ---
+# OpenClaw loses the model setting on container restart (Docker auto-restarts
+# from crashes/OOM). Re-apply the model from saved config if it's missing.
+if [ "$STATUS" = "running" ]; then
+    MODEL_OUT=$(docker exec openclaw-gateway openclaw models list 2>&1 || echo "")
+    MODEL_LINES=$(echo "$MODEL_OUT" | wc -l | tr -d ' ')
+    if [ "$MODEL_LINES" -le 1 ]; then
+        # No model set — fetch from API and re-apply
+        SAVED_CFG=$(curl -sf "${API_URL}/api/agent/config" \
+            -H "Authorization: Bearer ${AGENT_TOKEN}" 2>/dev/null)
+        SAVED_MODEL=$(echo "$SAVED_CFG" | jq -r '.config.model // empty' 2>/dev/null)
+        if [ -n "$SAVED_MODEL" ]; then
+            docker exec openclaw-gateway openclaw models set "${SAVED_MODEL}" 2>/dev/null
+        fi
+    fi
+fi
+
 # Check for config changes
 REMOTE_VERSION=$(echo "$RESPONSE" | jq -r '.config_version // 0' 2>/dev/null)
 LOCAL_VERSION=$(cat /opt/openclaw/.config_version 2>/dev/null || echo "0")
@@ -117,11 +134,13 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
             # do NOT prepend provider — OpenRouter model IDs already contain a
             # slash e.g. "nvidia/nemotron-..." and adding "openrouter/" breaks it)
             if [ -n "$NEW_MODEL" ]; then
-                docker exec openclaw-gateway openclaw models set "${NEW_MODEL}" 2>/dev/null
+                docker exec openclaw-gateway openclaw models set "${NEW_MODEL}"
             fi
-        fi
 
-        echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
+            # Write config version only after all patches applied so we retry
+            # on next heartbeat if anything above failed
+            echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
+        fi
     fi
 fi
 
