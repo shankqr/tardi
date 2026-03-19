@@ -13,6 +13,7 @@ import (
 	"github.com/shanq/tardi/internal/dns"
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
+	"github.com/shanq/tardi/internal/scripts"
 )
 
 const (
@@ -163,6 +164,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		OpenClawAuthToken: openClawAuthToken,
 		OpenClawImageTag:  u.openClawImageTag,
 		RootPassword:      rootPassword,
+		HeartbeatScript:   scripts.HeartbeatScript,
 	}
 
 	// Preserve domain for Let's Encrypt TLS

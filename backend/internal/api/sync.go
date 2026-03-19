@@ -13,14 +13,21 @@ import (
 
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/scripts"
 	"github.com/shanq/tardi/internal/sshexec"
 )
 
-// configSyncScript is the inline config-sync logic run via SSH.
-// It mirrors the heartbeat script's config-sync section but is always
-// up-to-date (not baked in at provisioning time).
-const configSyncScript = `#!/bin/bash
+// buildConfigSyncScript returns the inline config-sync script run via SSH.
+// It embeds the latest heartbeat script so that old VPSes get updated
+// heartbeat code (with Telegram drift guard) on every sync.
+func buildConfigSyncScript() string {
+	return `#!/bin/bash
 set -euo pipefail
+
+# Update heartbeat script to latest version (fixes stale heartbeat on old VPSes)
+cat > /opt/openclaw/heartbeat.sh <<'HBEOF'
+` + scripts.HeartbeatScript + `HBEOF
+chmod +x /opt/openclaw/heartbeat.sh
 # Source only the vars we need (full source breaks on unquoted values with spaces)
 export API_URL=$(grep '^API_URL=' /opt/openclaw/.env | cut -d= -f2-)
 export AGENT_TOKEN=$(grep '^AGENT_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
@@ -91,6 +98,7 @@ fi
 # does not show success before Telegram dmPolicy/streaming are set
 echo "config sync complete (version=$REMOTE_VERSION)"
 `
+}
 
 // SyncConfigHandler triggers an immediate config sync on the VPS by
 // SSH-ing in and running the config sync commands directly. This avoids
@@ -151,7 +159,7 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 		//   1. Upload the script (fast, <2s)
 		//   2. Launch it detached with nohup (returns immediately)
 		//   3. Return success to the frontend
-		encoded := base64.StdEncoding.EncodeToString([]byte(configSyncScript))
+		encoded := base64.StdEncoding.EncodeToString([]byte(buildConfigSyncScript()))
 		cmd := fmt.Sprintf(
 			"echo %s | base64 -d > /tmp/config-sync.sh && chmod +x /tmp/config-sync.sh && systemctl stop tardi-config-sync 2>/dev/null; systemctl reset-failed tardi-config-sync 2>/dev/null; systemd-run --unit=tardi-config-sync --no-block --collect bash /tmp/config-sync.sh",
 			encoded,
