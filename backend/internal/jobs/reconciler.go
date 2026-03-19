@@ -72,7 +72,7 @@ func (r *Reconciler) reconcileStaleRunningJobs(ctx context.Context) {
 		    next_retry_at = NOW(),
 		    updated_at = NOW()
 		WHERE status = 'running'
-		  AND updated_at < NOW() - INTERVAL '15 minutes'
+		  AND updated_at < NOW() - INTERVAL '2 minutes'
 		  AND attempts < max_attempts
 	`)
 	if err != nil {
@@ -93,7 +93,7 @@ func (r *Reconciler) reconcileStaleRunningJobs(ctx context.Context) {
 		    completed_at = NOW(),
 		    updated_at = NOW()
 		WHERE status = 'running'
-		  AND updated_at < NOW() - INTERVAL '15 minutes'
+		  AND updated_at < NOW() - INTERVAL '2 minutes'
 		  AND attempts >= max_attempts
 	`)
 	if err != nil {
@@ -350,7 +350,7 @@ func (r *Reconciler) reconcileStaleRestoring(ctx context.Context) {
 		  AND NOT EXISTS (
 		    SELECT 1 FROM audit_log
 		    WHERE resource_type = 'snapshot' AND action = 'restore_snapshot'
-		      AND created_at > NOW() - INTERVAL '15 minutes'
+		      AND created_at > NOW() - INTERVAL '2 minutes'
 		  )
 	`)
 	if err != nil {

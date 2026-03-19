@@ -49,6 +49,11 @@ func (w *Worker) Start(ctx context.Context) {
 			w.logger.Info("job worker stopped")
 			return
 		case <-ticker.C:
+			// Don't claim new jobs if shutting down — select may pick
+			// ticker.C over ctx.Done() randomly when both fire together.
+			if ctx.Err() != nil {
+				continue
+			}
 			w.poll(ctx)
 		}
 	}

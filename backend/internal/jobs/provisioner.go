@@ -529,15 +529,21 @@ func (p *Provisioner) Execute(ctx context.Context, job *models.ProvisioningJob) 
 	return nil
 }
 
-func (p *Provisioner) handleStepError(ctx context.Context, job *models.ProvisioningJob, step models.ProvisioningStep, stepErr error) error {
+func (p *Provisioner) handleStepError(_ context.Context, job *models.ProvisioningJob, step models.ProvisioningStep, stepErr error) error {
 	errMsg := stepErr.Error()
+
+	// Use a background context for DB writes — these must succeed even when
+	// the parent context is canceled (e.g., Cloud Run SIGTERM during deploy).
+	// Without this, retry scheduling fails and the job gets orphaned.
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer dbCancel()
 
 	if job.Attempts >= job.MaxAttempts {
 		// Mark as dead
-		if err := db.UpdateJobStatus(ctx, p.pool, job.ID, models.JobDead, &step, &errMsg); err != nil {
+		if err := db.UpdateJobStatus(dbCtx, p.pool, job.ID, models.JobDead, &step, &errMsg); err != nil {
 			p.logger.Error("provisioner: failed to mark job dead", "error", err)
 		}
-		if err := db.UpdateInstanceStatus(ctx, p.pool, job.VpsInstanceID, models.VpsStatusError); err != nil {
+		if err := db.UpdateInstanceStatus(dbCtx, p.pool, job.VpsInstanceID, models.VpsStatusError); err != nil {
 			p.logger.Error("provisioner: failed to mark instance error", "error", err)
 		}
 		p.logger.Error("provisioner: job dead after max retries",
@@ -556,7 +562,7 @@ func (p *Provisioner) handleStepError(ctx context.Context, job *models.Provision
 	}
 	nextRetry := time.Now().Add(backoff)
 
-	if err := db.UpdateJobRetry(ctx, p.pool, job.ID, nextRetry, errMsg); err != nil {
+	if err := db.UpdateJobRetry(dbCtx, p.pool, job.ID, nextRetry, errMsg); err != nil {
 		p.logger.Error("provisioner: failed to schedule retry", "error", err)
 	}
 
