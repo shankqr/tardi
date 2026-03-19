@@ -3,7 +3,7 @@
 	import { getIdToken } from '$lib/stores/auth';
 	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus } from '$lib/api/client';
 
-	const DEFAULT_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
+	const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.5';
 
 	interface Props {
 		instanceId: string;

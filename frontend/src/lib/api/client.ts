@@ -190,7 +190,7 @@ export async function getAgentConfig(
 		return {
 			config: {
 				provider: 'openrouter',
-				model: 'nvidia/nemotron-3-super-120b-a12b:free',
+				model: 'anthropic/claude-sonnet-4.5',
 				openrouter_api_key: 'sk-or-...1234'
 			},
 			version: 1
