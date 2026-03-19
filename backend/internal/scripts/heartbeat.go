@@ -71,8 +71,13 @@ if [ "$STATUS" = "running" ]; then
         SAVED_CFG=$(curl -sf "${API_URL}/api/agent/config" \
             -H "Authorization: Bearer ${AGENT_TOKEN}" 2>/dev/null)
         SAVED_MODEL=$(echo "$SAVED_CFG" | jq -r '.config.model // empty' 2>/dev/null)
+        SAVED_PROVIDER=$(echo "$SAVED_CFG" | jq -r '.config.provider // empty' 2>/dev/null)
         if [ -n "$SAVED_MODEL" ]; then
-            docker exec openclaw-gateway openclaw models set "${SAVED_MODEL}" 2>/dev/null
+            if [ "$SAVED_PROVIDER" = "openrouter" ]; then
+                docker exec openclaw-gateway openclaw models set "openrouter/${SAVED_MODEL}" 2>/dev/null
+            else
+                docker exec openclaw-gateway openclaw models set "${SAVED_MODEL}" 2>/dev/null
+            fi
         fi
     fi
 fi
@@ -130,11 +135,16 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
                 docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
             fi
 
-            # Update default model if set (OpenClaw infers provider from API key;
-            # do NOT prepend provider — OpenRouter model IDs already contain a
-            # slash e.g. "nvidia/nemotron-..." and adding "openrouter/" breaks it)
+            # Update default model. OpenRouter model IDs contain a slash
+            # (e.g. "anthropic/claude-sonnet-4.6") which OpenClaw interprets
+            # as a provider prefix. Prepend "openrouter/" so OpenClaw routes
+            # through OpenRouter instead of trying the native provider directly.
             if [ -n "$NEW_MODEL" ]; then
-                docker exec openclaw-gateway openclaw models set "${NEW_MODEL}"
+                if [ "$NEW_PROVIDER" = "openrouter" ]; then
+                    docker exec openclaw-gateway openclaw models set "openrouter/${NEW_MODEL}"
+                else
+                    docker exec openclaw-gateway openclaw models set "${NEW_MODEL}"
+                fi
             fi
 
             # Write config version only after all patches applied so we retry

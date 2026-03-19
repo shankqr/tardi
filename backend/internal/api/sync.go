@@ -87,12 +87,22 @@ if [ "$HEALTHY" = true ]; then
         echo "telegram config patched"
     fi
 
-    # Update default model if set (OpenClaw infers provider from API key;
-    # do NOT prepend provider — OpenRouter model IDs already contain a
-    # slash e.g. "nvidia/nemotron-..." and adding "openrouter/" breaks it)
+    # Update default model if set.
+    # OpenRouter model IDs contain a slash (e.g. "anthropic/claude-sonnet-4.6")
+    # which OpenClaw interprets as a provider prefix. Without "openrouter/" in
+    # front, OpenClaw thinks the provider is "anthropic" and looks for
+    # ANTHROPIC_API_KEY. Prepend "openrouter/" for OpenRouter so OpenClaw gets
+    # the 3-segment form: openrouter/anthropic/claude-sonnet-4.6
+    # For direct providers (anthropic, openai) the model IDs have no slash
+    # (e.g. "claude-sonnet-4-6-20250610") so no prefix is needed.
     if [ -n "$NEW_MODEL" ]; then
-        docker exec openclaw-gateway openclaw models set "${NEW_MODEL}"
-        echo "model set to ${NEW_MODEL}"
+        if [ "$NEW_PROVIDER" = "openrouter" ]; then
+            docker exec openclaw-gateway openclaw models set "openrouter/${NEW_MODEL}"
+            echo "model set to openrouter/${NEW_MODEL}"
+        else
+            docker exec openclaw-gateway openclaw models set "${NEW_MODEL}"
+            echo "model set to ${NEW_MODEL}"
+        fi
     fi
 
     # Write config version AFTER all patches applied so heartbeat retries

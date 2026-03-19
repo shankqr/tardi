@@ -434,9 +434,14 @@ done
 
 if [ "$HEALTHY" = true ]; then
 {{- if .Model}}
-    # Set default model (OpenClaw infers provider from API key; do NOT prepend
-    # provider — OpenRouter model IDs already contain a slash)
+    # Set default model. For OpenRouter, prepend "openrouter/" so OpenClaw
+    # routes through OpenRouter instead of the model's native provider
+    # (e.g. "anthropic/claude-sonnet-4.6" → "openrouter/anthropic/claude-sonnet-4.6")
+{{- if eq .Provider "openrouter"}}
+    docker exec openclaw-gateway openclaw models set "openrouter/{{.Model}}" 2>/dev/null
+{{- else}}
     docker exec openclaw-gateway openclaw models set "{{.Model}}" 2>/dev/null
+{{- end}}
 {{- end}}
 
     # Fix Telegram config if bot token is set:
