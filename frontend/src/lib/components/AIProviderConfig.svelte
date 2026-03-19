@@ -8,9 +8,10 @@
 	interface Props {
 		instanceId: string;
 		disabled?: boolean;
+		onsaved?: () => void;
 	}
 
-	let { instanceId, disabled = false }: Props = $props();
+	let { instanceId, disabled = false, onsaved }: Props = $props();
 
 	let openrouterKey = $state('');
 	let currentModel = $state(DEFAULT_MODEL);
@@ -50,6 +51,7 @@
 				syncPhase = 'finishing';
 				setTimeout(() => {
 					syncPhase = 'success';
+					onsaved?.();
 					setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 8000);
 				}, 15000);
 			} else if (result.status === 'failed') {
