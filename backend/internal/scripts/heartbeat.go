@@ -82,6 +82,31 @@ if [ "$STATUS" = "running" ]; then
     fi
 fi
 
+# --- Gateway auth drift guard (runs every heartbeat) ---
+# OpenClaw overwrites openclaw.json on startup and can revert auth mode from
+# "trusted-proxy" to the default "token" mode. This causes "gateway token
+# missing" errors when opening the dashboard via Caddy proxy.
+# Cost: 1 cat+jq when config is fine.
+if [ "$STATUS" = "running" ]; then
+    GW_AUTH_MODE=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.mode // "unknown"' 2>/dev/null)
+    if [ "$GW_AUTH_MODE" != "trusted-proxy" ]; then
+        # Write the full auth block via python (openclaw config set can't handle nested objects).
+        # Update meta.lastTouchedAt so OpenClaw detects the change and self-reloads.
+        python3 -c "
+import json, datetime
+with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
+    cfg = json.load(f)
+cfg.setdefault('gateway', {})['auth'] = {
+    'mode': 'trusted-proxy',
+    'trustedProxy': {'userHeader': 'X-Forwarded-User'}
+}
+cfg.setdefault('meta', {})['lastTouchedAt'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
+with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
+    json.dump(cfg, f, indent=2)
+" 2>/dev/null
+    fi
+fi
+
 # Check for config changes
 REMOTE_VERSION=$(echo "$RESPONSE" | jq -r '.config_version // 0' 2>/dev/null)
 LOCAL_VERSION=$(cat /opt/openclaw/.config_version 2>/dev/null || echo "0")
