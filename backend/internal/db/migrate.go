@@ -15,6 +15,14 @@ func Migrate(databaseURL string, migrationsFS fs.FS) error {
 	}
 	defer db.Close()
 
+	// Advisory lock serializes migrations across concurrent Cloud Run instances.
+	// Without this, two instances starting simultaneously can race on CREATE TABLE.
+	const lockID = 0x74617264 // CRC32-inspired constant for "tardi-migrations"
+	if _, err := db.Exec("SELECT pg_advisory_lock($1)", lockID); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer db.Exec("SELECT pg_advisory_unlock($1)", lockID)
+
 	goose.SetBaseFS(migrationsFS)
 
 	if err := goose.SetDialect("postgres"); err != nil {
