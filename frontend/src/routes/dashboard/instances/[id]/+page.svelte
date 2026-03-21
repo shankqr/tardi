@@ -89,22 +89,34 @@
 	);
 	const isConfigSyncing = $derived(isAnySyncing || syncGraceActive);
 
-	// Watch for sync ending → start grace period
+	// Watch for sync ending → start grace period (max 30s).
+	// The sync script triggers an immediate heartbeat on success, so
+	// agent_status updates within seconds. We end the grace early once
+	// the status flips to "running" (see effect below).
 	$effect(() => {
 		if (isAnySyncing) {
 			// Sync just started — cancel any existing grace timer
 			if (syncGraceTimer) clearTimeout(syncGraceTimer);
 			syncGraceActive = true;
 		} else if (syncGraceActive) {
-			// Sync just ended — keep grace active for 90s
+			// Sync just ended — keep grace active for max 30s
 			syncGraceTimer = setTimeout(() => {
 				syncGraceActive = false;
 				syncGraceTimer = null;
-			}, 90_000);
+			}, 30_000);
 		}
 		return () => {
 			if (syncGraceTimer) clearTimeout(syncGraceTimer);
 		};
+	});
+
+	// End grace period early once the heartbeat confirms healthy status
+	$effect(() => {
+		if (syncGraceActive && !isAnySyncing && instance?.agent_status === 'running') {
+			if (syncGraceTimer) clearTimeout(syncGraceTimer);
+			syncGraceActive = false;
+			syncGraceTimer = null;
+		}
 	});
 
 	// Doctor state

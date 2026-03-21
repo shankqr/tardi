@@ -109,11 +109,16 @@ if [ "$HEALTHY" = true ]; then
     # if this script is interrupted before reaching this point
     echo "$REMOTE_VERSION" > /opt/openclaw/.config_version
 
+    # Trigger an immediate heartbeat so agent_status in the DB updates to
+    # "running" right away instead of waiting up to 5 minutes for the timer.
+    bash /opt/openclaw/heartbeat.sh >/dev/null 2>&1 &
+
     # Report completion AFTER all config patches are applied so the frontend
     # does not show success before Telegram dmPolicy/streaming are set
     echo "config sync complete (version=$REMOTE_VERSION)"
 else
     echo "ERROR: container did not become healthy after recreate"
+    exit 1
 fi
 `
 }
