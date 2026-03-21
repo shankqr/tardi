@@ -81,6 +81,10 @@ export interface ModelInfo {
 	provider: string;
 	tier: 'free' | 'paid';
 	is_default: boolean;
+	description?: string;
+	context_length?: number;
+	prompt_price?: string;
+	completion_price?: string;
 }
 
 export type AIProvider = 'openrouter' | 'anthropic' | 'openai';

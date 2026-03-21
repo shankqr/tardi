@@ -90,10 +90,10 @@ export async function getModels(): Promise<{ models: ModelInfo[]; default_model_
 	if (USE_MOCK) {
 		return {
 			models: [
-				{ id: 'nvidia/nemotron-3-super-120b-a12b:free', display_name: 'Nemotron 3 Super', provider: 'openrouter', tier: 'free', is_default: true },
-				{ id: 'moonshotai/kimi-k2.5', display_name: 'Kimi K2.5', provider: 'openrouter', tier: 'paid', is_default: false },
-				{ id: 'xiaomi/mimo-v2-pro', display_name: 'MiMo V2 Pro', provider: 'openrouter', tier: 'paid', is_default: false },
-				{ id: 'anthropic/claude-sonnet-4.6', display_name: 'Claude Sonnet 4.6', provider: 'openrouter', tier: 'paid', is_default: false }
+				{ id: 'nvidia/nemotron-3-super-120b-a12b:free', display_name: 'Nemotron 3 Super', provider: 'openrouter', tier: 'free', is_default: true, description: 'Free 120B parameter model', context_length: 131072, prompt_price: '0', completion_price: '0' },
+				{ id: 'moonshotai/kimi-k2.5', display_name: 'Kimi K2.5', provider: 'openrouter', tier: 'paid', is_default: false, description: 'Advanced reasoning model', context_length: 131072, prompt_price: '0.0000006', completion_price: '0.0000024' },
+				{ id: 'xiaomi/mimo-v2-pro', display_name: 'MiMo V2 Pro', provider: 'openrouter', tier: 'paid', is_default: false, description: 'High-performance model', context_length: 131072, prompt_price: '0.0000006', completion_price: '0.0000024' },
+				{ id: 'anthropic/claude-sonnet-4.6', display_name: 'Claude Sonnet 4.6', provider: 'openrouter', tier: 'paid', is_default: false, description: 'Anthropic\'s balanced model for coding and analysis', context_length: 200000, prompt_price: '0.000003', completion_price: '0.000015' }
 			],
 			default_model_id: 'nvidia/nemotron-3-super-120b-a12b:free'
 		};

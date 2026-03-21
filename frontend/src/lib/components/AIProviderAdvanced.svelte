@@ -19,6 +19,15 @@
 	let loading = $state(true);
 	let modelsError = $state(false);
 
+	const selectedModelInfo = $derived(models.find((m) => m.id === selectedModel));
+
+	function formatPrice(perToken: string | undefined): string {
+		if (!perToken || perToken === '0') return 'Free';
+		const perMillion = parseFloat(perToken) * 1_000_000;
+		if (perMillion < 0.01) return '<$0.01 / 1M tokens';
+		return `$${perMillion.toFixed(2)} / 1M tokens`;
+	}
+
 	// Sync progress state
 	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'finishing' | 'success' | 'failed';
 	let syncPhase = $state<SyncPhase>('idle');
@@ -310,6 +319,50 @@
 				</select>
 			{/if}
 		</div>
+
+		<!-- Model info -->
+		{#if selectedModelInfo}
+			<div class="space-y-2">
+				{#if selectedModelInfo.description}
+					<p class="text-xs text-gray-500">{selectedModelInfo.description}</p>
+				{/if}
+				<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
+					{#if selectedModelInfo.context_length}
+						<span>Context: {(selectedModelInfo.context_length / 1000).toFixed(0)}K tokens</span>
+					{/if}
+					<span>Input: {formatPrice(selectedModelInfo.prompt_price)}</span>
+					<span>Output: {formatPrice(selectedModelInfo.completion_price)}</span>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Paid model top-up notice -->
+		{#if selectedModelInfo && selectedModelInfo.tier === 'paid'}
+			<div class="rounded-lg border border-blue-200 bg-blue-50 p-3">
+				<div class="flex items-start gap-2.5">
+					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4 text-blue-500 shrink-0 mt-0.5">
+						<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" />
+					</svg>
+					<div>
+						<p class="text-sm font-medium text-blue-800">This model requires OpenRouter credits</p>
+						<p class="mt-0.5 text-xs text-blue-600">
+							Make sure your OpenRouter account has sufficient credits.
+							<a
+								href="https://openrouter.ai/credits"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="inline-flex items-center gap-0.5 font-medium underline hover:text-blue-800"
+							>
+								Top up your account
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3">
+									<path fill-rule="evenodd" d="M4.22 11.78a.75.75 0 010-1.06L9.44 5.5H5.75a.75.75 0 010-1.5h5.5a.75.75 0 01.75.75v5.5a.75.75 0 01-1.5 0V6.56l-5.22 5.22a.75.75 0 01-1.06 0z" clip-rule="evenodd" />
+								</svg>
+							</a>
+						</p>
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Save -->
 		<div class="flex items-center gap-3">
