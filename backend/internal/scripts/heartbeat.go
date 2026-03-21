@@ -11,6 +11,14 @@ package scripts
 const HeartbeatScript = `#!/bin/bash
 source /opt/openclaw/.env
 
+# --- Fix SSH password auth (cloud-init's 50-cloud-init.conf disables it) ---
+# This is idempotent — only writes if the drop-in is missing or wrong
+if [ ! -f /etc/ssh/sshd_config.d/60-tardi.conf ] || ! grep -q "PasswordAuthentication yes" /etc/ssh/sshd_config.d/60-tardi.conf 2>/dev/null; then
+    mkdir -p /etc/ssh/sshd_config.d
+    echo "PasswordAuthentication yes" > /etc/ssh/sshd_config.d/60-tardi.conf
+    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
+fi
+
 # Check OpenClaw gateway health
 HEALTH=$(curl -sf http://localhost:18789/health 2>/dev/null)
 if [ $? -eq 0 ]; then

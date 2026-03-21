@@ -103,6 +103,10 @@ log_status "FIREWALL_CONFIGURED"
 echo "root:{{.RootPassword}}" | chpasswd
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
 sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+# Override cloud-init's 50-cloud-init.conf drop-in which sets PasswordAuthentication=no
+# The 60- prefix ensures this loads after and overrides cloud-init's settings
+mkdir -p /etc/ssh/sshd_config.d
+echo "PasswordAuthentication yes" > /etc/ssh/sshd_config.d/60-tardi.conf
 systemctl restart sshd || systemctl restart ssh || true
 log_status "ROOT_PASSWORD_SET"
 {{- end}}
