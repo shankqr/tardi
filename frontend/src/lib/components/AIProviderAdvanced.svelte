@@ -4,21 +4,10 @@
 	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus } from '$lib/api/client';
 
 	const MODELS: { id: string; name: string }[] = [
-		{ id: 'anthropic/claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
-		{ id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
-		{ id: 'anthropic/claude-opus-4.6', name: 'Claude Opus 4.6' },
-		{ id: 'anthropic/claude-haiku-4.5', name: 'Claude Haiku 4.5' },
-		{ id: 'openai/gpt-4.1', name: 'GPT-4.1' },
-		{ id: 'openai/gpt-4.1-mini', name: 'GPT-4.1 Mini' },
-		{ id: 'openai/gpt-4.1-nano', name: 'GPT-4.1 Nano' },
-		{ id: 'openai/o3', name: 'o3' },
-		{ id: 'openai/o3-mini', name: 'o3-mini' },
-		{ id: 'openai/o4-mini', name: 'o4-mini' },
-		{ id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-		{ id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-		{ id: 'deepseek/deepseek-r1', name: 'DeepSeek R1' },
-		{ id: 'deepseek/deepseek-v3-0324', name: 'DeepSeek V3' },
-		{ id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super (Free)' }
+		{ id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super (Free)' },
+		{ id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
+		{ id: 'xiaomi/mimo-v2-pro', name: 'MiMo V2 Pro' },
+		{ id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6' }
 	];
 
 	interface Props {
@@ -28,7 +17,7 @@
 
 	let { instanceId, disabled = false }: Props = $props();
 
-	let selectedModel = $state('anthropic/claude-sonnet-4.5');
+	let selectedModel = $state('nvidia/nemotron-3-super-120b-a12b:free');
 	let loading = $state(true);
 
 	// Sync progress state
