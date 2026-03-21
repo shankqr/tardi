@@ -217,9 +217,9 @@ func UpdateAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Preserve existing API keys when frontend sends null (unchanged)
+		// Preserve existing config fields when frontend sends null (unchanged)
 		existing, _ := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
-		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "telegram_bot_token"} {
+		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "telegram_bot_token", "provider", "model"} {
 			if body.Config[keyField] == nil && existing != nil {
 				if v, ok := existing.Config[keyField].(string); ok && v != "" {
 					body.Config[keyField] = v

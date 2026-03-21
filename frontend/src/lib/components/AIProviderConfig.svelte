@@ -3,7 +3,7 @@
 	import { getIdToken } from '$lib/stores/auth';
 	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus } from '$lib/api/client';
 
-	const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.5';
+	const DEFAULT_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
 
 	interface Props {
 		instanceId: string;
@@ -118,8 +118,6 @@
 			if (!token) throw new Error('Not authenticated');
 
 			const config: Record<string, unknown> = {
-				provider: currentProvider,
-				model: currentModel,
 				openrouter_api_key: keyDirty ? openrouterKey : null,
 				anthropic_api_key: null,
 				openai_api_key: null
