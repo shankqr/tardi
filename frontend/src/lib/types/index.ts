@@ -75,6 +75,14 @@ export interface Snapshot {
 	size_gb?: number;
 }
 
+export interface ModelInfo {
+	id: string;
+	display_name: string;
+	provider: string;
+	tier: 'free' | 'paid';
+	is_default: boolean;
+}
+
 export type AIProvider = 'openrouter' | 'anthropic' | 'openai';
 
 export interface AIProviderConfig {

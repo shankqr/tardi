@@ -3,8 +3,6 @@
 	import { getIdToken } from '$lib/stores/auth';
 	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus } from '$lib/api/client';
 
-	const DEFAULT_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
-
 	interface Props {
 		instanceId: string;
 		disabled?: boolean;
@@ -15,7 +13,6 @@
 	let { instanceId, disabled = false, onsaved, onsyncchange }: Props = $props();
 
 	let openrouterKey = $state('');
-	let currentModel = $state(DEFAULT_MODEL);
 	let currentProvider = $state('openrouter');
 	let loading = $state(true);
 	let showKey = $state(false);
@@ -100,9 +97,6 @@
 	function applyConfig(cfg: Record<string, unknown>) {
 		if (cfg.openrouter_api_key && typeof cfg.openrouter_api_key === 'string') {
 			openrouterKey = cfg.openrouter_api_key;
-		}
-		if (cfg.model && typeof cfg.model === 'string') {
-			currentModel = cfg.model;
 		}
 		if (cfg.provider && typeof cfg.provider === 'string') {
 			currentProvider = cfg.provider;

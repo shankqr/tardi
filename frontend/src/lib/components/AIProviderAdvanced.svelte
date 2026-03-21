@@ -1,14 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getIdToken } from '$lib/stores/auth';
-	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus } from '$lib/api/client';
-
-	const MODELS: { id: string; name: string }[] = [
-		{ id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron 3 Super (Free)' },
-		{ id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
-		{ id: 'xiaomi/mimo-v2-pro', name: 'MiMo V2 Pro' },
-		{ id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6' }
-	];
+	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus, getModels } from '$lib/api/client';
+	import type { ModelInfo } from '$lib/types';
 
 	interface Props {
 		instanceId: string;
@@ -18,13 +12,12 @@
 
 	let { instanceId, disabled = false, onsyncchange }: Props = $props();
 
-	let selectedModel = $state('nvidia/nemotron-3-super-120b-a12b:free');
+	let models = $state<ModelInfo[]>([]);
+	let defaultModelId = $state('');
+	let selectedModel = $state('');
 	let customModel = $state<{ id: string; name: string } | null>(null);
 	let loading = $state(true);
-
-	const displayModels = $derived(
-		customModel ? [customModel, ...MODELS] : MODELS
-	);
+	let modelsError = $state(false);
 
 	// Sync progress state
 	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'finishing' | 'success' | 'failed';
@@ -81,27 +74,47 @@
 		stopPollTimer();
 	}
 
-	async function loadConfig() {
+	async function loadData() {
 		loading = true;
 		try {
-			let token = await getIdToken();
-			if (!token) {
-				await new Promise((r) => setTimeout(r, 1500));
-				token = await getIdToken();
-				if (!token) return;
+			// Load models catalog and agent config in parallel
+			const [modelsResult, configResult] = await Promise.all([
+				getModels().catch(() => {
+					modelsError = true;
+					return null;
+				}),
+				(async () => {
+					let token = await getIdToken();
+					if (!token) {
+						await new Promise((r) => setTimeout(r, 1500));
+						token = await getIdToken();
+						if (!token) return null;
+					}
+					return getAgentConfig(token, instanceId).catch(() => null);
+				})()
+			]);
+
+			if (modelsResult) {
+				models = modelsResult.models;
+				defaultModelId = modelsResult.default_model_id;
 			}
-			const result = await getAgentConfig(token, instanceId);
-			if (result.config) {
-				const cfg = result.config;
+
+			// Apply saved config
+			if (configResult?.config) {
+				const cfg = configResult.config;
 				if (cfg.model && typeof cfg.model === 'string') {
 					selectedModel = cfg.model;
-					if (!MODELS.some((m) => m.id === cfg.model)) {
+					// If saved model is not in the catalog, show it as custom
+					if (!models.some((m) => m.id === cfg.model)) {
 						customModel = { id: cfg.model as string, name: `${cfg.model} (current)` };
 					}
 				}
 			}
-		} catch {
-			// No config yet
+
+			// If no model was saved, use the default from catalog
+			if (!selectedModel && defaultModelId) {
+				selectedModel = defaultModelId;
+			}
 		} finally {
 			loading = false;
 		}
@@ -157,7 +170,7 @@
 	}
 
 	onMount(() => {
-		loadConfig();
+		loadData();
 	});
 </script>
 
@@ -276,17 +289,26 @@
 		<!-- Model selector -->
 		<div>
 			<label for="adv-model-select" class="text-xs font-medium text-gray-500">Model</label>
-			<select
-				id="adv-model-select"
-				bind:value={selectedModel}
-				onchange={() => { if (MODELS.some((m) => m.id === selectedModel)) customModel = null; }}
-				disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
-				class="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
-			>
-				{#each displayModels as model (model.id)}
-					<option value={model.id}>{model.name}</option>
-				{/each}
-			</select>
+			{#if modelsError}
+				<p class="mt-1.5 text-xs text-red-500">Could not load models. Try refreshing the page.</p>
+			{:else}
+				<select
+					id="adv-model-select"
+					bind:value={selectedModel}
+					onchange={() => { if (models.some((m) => m.id === selectedModel)) customModel = null; }}
+					disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
+					class="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
+				>
+					{#each models as model (model.id)}
+						<option value={model.id}>
+							{model.display_name} — {model.tier === 'free' ? 'Free' : 'Paid'}{model.is_default ? ' (Default)' : ''}
+						</option>
+					{/each}
+					{#if customModel}
+						<option value={customModel.id}>{customModel.name}</option>
+					{/if}
+				</select>
+			{/if}
 		</div>
 
 		<!-- Save -->
@@ -294,7 +316,7 @@
 			<button
 				type="button"
 				onclick={handleSave}
-				disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
+				disabled={disabled || modelsError || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
 				class="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
 			>
 				{syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing' ? 'Applying...' : 'Save'}

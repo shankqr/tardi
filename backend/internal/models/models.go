@@ -176,6 +176,18 @@ type Snapshot struct {
 	UpdatedAt       time.Time
 }
 
+type Model struct {
+	ID          string
+	DisplayName string
+	Provider    string
+	Tier        string
+	IsEnabled   bool
+	IsDefault   bool
+	SortOrder   int
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
 type AuditLogEntry struct {
 	ID           uuid.UUID
 	UserID       uuid.UUID

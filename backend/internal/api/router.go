@@ -58,6 +58,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("GET /api/instances/{id}/sync-status", SyncStatusHandler(deps))
 	authedMux.HandleFunc("POST /api/billing/portal", BillingPortalHandler(deps))
 
+	// Public API (no auth)
+	mux.HandleFunc("GET /api/models", ListModelsHandler(deps))
+
 	// Agent phone-home endpoints (agent token auth, handled inside handlers)
 	mux.HandleFunc("GET /api/agent/config", AgentConfigHandler(deps))
 	mux.HandleFunc("POST /api/agent/heartbeat", AgentHeartbeatHandler(deps))

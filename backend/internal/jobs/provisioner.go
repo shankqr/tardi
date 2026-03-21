@@ -38,6 +38,9 @@ var stepTimeouts = map[models.ProvisioningStep]time.Duration{
 	models.StepActivate:        1 * time.Minute,
 }
 
+// fallbackDefaultModelID is used when the DB models table is unavailable.
+const fallbackDefaultModelID = "nvidia/nemotron-3-super-120b-a12b:free"
+
 // CloudInitData holds all template variables for cloud-init rendering.
 type CloudInitData struct {
 	AgentToken        string // Tardi API auth token
@@ -664,6 +667,14 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		previewDomain = fmt.Sprintf("%s.b.tardi.ai", subdomain)
 	}
 
+	// Resolve default model from DB (falls back to hardcoded constant)
+	defaultModel := fallbackDefaultModelID
+	if m, err := db.GetDefaultModel(ctx, p.pool); err == nil && m != nil {
+		defaultModel = m.ID
+	} else if err != nil {
+		p.logger.Warn("provisioner: could not fetch default model from DB, using fallback", "error", err)
+	}
+
 	// Fetch API keys from agent config (with defaults for provider/model)
 	ciData := CloudInitData{
 		AgentToken:        agentToken,
@@ -672,7 +683,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		OpenClawAuthToken: openClawAuthToken,
 		OpenClawImageTag:  p.openClawImageTag,
 		Provider:          "openrouter",
-		Model:             "nvidia/nemotron-3-super-120b-a12b:free",
+		Model:             defaultModel,
 		RootPassword:      rootPassword,
 		Domain:            domain,
 		PreviewDomain:     previewDomain,

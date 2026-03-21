@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/sveltekit';
-import type { DashboardState, Snapshot, VpsInstance } from '$lib/types';
+import type { DashboardState, ModelInfo, Snapshot, VpsInstance } from '$lib/types';
 import { mockDashboardState } from './mock';
 import { getApiUrl } from '$lib/stores/config';
 
@@ -84,6 +84,22 @@ export async function getDashboardState(token: string): Promise<DashboardState> 
 		{ headers: authHeaders(token), cache: 'no-store' },
 		'getDashboardState'
 	);
+}
+
+export async function getModels(): Promise<{ models: ModelInfo[]; default_model_id: string }> {
+	if (USE_MOCK) {
+		return {
+			models: [
+				{ id: 'nvidia/nemotron-3-super-120b-a12b:free', display_name: 'Nemotron 3 Super', provider: 'openrouter', tier: 'free', is_default: true },
+				{ id: 'moonshotai/kimi-k2.5', display_name: 'Kimi K2.5', provider: 'openrouter', tier: 'paid', is_default: false },
+				{ id: 'xiaomi/mimo-v2-pro', display_name: 'MiMo V2 Pro', provider: 'openrouter', tier: 'paid', is_default: false },
+				{ id: 'anthropic/claude-sonnet-4.6', display_name: 'Claude Sonnet 4.6', provider: 'openrouter', tier: 'paid', is_default: false }
+			],
+			default_model_id: 'nvidia/nemotron-3-super-120b-a12b:free'
+		};
+	}
+
+	return apiFetch(`${getApiUrl()}/api/models`, {}, 'getModels');
 }
 
 export async function createInstance(

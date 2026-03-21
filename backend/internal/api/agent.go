@@ -217,6 +217,20 @@ func UpdateAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
+		// Validate model against catalog if provided
+		if modelID, ok := body.Config["model"].(string); ok && modelID != "" {
+			valid, err := db.IsModelValid(r.Context(), deps.Pool, modelID)
+			if err != nil {
+				slog.Error("update agent config: validate model", "error", err)
+				WriteError(w, http.StatusInternalServerError, "internal_error", "failed to validate model")
+				return
+			}
+			if !valid {
+				WriteError(w, http.StatusBadRequest, "bad_request", "model is not available: "+modelID)
+				return
+			}
+		}
+
 		// Preserve existing config fields when frontend sends null (unchanged)
 		existing, _ := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
 		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "telegram_bot_token", "provider", "model"} {
