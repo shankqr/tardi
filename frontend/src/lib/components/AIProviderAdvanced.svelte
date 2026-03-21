@@ -19,7 +19,12 @@
 	let { instanceId, disabled = false, onsyncchange }: Props = $props();
 
 	let selectedModel = $state('nvidia/nemotron-3-super-120b-a12b:free');
+	let customModel = $state<{ id: string; name: string } | null>(null);
 	let loading = $state(true);
+
+	const displayModels = $derived(
+		customModel ? [customModel, ...MODELS] : MODELS
+	);
 
 	// Sync progress state
 	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'finishing' | 'success' | 'failed';
@@ -90,6 +95,9 @@
 				const cfg = result.config;
 				if (cfg.model && typeof cfg.model === 'string') {
 					selectedModel = cfg.model;
+					if (!MODELS.some((m) => m.id === cfg.model)) {
+						customModel = { id: cfg.model as string, name: `${cfg.model} (current)` };
+					}
 				}
 			}
 		} catch {
@@ -271,10 +279,11 @@
 			<select
 				id="adv-model-select"
 				bind:value={selectedModel}
+				onchange={() => { if (MODELS.some((m) => m.id === selectedModel)) customModel = null; }}
 				disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
 				class="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
 			>
-				{#each MODELS as model (model.id)}
+				{#each displayModels as model (model.id)}
 					<option value={model.id}>{model.name}</option>
 				{/each}
 			</select>
