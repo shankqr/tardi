@@ -317,6 +317,282 @@ Users see a browser warning on first visit ("Your connection is not private") an
 | Black/empty page | Static assets blocked by auth | Add `@static` path matcher for `/assets/*` |
 | `disconnected (1006)` | WebSocket upgrade blocked by auth | Use cookie-based auth (auto-sent on WS upgrade) |
 
+## VPS Provisioning Flow
+
+**File:** `backend/internal/jobs/provisioner.go`
+
+### 6 Sequential Steps
+
+```
+stepSelectProvider ──> stepCreateServer ──> stepWaitServerReady
+       (2min)              (5min)               (5min)
+                                                  │
+stepActivate <────── stepInstallAgent <── stepBootstrap
+    (1min)              (10min)             (10min)
+```
+
+| Step | What it does |
+|------|-------------|
+| **SelectProvider** | Validates Hetzner provider is available |
+| **CreateServer** | Generates tokens (agent, openclaw-auth, root password), renders cloud-init, calls Hetzner API, creates DNS records |
+| **WaitServerReady** | Polls Hetzner every 5s until server status = "running" |
+| **Bootstrap** | Waits 30s for cloud-init to begin |
+| **InstallAgent** | Polls OpenClaw `/health` endpoint every 10s until 200 |
+| **Activate** | Sets instance status to `active`, records OpenClaw version |
+
+Error handling: exponential backoff (5s x 2^attempt), max 5 retries, then job = "dead".
+
+### Cloud-Init (runs on first boot)
+
+The cloud-init script sets up the VPS from bare Ubuntu 24.04:
+
+```
+1. Swap (2GB)                    - prevents OOM during Docker pulls
+2. System packages               - ca-certificates, curl, jq, ufw
+3. Firewall                      - allow 22, 80, 443 only
+4. Root password + SSH fix        - chpasswd + 60-tardi.conf drop-in
+5. Docker install                 - official Docker CE from docker.com
+6. Sandbox image                  - OpenClaw sandbox for code execution
+7. OpenClaw user                  - UID 1000, non-login, docker group
+8. openclaw.json                  - gateway config (bind, auth, channels)
+9. .env file                      - API keys, tokens, config version
+10. TLS certs                     - Let's Encrypt (domain) or self-signed (IP)
+11. docker-compose.yml            - openclaw-gateway + caddy services
+12. Caddyfile                     - TLS termination, auth, reverse proxy
+13. Docker pull                   - pull images (3 retries)
+14. Systemd services              - openclaw-stack + heartbeat timer
+15. Post-startup config           - wait healthy -> set model + telegram config
+```
+
+### Systemd Units on VPS
+
+| Unit | Type | Purpose |
+|------|------|---------|
+| `openclaw-stack.service` | oneshot, RemainAfterExit | `docker compose up/down` |
+| `openclaw-heartbeat.service` | oneshot | Runs heartbeat script |
+| `openclaw-heartbeat.timer` | timer | 90s after boot, then every 5min |
+
+---
+
+## Config Change Flow
+
+When a user changes model, API key, or Telegram settings in the dashboard:
+
+```
+User changes setting in dashboard
+         │
+         v
+┌─────────────────┐    ┌──────────────────┐    ┌───────────────────────┐
+│ PUT /config      │───>│ Save to DB       │───>│ POST /sync-config     │
+│ (frontend)       │    │ (bumps version)  │    │ (frontend)            │
+└─────────────────┘    └──────────────────┘    └───────────┬───────────┘
+                                                            │
+                                                    SSH into VPS
+                                                            │
+                                                            v
+                                               ┌───────────────────────┐
+                                               │ Config Sync Script    │
+                                               │ (runs as systemd unit)│
+                                               │                       │
+                                               │ 1. Update heartbeat.sh│
+                                               │ 2. Fetch config (API) │
+                                               │ 3. Rebuild .env       │
+                                               │ 4. Recreate container │
+                                               │ 5. Wait healthy       │
+                                               │ 6. Apply telegram cfg │
+                                               │ 7. Apply model        │
+                                               │ 8. Write version file │
+                                               │ 9. Print "complete"   │
+                                               └───────────┬───────────┘
+                                                            │
+                                               ┌────────────v──────────┐
+                                               │ Frontend polls        │
+                                               │ GET /sync-status      │
+                                               │ (every 5s, via SSH)   │
+                                               │ looks for "complete"  │
+                                               │ in systemd journal    │
+                                               └───────────────────────┘
+```
+
+**File:** `backend/internal/api/sync.go`
+
+**Critical ordering:** The "config sync complete" message is printed ONLY after all config patches are applied. The frontend polls for this message. If it appears before config is applied, the user sees premature success.
+
+**If SSH fails:** Falls back to heartbeat (up to 5 min delay).
+
+---
+
+## Heartbeat (Every 5 Minutes)
+
+**File:** `backend/internal/scripts/heartbeat.go`
+
+The heartbeat is the **resilience layer** — it catches anything that falls through the cracks.
+
+```
+Every 5 minutes (systemd timer)
+         │
+         v
+┌─────────────────────────────────────────────────────┐
+│ 1. FIX SSHD                                         │
+│    └─ Create 60-tardi.conf if missing -> restart sshd│
+│                                                      │
+│ 2. HEALTH CHECK                                      │
+│    └─ curl /health -> running/unhealthy/stopped      │
+│                                                      │
+│ 3. SEND HEARTBEAT                                    │
+│    └─ POST /api/agent/heartbeat                      │
+│       <- receives: config_version,                   │
+│                    target_openclaw_version            │
+│                                                      │
+│ 4. TELEGRAM DRIFT GUARD                              │
+│    └─ Read openclaw.json, if streaming!=off -> fix   │
+│                                                      │
+│ 5. MODEL DRIFT GUARD                                 │
+│    └─ If no model set -> fetch from API, re-apply    │
+│                                                      │
+│ 6. GATEWAY AUTH DRIFT GUARD                          │
+│    └─ If auth.mode != trusted-proxy -> patch JSON    │
+│                                                      │
+│ 7. CONFIG SYNC (if version mismatch)                 │
+│    └─ Fetch config -> rebuild .env -> recreate       │
+│       container -> apply telegram + model -> write   │
+│       version file                                   │
+│                                                      │
+│ 8. OPENCLAW VERSION UPDATE (if target differs)       │
+│    └─ Pull new image -> recreate -> health check     │
+│       -> if unhealthy: ROLLBACK to previous version  │
+└─────────────────────────────────────────────────────┘
+```
+
+### What the heartbeat guards against
+
+| Scenario | Guard |
+|----------|-------|
+| Container crash/OOM -> Docker auto-restarts -> Telegram config reset | Telegram drift guard |
+| Container restart -> model lost | Model drift guard |
+| Container restart -> auth mode reset | Gateway auth drift guard |
+| User changes config in dashboard, SSH sync fails | Config version sync |
+| OpenClaw version update pushed from backend | Version update with rollback |
+| OS update disables password auth | sshd fix |
+
+### Heartbeat API
+
+**File:** `backend/internal/api/agent.go`
+
+```
+VPS -> POST /api/agent/heartbeat
+       {status, openclaw_version, update_status, update_error}
+
+Backend -> updates DB (last_heartbeat_at, agent_status, version info)
+        -> responds: {config_version: N, target_openclaw_version: "v1.2.3"}
+```
+
+The heartbeat response drives two behaviors:
+- **config_version**: compared to local `/opt/openclaw/.config_version` -> triggers full config sync if different
+- **target_openclaw_version**: compared to current Docker image tag -> triggers image update if different
+
+---
+
+## Telegram Config Flow
+
+**File:** `backend/internal/api/telegram.go`
+
+```
+User enters bot token in dashboard
+         │
+         v
+POST /telegram/connect ──> Save token to agent_configs (bumps version)
+         │
+         v (triggers config sync same as model change)
+SSH sync script ──> writes token to .env ──> recreates container
+         │
+         v (OpenClaw auto-detects TELEGRAM_BOT_TOKEN on startup)
+         │ (but sets BAD defaults: streaming:"partial", restrictive dmPolicy)
+         │
+         v
+Apply CLI overrides:
+  - streaming: off          (prevents double replies)
+  - dmPolicy: open          (anyone can message)
+  - allowFrom: ["*"]        (required by dmPolicy validation)
+  - groupPolicy: disabled   (ignore group messages)
+         │
+         v
+Frontend calls POST /telegram/cleanup ──> WebSocket RPC config.patch
+  (safety net — same settings via RPC in case CLI missed)
+```
+
+**Three layers of protection against Telegram config drift:**
+1. **Config sync script** — applies after container recreate
+2. **Telegram cleanup RPC** — called by frontend after sync completes
+3. **Heartbeat drift guard** — checks every 5 minutes, fixes if drifted
+
+---
+
+## Key Tokens & Auth
+
+| Token | Generated | Stored | Used For |
+|-------|-----------|--------|----------|
+| `AGENT_TOKEN` (64-char hex) | Provisioning | DB + VPS .env | VPS -> Backend API auth (heartbeat, config) |
+| `OPENCLAW_AUTH_TOKEN` (64-char hex) | Provisioning | DB + VPS .env | Dashboard -> OpenClaw gateway auth (cookie/RPC) |
+| Root password (24-char hex) | Provisioning | DB + VPS | Backend -> VPS SSH, User -> VPS SSH |
+| Firebase JWT | Firebase Auth | Frontend | User -> Backend API auth |
+
+---
+
+## OpenClaw Version Update
+
+**File:** `backend/internal/scripts/heartbeat.go` (lines 190-260)
+
+```
+Backend sets target_openclaw_version in heartbeat response
+         │
+         v (heartbeat detects mismatch)
+Pull new image ──> Recreate container ──> Health check (90s)
+         │                                      │
+         │ (pull fails)                  ┌──────┴──────┐
+         v                               │             │
+    ROLLBACK                          Healthy     Unhealthy
+    (revert tag)                         │             │
+                                         v             v
+                                    Mark complete   ROLLBACK
+                                    Re-apply        (revert tag,
+                                    Telegram cfg     recreate old)
+                                    Prune images
+```
+
+---
+
+## File Layout on VPS
+
+```
+/opt/openclaw/
+├── .env                          # API keys, tokens, config
+├── .config_version               # Last synced config version number
+├── .update_status                # pulling/updating/completed/failed
+├── .update_error                 # Error message if update failed
+├── docker-compose.yml            # openclaw-gateway + caddy
+├── Caddyfile                     # TLS, auth, reverse proxy rules
+├── heartbeat.sh                  # Heartbeat script (updated on every sync)
+├── certs/                        # Self-signed certs (if no domain)
+│   ├── server.crt
+│   └── server.key
+└── data/openclaw/                # Persistent OpenClaw data
+    └── openclaw.json             # Runtime config (OpenClaw owns this)
+
+/etc/ssh/sshd_config.d/
+└── 60-tardi.conf                 # PasswordAuthentication yes
+
+/etc/systemd/system/
+├── openclaw-stack.service        # docker compose up/down
+├── openclaw-heartbeat.service    # runs heartbeat.sh
+└── openclaw-heartbeat.timer      # every 5 min
+
+/var/log/
+└── openclaw-init.log             # Cloud-init progress log
+```
+
+---
+
 ## Environments
 
 | | Dev | Prod |
