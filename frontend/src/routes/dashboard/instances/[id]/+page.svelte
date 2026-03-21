@@ -76,12 +76,36 @@
 	let telegramPollTimer: ReturnType<typeof setInterval> | null = null;
 
 	// Config sync tracking — when any component is actively syncing config
+	// Grace period: keep showing "Applying Config" for 90s after sync ends,
+	// because the container restart causes a brief unhealthy heartbeat window.
 	let aiConfigSyncing = $state(false);
 	let advancedConfigSyncing = $state(false);
-	const isConfigSyncing = $derived(
+	let syncGraceActive = $state(false);
+	let syncGraceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	const isAnySyncing = $derived(
 		aiConfigSyncing || advancedConfigSyncing ||
 		telegramSyncPhase === 'syncing' || telegramSyncPhase === 'finishing'
 	);
+	const isConfigSyncing = $derived(isAnySyncing || syncGraceActive);
+
+	// Watch for sync ending → start grace period
+	$effect(() => {
+		if (isAnySyncing) {
+			// Sync just started — cancel any existing grace timer
+			if (syncGraceTimer) clearTimeout(syncGraceTimer);
+			syncGraceActive = true;
+		} else if (syncGraceActive) {
+			// Sync just ended — keep grace active for 90s
+			syncGraceTimer = setTimeout(() => {
+				syncGraceActive = false;
+				syncGraceTimer = null;
+			}, 90_000);
+		}
+		return () => {
+			if (syncGraceTimer) clearTimeout(syncGraceTimer);
+		};
+	});
 
 	// Doctor state
 	let doctorRunning = $state(false);
