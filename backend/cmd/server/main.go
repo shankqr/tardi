@@ -120,6 +120,9 @@ func main() {
 	enforcer := jobs.NewEnforcer(pool, registry, logger)
 	go enforcer.Start(ctx)
 
+	scriptPusher := jobs.NewScriptPusher(pool, logger)
+	go scriptPusher.Start(ctx)
+
 	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag)
 	upgrader := jobs.NewUpgrader(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, dnsClient)
 

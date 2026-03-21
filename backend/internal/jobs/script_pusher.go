@@ -1,0 +1,150 @@
+package jobs
+
+import (
+	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/models"
+	"github.com/shanq/tardi/internal/scripts"
+	"github.com/shanq/tardi/internal/sshexec"
+)
+
+// Advisory lock ID for script pusher (arbitrary fixed constant).
+const scriptPusherLockID int64 = 0x7461726469_6862 // "tardi_hb"
+
+// ScriptPusher pushes updated heartbeat scripts to all active VPSes on deploy.
+// It runs once on startup: computes a hash of the current HeartbeatScript,
+// compares against the last-deployed hash in platform_settings, and if changed,
+// SSHes into all active VPSes to overwrite /opt/openclaw/heartbeat.sh.
+type ScriptPusher struct {
+	pool   *pgxpool.Pool
+	logger *slog.Logger
+}
+
+func NewScriptPusher(pool *pgxpool.Pool, logger *slog.Logger) *ScriptPusher {
+	return &ScriptPusher{pool: pool, logger: logger}
+}
+
+// Start waits briefly for the HTTP server to be ready, then checks and pushes
+// the heartbeat script if it has changed. Runs once and returns.
+func (sp *ScriptPusher) Start(ctx context.Context) {
+	// Let HTTP server start first (Cloud Run health checks).
+	select {
+	case <-time.After(10 * time.Second):
+	case <-ctx.Done():
+		return
+	}
+
+	sp.push(ctx)
+}
+
+func (sp *ScriptPusher) push(ctx context.Context) {
+	currentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(scripts.HeartbeatScript)))
+
+	// Acquire a dedicated connection so the advisory lock stays held.
+	conn, err := sp.pool.Acquire(ctx)
+	if err != nil {
+		sp.logger.Error("script-pusher: failed to acquire connection", "error", err)
+		return
+	}
+	defer conn.Release()
+
+	// Try advisory lock — if another instance is already pushing, skip.
+	var locked bool
+	err = conn.QueryRow(ctx, "SELECT pg_try_advisory_lock($1)", scriptPusherLockID).Scan(&locked)
+	if err != nil {
+		sp.logger.Error("script-pusher: advisory lock query failed", "error", err)
+		return
+	}
+	if !locked {
+		sp.logger.Info("script-pusher: another instance is handling it, skipping")
+		return
+	}
+	defer conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", scriptPusherLockID) //nolint:errcheck
+
+	// Check if script has changed.
+	storedHash, err := db.GetPlatformSetting(ctx, sp.pool, "heartbeat_script_hash")
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		sp.logger.Error("script-pusher: failed to read stored hash", "error", err)
+		return
+	}
+	if storedHash == currentHash {
+		sp.logger.Info("script-pusher: heartbeat script unchanged, skipping")
+		return
+	}
+
+	// Fetch all active instances with SSH credentials.
+	instances, err := db.GetActiveInstancesByStatus(ctx, sp.pool, models.VpsStatusActive)
+	if err != nil {
+		sp.logger.Error("script-pusher: failed to list instances", "error", err)
+		return
+	}
+
+	// Filter to instances that have SSH credentials.
+	var targets []models.VpsInstance
+	for _, inst := range instances {
+		if inst.IPv4 != nil && inst.RootPassword != nil {
+			targets = append(targets, inst)
+		}
+	}
+
+	sp.logger.Info("script-pusher: heartbeat script changed, pushing to VPSes",
+		"instances", len(targets),
+		"hash", currentHash[:12],
+	)
+
+	if len(targets) > 0 {
+		sp.pushToInstances(ctx, targets)
+	}
+
+	// Update stored hash (even on partial failure — unreachable VPSes
+	// will catch up on their next config sync).
+	if err := db.UpsertPlatformSetting(ctx, sp.pool, "heartbeat_script_hash", currentHash); err != nil {
+		sp.logger.Error("script-pusher: failed to update stored hash", "error", err)
+	}
+}
+
+func (sp *ScriptPusher) pushToInstances(ctx context.Context, instances []models.VpsInstance) {
+	cmd := "cat > /opt/openclaw/heartbeat.sh <<'HBEOF'\n" + scripts.HeartbeatScript + "\nHBEOF\nchmod +x /opt/openclaw/heartbeat.sh"
+
+	sem := make(chan struct{}, 5) // max 5 concurrent SSH connections
+	var wg sync.WaitGroup
+
+	for _, inst := range instances {
+		wg.Add(1)
+		go func(inst models.VpsInstance) {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+
+			_, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, cmd, 30*time.Second)
+			if err != nil {
+				sp.logger.Warn("script-pusher: failed to push to instance",
+					"instance_id", inst.ID,
+					"ip", *inst.IPv4,
+					"error", err,
+				)
+				return
+			}
+			sp.logger.Info("script-pusher: pushed heartbeat script",
+				"instance_id", inst.ID,
+				"ip", *inst.IPv4,
+			)
+		}(inst)
+	}
+
+	wg.Wait()
+}

@@ -909,32 +909,46 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 	return inst, nil
 }
 
-// GetGlobalTargetVersion returns the platform-wide target OpenClaw version.
-func GetGlobalTargetVersion(ctx context.Context, pool *pgxpool.Pool) (string, error) {
+// GetPlatformSetting returns the value for a platform_settings key, or ErrNotFound.
+func GetPlatformSetting(ctx context.Context, pool *pgxpool.Pool, key string) (string, error) {
 	var value string
 	err := pool.QueryRow(ctx, `
-		SELECT value FROM platform_settings WHERE key = 'target_openclaw_version'
-	`).Scan(&value)
+		SELECT value FROM platform_settings WHERE key = $1
+	`, key).Scan(&value)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "latest", nil
+		return "", ErrNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("get global target version: %w", err)
+		return "", fmt.Errorf("get platform setting %q: %w", key, err)
 	}
 	return value, nil
 }
 
-// SetGlobalTargetVersion updates the platform-wide target OpenClaw version.
-func SetGlobalTargetVersion(ctx context.Context, pool *pgxpool.Pool, version string) error {
+// UpsertPlatformSetting inserts or updates a platform_settings key.
+func UpsertPlatformSetting(ctx context.Context, pool *pgxpool.Pool, key, value string) error {
 	_, err := pool.Exec(ctx, `
 		INSERT INTO platform_settings (key, value, updated_at)
-		VALUES ('target_openclaw_version', $1, now())
-		ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()
-	`, version)
+		VALUES ($1, $2, now())
+		ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = now()
+	`, key, value)
 	if err != nil {
-		return fmt.Errorf("set global target version: %w", err)
+		return fmt.Errorf("upsert platform setting %q: %w", key, err)
 	}
 	return nil
+}
+
+// GetGlobalTargetVersion returns the platform-wide target OpenClaw version.
+func GetGlobalTargetVersion(ctx context.Context, pool *pgxpool.Pool) (string, error) {
+	value, err := GetPlatformSetting(ctx, pool, "target_openclaw_version")
+	if errors.Is(err, ErrNotFound) {
+		return "latest", nil
+	}
+	return value, err
+}
+
+// SetGlobalTargetVersion updates the platform-wide target OpenClaw version.
+func SetGlobalTargetVersion(ctx context.Context, pool *pgxpool.Pool, version string) error {
+	return UpsertPlatformSetting(ctx, pool, "target_openclaw_version", version)
 }
 
 // UpdateInstanceOpenClawVersion records the version the agent reports and its update status.
