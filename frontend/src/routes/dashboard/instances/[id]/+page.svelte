@@ -75,6 +75,14 @@
 	let telegramSyncTimer: ReturnType<typeof setInterval> | null = null;
 	let telegramPollTimer: ReturnType<typeof setInterval> | null = null;
 
+	// Config sync tracking — when any component is actively syncing config
+	let aiConfigSyncing = $state(false);
+	let advancedConfigSyncing = $state(false);
+	const isConfigSyncing = $derived(
+		aiConfigSyncing || advancedConfigSyncing ||
+		telegramSyncPhase === 'syncing' || telegramSyncPhase === 'finishing'
+	);
+
 	// Doctor state
 	let doctorRunning = $state(false);
 	let doctorChecks = $state<HealthCheck[] | null>(null);
@@ -520,7 +528,15 @@
 						<div class="flex justify-between">
 							<dt class="text-gray-500">OpenClaw</dt>
 							<dd>
-								{#if instance.agent_status === 'running'}
+								{#if isConfigSyncing}
+									<span class="inline-flex items-center gap-1.5 text-blue-700">
+										<svg class="h-3.5 w-3.5 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
+											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+											<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+										</svg>
+										Applying Config
+									</span>
+								{:else if instance.agent_status === 'running'}
 									<span class="inline-flex items-center gap-1.5 text-green-700">
 										<span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
 										Running
@@ -552,7 +568,7 @@
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
-					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsaved={recheckConfig} />
+					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsaved={recheckConfig} onsyncchange={(s) => aiConfigSyncing = s} />
 
 					<div class="rounded-xl border border-gray-200 p-5">
 						<div class="flex items-center gap-2">
@@ -800,7 +816,7 @@
 										<h4 class="text-sm font-medium text-gray-900">Advanced AI Settings</h4>
 										<p class="mt-1 text-xs text-gray-400">Choose provider, model, and manage additional API keys</p>
 										<div class="mt-3">
-											<AIProviderAdvanced instanceId={instance.id} disabled={instance.status !== 'active'} />
+											<AIProviderAdvanced instanceId={instance.id} disabled={instance.status !== 'active'} onsyncchange={(s) => advancedConfigSyncing = s} />
 										</div>
 									</div>
 
@@ -933,7 +949,7 @@
 						</div>
 					{/if}
 
-					{#if instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
+					{#if !isConfigSyncing && (instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found')}
 						<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 flex items-center justify-between">
 							<span>Your agent appears {instance.agent_status === 'unhealthy' ? 'unhealthy' : 'stopped'}. Run a health check to diagnose the issue.</span>
 							<button

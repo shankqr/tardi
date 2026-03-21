@@ -13,9 +13,10 @@
 	interface Props {
 		instanceId: string;
 		disabled?: boolean;
+		onsyncchange?: (syncing: boolean) => void;
 	}
 
-	let { instanceId, disabled = false }: Props = $props();
+	let { instanceId, disabled = false, onsyncchange }: Props = $props();
 
 	let selectedModel = $state('nvidia/nemotron-3-super-120b-a12b:free');
 	let loading = $state(true);
@@ -38,6 +39,11 @@
 	function stopPollTimer() {
 		if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 	}
+
+	$effect(() => {
+		const isSyncing = syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing';
+		onsyncchange?.(isSyncing);
+	});
 
 	async function pollSyncStatus() {
 		try {

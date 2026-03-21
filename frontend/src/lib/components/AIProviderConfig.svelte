@@ -9,9 +9,10 @@
 		instanceId: string;
 		disabled?: boolean;
 		onsaved?: () => void;
+		onsyncchange?: (syncing: boolean) => void;
 	}
 
-	let { instanceId, disabled = false, onsaved }: Props = $props();
+	let { instanceId, disabled = false, onsaved, onsyncchange }: Props = $props();
 
 	let openrouterKey = $state('');
 	let currentModel = $state(DEFAULT_MODEL);
@@ -39,6 +40,11 @@
 	function stopPollTimer() {
 		if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 	}
+
+	$effect(() => {
+		const isSyncing = syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing';
+		onsyncchange?.(isSyncing);
+	});
 
 	async function pollSyncStatus() {
 		try {
