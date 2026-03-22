@@ -158,7 +158,7 @@ chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
 # bind=lan: listen on 0.0.0.0 so Caddy can reach the gateway via Docker network
-# auth=trusted-proxy: Caddy handles token auth, OpenClaw trusts X-Forwarded-User header from Docker network
+# auth=none: no gateway-level auth — Caddy handles external auth, internal tool calls go direct to 127.0.0.1
 # trustedProxies: Docker bridge network CIDRs that OpenClaw accepts proxy headers from
 cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
 {
@@ -169,10 +169,7 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
     },
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
     "auth": {
-      "mode": "trusted-proxy",
-      "trustedProxy": {
-        "userHeader": "X-Forwarded-User"
-      }
+      "mode": "none"
     }
   },
   "channels": {
