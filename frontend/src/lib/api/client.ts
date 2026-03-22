@@ -97,7 +97,8 @@ export async function getModels(): Promise<{ models: ModelInfo[]; default_model_
 				{ id: 'qwen/qwen3.5-397b-a17b', display_name: 'Qwen 3.5 397B', provider: 'openrouter', tier: 'paid', is_default: false, description: 'Alibaba large MoE model', context_length: 131072, prompt_price: '0.0000006', completion_price: '0.0000024' },
 				{ id: 'anthropic/claude-opus-4.6', display_name: 'Claude Opus 4.6', provider: 'openrouter', tier: 'paid', is_default: false, description: 'Anthropic\'s most capable model', context_length: 200000, prompt_price: '0.000015', completion_price: '0.000075' },
 				{ id: 'z-ai/glm-5-turbo', display_name: 'GLM-5 Turbo', provider: 'openrouter', tier: 'paid', is_default: false, description: 'Zhipu AI fast inference model', context_length: 131072, prompt_price: '0.0000006', completion_price: '0.0000024' },
-				{ id: 'anthropic/claude-sonnet-4.6', display_name: 'Claude Sonnet 4.6', provider: 'openrouter', tier: 'paid', is_default: false, description: 'Anthropic\'s balanced model for coding and analysis', context_length: 200000, prompt_price: '0.000003', completion_price: '0.000015' }
+				{ id: 'anthropic/claude-sonnet-4.6', display_name: 'Claude Sonnet 4.6', provider: 'openrouter', tier: 'paid', is_default: false, description: 'Anthropic\'s balanced model for coding and analysis', context_length: 200000, prompt_price: '0.000003', completion_price: '0.000015' },
+				{ id: 'minimax/minimax-m2.5:free', display_name: 'MiniMax M2.5', provider: 'openrouter', tier: 'free', is_default: false, description: 'MiniMax free model', context_length: 131072, prompt_price: '0', completion_price: '0' }
 			],
 			default_model_id: 'nvidia/nemotron-3-super-120b-a12b:free'
 		};
