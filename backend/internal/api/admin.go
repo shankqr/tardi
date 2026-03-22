@@ -84,6 +84,34 @@ func AdminSetGlobalVersionHandler(deps Dependencies) http.HandlerFunc {
 	}
 }
 
+// AdminResetPasswordByIPHandler resets the root password for an instance identified by IP.
+// Used for manual password recovery when SSH access is lost.
+func AdminResetPasswordByIPHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			IP       string `json:"ip"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid request body")
+			return
+		}
+		if body.IP == "" || body.Password == "" {
+			WriteError(w, http.StatusBadRequest, "bad_request", "ip and password are required")
+			return
+		}
+
+		if err := db.UpdateInstanceRootPasswordByIP(r.Context(), deps.Pool, body.IP, body.Password); err != nil {
+			slog.Error("admin: reset password by ip", "ip", body.IP, "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to update password")
+			return
+		}
+
+		slog.Info("admin: root password updated by ip", "ip", body.IP)
+		WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+	}
+}
+
 // AdminSetInstanceVersionHandler sets a per-instance target version override.
 func AdminSetInstanceVersionHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

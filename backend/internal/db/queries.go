@@ -455,6 +455,20 @@ func UpdateInstanceRootPassword(ctx context.Context, pool *pgxpool.Pool, instanc
 	return nil
 }
 
+// UpdateInstanceRootPasswordByIP updates the root password for an instance identified by IP.
+func UpdateInstanceRootPasswordByIP(ctx context.Context, pool *pgxpool.Pool, ip string, password string) error {
+	tag, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET root_password = $1, updated_at = now() WHERE host(ipv4)::text = $2
+	`, password, ip)
+	if err != nil {
+		return fmt.Errorf("update root password by ip: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("no instance found with ip %s", ip)
+	}
+	return nil
+}
+
 // UpdateInstanceName sets the display name for an instance.
 func UpdateInstanceName(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, name string) error {
 	_, err := pool.Exec(ctx, `

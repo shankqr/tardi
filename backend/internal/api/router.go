@@ -70,6 +70,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	adminMux.HandleFunc("GET /api/admin/openclaw/version", AdminGetVersionHandler(deps))
 	adminMux.HandleFunc("PUT /api/admin/openclaw/version", AdminSetGlobalVersionHandler(deps))
 	adminMux.HandleFunc("PUT /api/admin/openclaw/version/{id}", AdminSetInstanceVersionHandler(deps))
+	adminMux.HandleFunc("POST /api/admin/reset-password", AdminResetPasswordByIPHandler(deps))
 	adminAuth := adminTokenAuth(deps.Config.AdminAPIToken)
 	mux.Handle("/api/admin/", adminAuth(adminMux))
 
