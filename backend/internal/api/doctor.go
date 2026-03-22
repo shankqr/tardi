@@ -206,6 +206,21 @@ if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ] && [ "$MEM_TOTAL" -gt 0 ]; then
     fi
 fi
 
+# ── 8. Docker DNS (container networking) ───────────────────────────
+# systemd-resolved's 127.0.0.53 stub is unreachable from containers.
+# If Docker isn't configured with explicit DNS, Caddy can't resolve
+# openclaw-gateway or reach Let's Encrypt — causing 502s and cert failures.
+CADDY_DNS=$(docker exec openclaw-caddy cat /etc/resolv.conf 2>/dev/null | grep '^nameserver' | head -1 | awk '{print $2}')
+if [ "$CADDY_DNS" = "127.0.0.53" ]; then
+    add "Docker DNS" "fail" "Caddy using host stub resolver (127.0.0.53)" "Containers cannot reach systemd-resolved's loopback. Add {\"dns\":[\"185.12.64.1\",\"8.8.8.8\"]} to /etc/docker/daemon.json and restart Docker."
+elif [ "$CADDY_DNS" = "127.0.0.11" ]; then
+    add "Docker DNS" "pass" "Using Docker embedded DNS" ""
+elif [ -n "$CADDY_DNS" ]; then
+    add "Docker DNS" "pass" "Nameserver: ${CADDY_DNS}" ""
+else
+    add "Docker DNS" "warn" "Could not determine Caddy DNS config" "Check docker exec openclaw-caddy cat /etc/resolv.conf"
+fi
+
 cat /tmp/tardi-health.json
 rm -f /tmp/tardi-health.json
 `

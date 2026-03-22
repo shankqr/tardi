@@ -122,6 +122,18 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.
 apt-get update -qq
 apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
+# --- Docker DNS fix ---
+# systemd-resolved listens on 127.0.0.53 (host loopback) which is unreachable
+# from inside Docker containers. Without explicit DNS, containers inherit the
+# host's resolv.conf stub and all DNS lookups fail — breaking Caddy's proxy
+# to openclaw-gateway and Let's Encrypt cert provisioning.
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<'DNSEOF'
+{
+  "dns": ["185.12.64.1", "185.12.64.2", "8.8.8.8"]
+}
+DNSEOF
+
 systemctl enable docker
 systemctl start docker
 log_status "DOCKER_INSTALLED"

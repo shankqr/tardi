@@ -90,6 +90,19 @@ if [ "$STATUS" = "running" ]; then
     fi
 fi
 
+# --- Docker DNS drift guard (runs every heartbeat) ---
+# systemd-resolved listens on 127.0.0.53 (host loopback) which is unreachable
+# from inside Docker containers. If /etc/docker/daemon.json is missing or lacks
+# explicit DNS, containers inherit the broken stub resolver and Caddy can't
+# proxy to openclaw-gateway or reach Let's Encrypt for cert renewal.
+if [ ! -f /etc/docker/daemon.json ] || ! grep -q '"dns"' /etc/docker/daemon.json 2>/dev/null; then
+    mkdir -p /etc/docker
+    echo '{"dns":["185.12.64.1","185.12.64.2","8.8.8.8"]}' > /etc/docker/daemon.json
+    systemctl restart docker 2>/dev/null || true
+    sleep 5
+    cd /opt/openclaw && docker compose up -d 2>/dev/null || true
+fi
+
 # --- Gateway auth drift guard (runs every heartbeat) ---
 # OpenClaw overwrites openclaw.json on startup and can revert auth mode from
 # "trusted-proxy" to the default "token" mode. This causes "gateway token
