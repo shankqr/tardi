@@ -110,28 +110,42 @@ if grep -q 'nameserver 127.0.0.53' /etc/resolv.conf 2>/dev/null && ! grep -q 'DN
 fi
 
 # --- Gateway auth drift guard (runs every heartbeat) ---
-# OpenClaw overwrites openclaw.json on startup and can revert auth mode from
-# "trusted-proxy" to the default "token" mode. This causes "gateway token
-# missing" errors when opening the dashboard via Caddy proxy.
+# OpenClaw may overwrite openclaw.json on startup and revert auth mode.
+# We want "token" mode so internal tool calls authenticate via OPENCLAW_GATEWAY_TOKEN
+# and Caddy passes the token via Authorization header.
 # Cost: 1 cat+jq when config is fine.
 if [ "$STATUS" = "running" ]; then
     GW_AUTH_MODE=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.mode // "unknown"' 2>/dev/null)
-    if [ "$GW_AUTH_MODE" != "trusted-proxy" ]; then
-        # Write the full auth block via python (openclaw config set can't handle nested objects).
+    if [ "$GW_AUTH_MODE" != "token" ]; then
+        # Write the auth block via python (openclaw config set can't handle nested objects).
         # Update meta.lastTouchedAt so OpenClaw detects the change and self-reloads.
         python3 -c "
 import json, datetime
 with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
     cfg = json.load(f)
-cfg.setdefault('gateway', {})['auth'] = {
-    'mode': 'trusted-proxy',
-    'trustedProxy': {'userHeader': 'X-Forwarded-User'}
-}
+cfg.setdefault('gateway', {})['auth'] = {'mode': 'token'}
 cfg.setdefault('meta', {})['lastTouchedAt'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
 with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     json.dump(cfg, f, indent=2)
 " 2>/dev/null
     fi
+fi
+
+# --- Caddy auth header migration (one-time) ---
+# Old config used X-Forwarded-User for trusted-proxy mode. Token mode needs
+# Authorization: Bearer header instead. Patch Caddyfile and restart Caddy.
+if grep -q 'X-Forwarded-User' /opt/openclaw/Caddyfile 2>/dev/null; then
+    OPENCLAW_TOKEN=$(grep '^OPENCLAW_AUTH_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
+    if [ -n "$OPENCLAW_TOKEN" ]; then
+        sed -i 's|header_up X-Forwarded-User owner|header_up Authorization "Bearer '"$OPENCLAW_TOKEN"'"|' /opt/openclaw/Caddyfile
+        cd /opt/openclaw && docker compose restart caddy 2>/dev/null
+    fi
+fi
+
+# Ensure OPENCLAW_GATEWAY_TOKEN is in .env (needed for token auth mode)
+if ! grep -q '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null; then
+    OPENCLAW_TOKEN=$(grep '^OPENCLAW_AUTH_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
+    [ -n "$OPENCLAW_TOKEN" ] && echo "OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_TOKEN" >> /opt/openclaw/.env
 fi
 
 # Check for config changes

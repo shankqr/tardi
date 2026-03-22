@@ -164,7 +164,8 @@ chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
 # bind=lan: listen on 0.0.0.0 so Caddy can reach the gateway via Docker network
-# auth=trusted-proxy: Caddy handles token auth, OpenClaw trusts X-Forwarded-User header from Docker network
+# auth=token: OpenClaw reads OPENCLAW_GATEWAY_TOKEN from env. Caddy passes it via Authorization header.
+#   Internal tool calls authenticate automatically (OpenClaw knows its own token).
 # trustedProxies: Docker bridge network CIDRs that OpenClaw accepts proxy headers from
 cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
 {
@@ -175,10 +176,7 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
     },
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
     "auth": {
-      "mode": "trusted-proxy",
-      "trustedProxy": {
-        "userHeader": "X-Forwarded-User"
-      }
+      "mode": "token"
     }
   },
   "channels": {
@@ -200,6 +198,7 @@ AGENT_TOKEN={{.AgentToken}}
 API_URL={{.APIURL}}
 INSTANCE_ID={{.InstanceID}}
 OPENCLAW_AUTH_TOKEN={{.OpenClawAuthToken}}
+OPENCLAW_GATEWAY_TOKEN={{.OpenClawAuthToken}}
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
 NODE_ENV=production
 ENVEOF
@@ -324,7 +323,7 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	handle @auth_query {
 		header Set-Cookie "oc_sess={env.OPENCLAW_AUTH_TOKEN}; Path=/; Secure; HttpOnly; SameSite=None; Max-Age=86400"
 		reverse_proxy openclaw-gateway:18789 {
-			header_up X-Forwarded-User owner
+			header_up Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
 			header_up Origin "https://localhost:18789"
 			header_up Connection {header.Connection}
 			header_up Upgrade {header.Upgrade}
@@ -337,7 +336,7 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	}
 	handle @auth_cookie {
 		reverse_proxy openclaw-gateway:18789 {
-			header_up X-Forwarded-User owner
+			header_up Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
 			header_up Origin "https://localhost:18789"
 			header_up Connection {header.Connection}
 			header_up Upgrade {header.Upgrade}
