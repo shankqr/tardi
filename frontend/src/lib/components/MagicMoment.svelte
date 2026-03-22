@@ -1,11 +1,9 @@
 <script lang="ts">
 	interface Props {
-		dashboardUrl: string;
-		authToken: string;
 		previewUrl?: string | null;
 	}
 
-	let { dashboardUrl, authToken, previewUrl }: Props = $props();
+	let { previewUrl }: Props = $props();
 
 	let copiedIndex = $state<number | null>(null);
 
@@ -41,9 +39,6 @@
 		}, 1500);
 	}
 
-	function openDashboard() {
-		window.open(`${dashboardUrl}/?token=${authToken}`, '_blank');
-	}
 </script>
 
 <div class="rounded-xl border border-gray-200 p-5">
@@ -86,13 +81,6 @@
 				</div>
 			{/each}
 		</div>
-
-		<button
-			onclick={openDashboard}
-			class="mt-4 w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800"
-		>
-			Open Agent Dashboard
-		</button>
 
 		{#if previewUrl}
 			<p class="mt-3 text-xs text-gray-400 text-center">

@@ -601,6 +601,15 @@
 							<dd class="text-gray-900">{new Date(instance.created_at).toLocaleDateString()}</dd>
 						</div>
 					</dl>
+
+					{#if instance.status === 'active' && instance.agent_status === 'running' && instance.dashboard_url && instance.openclaw_auth_token}
+						<button
+							onclick={() => window.open(`${instance.dashboard_url}/?token=${instance.openclaw_auth_token}`, '_blank')}
+							class="mt-4 w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+						>
+							Open Agent Dashboard
+						</button>
+					{/if}
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
@@ -1044,8 +1053,6 @@
 
 				{#if instance.status === 'active' && instance.agent_status === 'running' && instance.dashboard_url && instance.openclaw_auth_token}
 					<MagicMoment
-						dashboardUrl={instance.dashboard_url}
-						authToken={instance.openclaw_auth_token}
 						previewUrl={instance.preview_url}
 					/>
 				{/if}
