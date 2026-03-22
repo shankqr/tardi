@@ -986,14 +986,25 @@
 
 					{#if !isConfigSyncing && (instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found')}
 						<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 flex items-center justify-between">
-							<span>Your agent appears {instance.agent_status === 'unhealthy' ? 'unhealthy' : 'stopped'}. Run a health check to diagnose the issue.</span>
-							<button
-								onclick={handleRunDoctor}
-								disabled={doctorRunning || instance.status !== 'active'}
-								class="ml-3 shrink-0 rounded-md bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
-							>
-								{doctorRunning ? 'Checking...' : 'Health Check'}
-							</button>
+							{#if instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
+								<span>Your agent appears stopped. Restart to bring it back online.</span>
+								<button
+									onclick={handleRestart}
+									disabled={restarting || instance.status !== 'active'}
+									class="ml-3 shrink-0 rounded-md bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
+								>
+									{restarting ? 'Restarting...' : 'Restart'}
+								</button>
+							{:else}
+								<span>Your agent appears unhealthy. Run a health check to diagnose the issue.</span>
+								<button
+									onclick={handleRunDoctor}
+									disabled={doctorRunning || instance.status !== 'active'}
+									class="ml-3 shrink-0 rounded-md bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
+								>
+									{doctorRunning ? 'Checking...' : 'Health Check'}
+								</button>
+							{/if}
 						</div>
 					{/if}
 
