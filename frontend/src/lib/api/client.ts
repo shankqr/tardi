@@ -91,8 +91,8 @@ export async function getModels(): Promise<{ models: ModelInfo[]; default_model_
 		return {
 			models: [
 				{ id: 'nvidia/nemotron-3-super-120b-a12b:free', display_name: 'Nemotron 3 Super', provider: 'openrouter', tier: 'free', is_default: true, description: 'Free 120B parameter model', context_length: 131072, prompt_price: '0', completion_price: '0' },
-				{ id: 'minimax/minimax-m2.7', display_name: 'MiniMax M2.7', provider: 'openrouter', tier: 'paid', is_default: false, description: 'MiniMax large language model', context_length: 131072, prompt_price: '0.0000006', completion_price: '0.0000024' },
 				{ id: 'xiaomi/mimo-v2-pro', display_name: 'MiMo V2 Pro', provider: 'openrouter', tier: 'paid', is_default: false, description: 'High-performance model', context_length: 131072, prompt_price: '0.0000006', completion_price: '0.0000024' },
+				{ id: 'minimax/minimax-m2.7', display_name: 'MiniMax M2.7', provider: 'openrouter', tier: 'paid', is_default: false, description: 'MiniMax large language model', context_length: 131072, prompt_price: '0.0000006', completion_price: '0.0000024' },
 				{ id: 'openai/gpt-5.4', display_name: 'GPT-5.4', provider: 'openrouter', tier: 'paid', is_default: false, description: 'OpenAI flagship model', context_length: 131072, prompt_price: '0.000002', completion_price: '0.000008' },
 				{ id: 'qwen/qwen3.5-397b-a17b', display_name: 'Qwen 3.5 397B', provider: 'openrouter', tier: 'paid', is_default: false, description: 'Alibaba large MoE model', context_length: 131072, prompt_price: '0.0000006', completion_price: '0.0000024' },
 				{ id: 'anthropic/claude-opus-4.6', display_name: 'Claude Opus 4.6', provider: 'openrouter', tier: 'paid', is_default: false, description: 'Anthropic\'s most capable model', context_length: 200000, prompt_price: '0.000015', completion_price: '0.000075' },
