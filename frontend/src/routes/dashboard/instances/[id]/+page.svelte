@@ -21,7 +21,6 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
 	import AIProviderConfig from '$lib/components/AIProviderConfig.svelte';
-	import AIProviderAdvanced from '$lib/components/AIProviderAdvanced.svelte';
 	import MagicMoment from '$lib/components/MagicMoment.svelte';
 
 	const instance = $derived(
@@ -79,12 +78,11 @@
 	// Grace period: keep showing "Applying Config" for 90s after sync ends,
 	// because the container restart causes a brief unhealthy heartbeat window.
 	let aiConfigSyncing = $state(false);
-	let advancedConfigSyncing = $state(false);
 	let syncGraceActive = $state(false);
 	let syncGraceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const isAnySyncing = $derived(
-		aiConfigSyncing || advancedConfigSyncing ||
+		aiConfigSyncing ||
 		telegramSyncPhase === 'syncing' || telegramSyncPhase === 'finishing'
 	);
 	const isConfigSyncing = $derived(isAnySyncing || syncGraceActive);
@@ -857,14 +855,6 @@
 
 							{#if powerUserOpen}
 								<div class="space-y-4 border-t border-gray-200 p-5">
-									<div class="rounded-lg border border-gray-200 p-4">
-										<h4 class="text-sm font-medium text-gray-900">Advanced AI Settings</h4>
-										<p class="mt-1 text-xs text-gray-400">Choose provider, model, and manage additional API keys</p>
-										<div class="mt-3">
-											<AIProviderAdvanced instanceId={instance.id} disabled={instance.status !== 'active'} onsyncchange={(s) => advancedConfigSyncing = s} />
-										</div>
-									</div>
-
 									{#if instance.ipv4}
 										<div class="rounded-lg border border-gray-200 p-4">
 											<h4 class="text-sm font-medium text-gray-900">SSH Access</h4>
