@@ -1025,7 +1025,7 @@ func SetInstanceTargetVersion(ctx context.Context, pool *pgxpool.Pool, instanceI
 // ListEnabledModels returns all enabled models ordered by sort_order.
 func ListEnabledModels(ctx context.Context, pool *pgxpool.Pool) ([]models.Model, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, display_name, provider, tier, is_enabled, is_default, sort_order, created_at, updated_at
+		SELECT id, display_name, provider, tier, is_enabled, is_default, sort_order, tags, created_at, updated_at
 		FROM models
 		WHERE is_enabled = true
 		ORDER BY sort_order ASC
@@ -1038,7 +1038,7 @@ func ListEnabledModels(ctx context.Context, pool *pgxpool.Pool) ([]models.Model,
 	var result []models.Model
 	for rows.Next() {
 		var m models.Model
-		if err := rows.Scan(&m.ID, &m.DisplayName, &m.Provider, &m.Tier, &m.IsEnabled, &m.IsDefault, &m.SortOrder, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.DisplayName, &m.Provider, &m.Tier, &m.IsEnabled, &m.IsDefault, &m.SortOrder, &m.Tags, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("list enabled models scan: %w", err)
 		}
 		result = append(result, m)
@@ -1050,11 +1050,11 @@ func ListEnabledModels(ctx context.Context, pool *pgxpool.Pool) ([]models.Model,
 func GetDefaultModel(ctx context.Context, pool *pgxpool.Pool) (*models.Model, error) {
 	m := &models.Model{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, display_name, provider, tier, is_enabled, is_default, sort_order, created_at, updated_at
+		SELECT id, display_name, provider, tier, is_enabled, is_default, sort_order, tags, created_at, updated_at
 		FROM models
 		WHERE is_enabled = true AND is_default = true
 		LIMIT 1
-	`).Scan(&m.ID, &m.DisplayName, &m.Provider, &m.Tier, &m.IsEnabled, &m.IsDefault, &m.SortOrder, &m.CreatedAt, &m.UpdatedAt)
+	`).Scan(&m.ID, &m.DisplayName, &m.Provider, &m.Tier, &m.IsEnabled, &m.IsDefault, &m.SortOrder, &m.Tags, &m.CreatedAt, &m.UpdatedAt)
 	if err == nil {
 		return m, nil
 	}
@@ -1064,12 +1064,12 @@ func GetDefaultModel(ctx context.Context, pool *pgxpool.Pool) (*models.Model, er
 
 	// Fallback: first enabled free model
 	err = pool.QueryRow(ctx, `
-		SELECT id, display_name, provider, tier, is_enabled, is_default, sort_order, created_at, updated_at
+		SELECT id, display_name, provider, tier, is_enabled, is_default, sort_order, tags, created_at, updated_at
 		FROM models
 		WHERE is_enabled = true AND tier = 'free'
 		ORDER BY sort_order ASC
 		LIMIT 1
-	`).Scan(&m.ID, &m.DisplayName, &m.Provider, &m.Tier, &m.IsEnabled, &m.IsDefault, &m.SortOrder, &m.CreatedAt, &m.UpdatedAt)
+	`).Scan(&m.ID, &m.DisplayName, &m.Provider, &m.Tier, &m.IsEnabled, &m.IsDefault, &m.SortOrder, &m.Tags, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil

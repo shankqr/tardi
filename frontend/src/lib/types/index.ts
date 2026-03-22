@@ -81,6 +81,7 @@ export interface ModelInfo {
 	provider: string;
 	tier: 'free' | 'paid';
 	is_default: boolean;
+	tags?: string[];
 	description?: string;
 	context_length?: number;
 	prompt_price?: string;

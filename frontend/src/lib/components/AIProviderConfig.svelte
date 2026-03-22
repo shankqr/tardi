@@ -366,7 +366,7 @@
 					>
 						{#each models as model (model.id)}
 							<option value={model.id}>
-								{model.display_name} — {model.tier === 'free' ? 'Free' : 'Paid'}{model.is_default ? ' (Default)' : ''}
+								{model.display_name}{model.tags?.length ? ` (${model.tags.join(', ')})` : ''} — {model.tier === 'free' ? 'Free' : 'Paid'}{model.is_default ? ' (Default)' : ''}
 							</option>
 						{/each}
 						{#if customModel}

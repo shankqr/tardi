@@ -96,15 +96,16 @@ func ListModelsHandler(deps Dependencies) http.HandlerFunc {
 		orData := getORCache()
 
 		type modelResponse struct {
-			ID              string `json:"id"`
-			DisplayName     string `json:"display_name"`
-			Provider        string `json:"provider"`
-			Tier            string `json:"tier"`
-			IsDefault       bool   `json:"is_default"`
-			Description     string `json:"description,omitempty"`
-			ContextLength   int    `json:"context_length,omitempty"`
-			PromptPrice     string `json:"prompt_price,omitempty"`
-			CompletionPrice string `json:"completion_price,omitempty"`
+			ID              string   `json:"id"`
+			DisplayName     string   `json:"display_name"`
+			Provider        string   `json:"provider"`
+			Tier            string   `json:"tier"`
+			IsDefault       bool     `json:"is_default"`
+			Tags            []string `json:"tags,omitempty"`
+			Description     string   `json:"description,omitempty"`
+			ContextLength   int      `json:"context_length,omitempty"`
+			PromptPrice     string   `json:"prompt_price,omitempty"`
+			CompletionPrice string   `json:"completion_price,omitempty"`
 		}
 
 		var defaultModelID string
@@ -116,6 +117,7 @@ func ListModelsHandler(deps Dependencies) http.HandlerFunc {
 				Provider:    m.Provider,
 				Tier:        m.Tier,
 				IsDefault:   m.IsDefault,
+				Tags:        m.Tags,
 			}
 
 			if orData != nil {

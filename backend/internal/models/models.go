@@ -184,6 +184,7 @@ type Model struct {
 	IsEnabled   bool
 	IsDefault   bool
 	SortOrder   int
+	Tags        []string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
