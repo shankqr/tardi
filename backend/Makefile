@@ -1,4 +1,4 @@
-.PHONY: dev build run test lint db-reset db-dev db-prod
+.PHONY: dev build run test lint db-reset db-dev db-prod db-query-dev db-query-prod
 
 # Build the server binary
 build:
@@ -25,22 +25,18 @@ db-reset:
 	docker compose -f ../docker-compose.yml down -v
 	docker compose -f ../docker-compose.yml up -d
 
-# Connect to dev Cloud SQL via Auth Proxy (runs proxy in background, connects psql, cleans up on exit)
+# Interactive psql shell to dev Cloud SQL
 db-dev:
-	@echo "Starting Cloud SQL Auth Proxy for dev..."
-	@cloud-sql-proxy tardi-dev-488420:us-central1:tardi-db-dev --port 5433 & \
-	PROXY_PID=$$!; \
-	sleep 2; \
-	echo "Connecting to dev database..."; \
-	psql "postgres://tardi@localhost:5433/tardi"; \
-	kill $$PROXY_PID 2>/dev/null
+	@./scripts/db-query.sh dev "\\conninfo" && ./scripts/db-query.sh dev
 
-# Connect to prod Cloud SQL via Auth Proxy (runs proxy in background, connects psql, cleans up on exit)
+# Interactive psql shell to prod Cloud SQL
 db-prod:
-	@echo "Starting Cloud SQL Auth Proxy for prod..."
-	@cloud-sql-proxy tardi-prod-488420:us-central1:tardi-db-prod --port 5434 & \
-	PROXY_PID=$$!; \
-	sleep 2; \
-	echo "Connecting to prod database..."; \
-	psql "postgres://tardi@localhost:5434/tardi"; \
-	kill $$PROXY_PID 2>/dev/null
+	@./scripts/db-query.sh prod "\\conninfo" && ./scripts/db-query.sh prod
+
+# Run a query against dev Cloud SQL: make db-query-dev Q="SELECT count(*) FROM users"
+db-query-dev:
+	@./scripts/db-query.sh dev "$(Q)"
+
+# Run a query against prod Cloud SQL: make db-query-prod Q="SELECT count(*) FROM users"
+db-query-prod:
+	@./scripts/db-query.sh prod "$(Q)"
