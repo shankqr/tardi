@@ -100,6 +100,43 @@ OpenClaw is the AI agent runtime that runs on each user's VPS inside a Docker co
 - **Config changes** must go through OpenClaw's `config.patch` WebSocket RPC (see `whatsapp.go` for examples), or be set before the very first boot.
 - **Telegram bot token** is passed via `TELEGRAM_BOT_TOKEN` env var. OpenClaw auto-detects it and configures the Telegram channel automatically.
 
+### Gateway Auth — Token Mode
+
+The gateway uses `auth.mode: "token"` with `OPENCLAW_GATEWAY_TOKEN` env var. This was chosen over two alternatives that don't work:
+
+- `auth.mode: "none"` — **crashes**: OpenClaw refuses to start with "Refusing to bind gateway to lan without auth" when `bind: "lan"` is set
+- `auth.mode: "trusted-proxy"` — **breaks internal tool calls**: requires `X-Forwarded-User` header from a reverse proxy, but when the agent calls tools internally (sessions_list, browser, etc.) the calls go directly to `ws://127.0.0.1:18789` bypassing Caddy — no header, no auth, unauthorized
+
+**How token mode works:**
+
+```
+External (browser → Caddy → OpenClaw):
+  1. User visits https://<domain>/?token=<OPENCLAW_AUTH_TOKEN>
+  2. Caddy validates token, sets oc_sess cookie
+  3. Caddy proxies to OpenClaw with: Authorization: Bearer <OPENCLAW_AUTH_TOKEN>
+  4. OpenClaw validates against OPENCLAW_GATEWAY_TOKEN env var → authenticated
+
+Internal (agent tools → gateway):
+  1. Agent calls ws://127.0.0.1:18789 for tool execution
+  2. OpenClaw authenticates itself using its own OPENCLAW_GATEWAY_TOKEN → authenticated
+```
+
+**Two tokens, same value:**
+- `OPENCLAW_AUTH_TOKEN` — used by Caddy for user-facing auth (cookie/query param validation) and passed to OpenClaw via `Authorization: Bearer` header
+- `OPENCLAW_GATEWAY_TOKEN` — read by OpenClaw for gateway token auth. Same value as `OPENCLAW_AUTH_TOKEN`
+
+**Config in `openclaw.json`:**
+```json
+{
+  "gateway": {
+    "bind": "lan",
+    "auth": { "mode": "token" }
+  }
+}
+```
+
+**Drift guard** (`heartbeat.go`): Runs every 5 minutes. If OpenClaw reverts auth mode on restart, the drift guard patches `openclaw.json` back to `token` mode, migrates Caddy's `X-Forwarded-User` header to `Authorization: Bearer` (one-time), and ensures `OPENCLAW_GATEWAY_TOKEN` is in `.env`.
+
 ### Telegram Config Issues — Root Causes & Fixes
 
 When OpenClaw auto-detects `TELEGRAM_BOT_TOKEN` from the env var, it creates a Telegram channel with **bad defaults** that cause two issues:
