@@ -110,20 +110,23 @@ if grep -q 'nameserver 127.0.0.53' /etc/resolv.conf 2>/dev/null && ! grep -q 'DN
 fi
 
 # --- Gateway auth drift guard (runs every heartbeat) ---
-# OpenClaw overwrites openclaw.json on startup and can revert auth mode to
-# "token" or "trusted-proxy". We want "none" because Caddy handles external
-# auth and internal tool calls go direct to 127.0.0.1 (no proxy header).
+# OpenClaw overwrites openclaw.json on startup and can revert auth mode from
+# "trusted-proxy" to the default "token" mode. This causes "gateway token
+# missing" errors when opening the dashboard via Caddy proxy.
 # Cost: 1 cat+jq when config is fine.
 if [ "$STATUS" = "running" ]; then
     GW_AUTH_MODE=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.mode // "unknown"' 2>/dev/null)
-    if [ "$GW_AUTH_MODE" != "none" ]; then
-        # Write the auth block via python (openclaw config set can't handle nested objects).
+    if [ "$GW_AUTH_MODE" != "trusted-proxy" ]; then
+        # Write the full auth block via python (openclaw config set can't handle nested objects).
         # Update meta.lastTouchedAt so OpenClaw detects the change and self-reloads.
         python3 -c "
 import json, datetime
 with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
     cfg = json.load(f)
-cfg.setdefault('gateway', {})['auth'] = {'mode': 'none'}
+cfg.setdefault('gateway', {})['auth'] = {
+    'mode': 'trusted-proxy',
+    'trustedProxy': {'userHeader': 'X-Forwarded-User'}
+}
 cfg.setdefault('meta', {})['lastTouchedAt'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
 with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     json.dump(cfg, f, indent=2)
