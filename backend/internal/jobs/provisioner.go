@@ -123,16 +123,22 @@ apt-get update -qq
 apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
 # --- Docker DNS fix ---
-# systemd-resolved listens on 127.0.0.53 (host loopback) which is unreachable
-# from inside Docker containers. Without explicit DNS, containers inherit the
-# host's resolv.conf stub and all DNS lookups fail — breaking Caddy's proxy
-# to openclaw-gateway and Let's Encrypt cert provisioning.
-mkdir -p /etc/docker
-cat > /etc/docker/daemon.json <<'DNSEOF'
-{
-  "dns": ["185.12.64.1", "185.12.64.2", "8.8.8.8"]
-}
+# systemd-resolved's stub listener (127.0.0.53) is unreachable from inside
+# Docker containers because 127.0.0.53 maps to the container's own loopback,
+# not the host's. This breaks container DNS: Caddy can't resolve
+# openclaw-gateway (502) and can't reach Let's Encrypt (cert failures).
+#
+# Fix: disable the stub listener and point /etc/resolv.conf to resolved's
+# full output which lists real upstream nameservers. Docker's embedded DNS
+# (127.0.0.11) then forwards to these real servers for external resolution
+# while still handling container-to-container names (e.g. openclaw-gateway).
+mkdir -p /etc/systemd/resolved.conf.d
+cat > /etc/systemd/resolved.conf.d/docker-fix.conf <<'DNSEOF'
+[Resolve]
+DNSStubListener=no
 DNSEOF
+ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+systemctl restart systemd-resolved
 
 systemctl enable docker
 systemctl start docker

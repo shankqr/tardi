@@ -91,16 +91,22 @@ if [ "$STATUS" = "running" ]; then
 fi
 
 # --- Docker DNS drift guard (runs every heartbeat) ---
-# systemd-resolved listens on 127.0.0.53 (host loopback) which is unreachable
-# from inside Docker containers. If /etc/docker/daemon.json is missing or lacks
-# explicit DNS, containers inherit the broken stub resolver and Caddy can't
-# proxy to openclaw-gateway or reach Let's Encrypt for cert renewal.
-if [ ! -f /etc/docker/daemon.json ] || ! grep -q '"dns"' /etc/docker/daemon.json 2>/dev/null; then
-    mkdir -p /etc/docker
-    echo '{"dns":["185.12.64.1","185.12.64.2","8.8.8.8"]}' > /etc/docker/daemon.json
-    systemctl restart docker 2>/dev/null || true
-    sleep 5
-    cd /opt/openclaw && docker compose up -d 2>/dev/null || true
+# systemd-resolved's stub listener (127.0.0.53) is unreachable from Docker
+# containers. Disable it and point resolv.conf to real upstream nameservers
+# so Docker's embedded DNS (127.0.0.11) can forward external lookups while
+# still resolving container names (e.g. openclaw-gateway).
+if grep -q 'nameserver 127.0.0.53' /etc/resolv.conf 2>/dev/null && ! grep -q 'DNSStubListener=no' /etc/systemd/resolved.conf.d/docker-fix.conf 2>/dev/null; then
+    mkdir -p /etc/systemd/resolved.conf.d
+    echo -e '[Resolve]\nDNSStubListener=no' > /etc/systemd/resolved.conf.d/docker-fix.conf
+    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    systemctl restart systemd-resolved 2>/dev/null || true
+    # Remove daemon.json dns override if present (it bypasses Docker embedded DNS)
+    if [ -f /etc/docker/daemon.json ] && grep -q '"dns"' /etc/docker/daemon.json 2>/dev/null; then
+        rm -f /etc/docker/daemon.json
+        systemctl restart docker 2>/dev/null || true
+        sleep 5
+    fi
+    cd /opt/openclaw && docker compose down 2>/dev/null; docker compose up -d 2>/dev/null || true
 fi
 
 # --- Gateway auth drift guard (runs every heartbeat) ---

@@ -206,13 +206,25 @@ if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ] && [ "$MEM_TOTAL" -gt 0 ]; then
     fi
 fi
 
-# ── 8. Docker DNS (container networking) ───────────────────────────
+# ── 8. Port Conflicts ──────────────────────────────────────────────
+# Non-Docker services (e.g. nginx) on ports 80/443 prevent Caddy from binding
+NGINX_ON=$(ss -tlnp 2>/dev/null | grep -E ':80\b|:443\b' | grep -v docker | grep -c nginx) || NGINX_ON=0
+if [ "$NGINX_ON" -gt 0 ]; then
+    add "Port Conflict" "fail" "nginx is bound to port 80/443" "nginx conflicts with Caddy. Run: systemctl disable nginx && systemctl stop nginx"
+else
+    NON_DOCKER=$(ss -tlnp 2>/dev/null | grep -E ':80\b|:443\b' | grep -v docker | grep -v caddy) || NON_DOCKER=""
+    if [ -n "$NON_DOCKER" ]; then
+        add "Port Conflict" "warn" "Non-Docker process on port 80/443" "$NON_DOCKER"
+    fi
+fi
+
+# ── 9. Docker DNS (container networking) ───────────────────────────
 # systemd-resolved's 127.0.0.53 stub is unreachable from containers.
 # If Docker isn't configured with explicit DNS, Caddy can't resolve
 # openclaw-gateway or reach Let's Encrypt — causing 502s and cert failures.
 CADDY_DNS=$(docker exec openclaw-caddy cat /etc/resolv.conf 2>/dev/null | grep '^nameserver' | head -1 | awk '{print $2}')
 if [ "$CADDY_DNS" = "127.0.0.53" ]; then
-    add "Docker DNS" "fail" "Caddy using host stub resolver (127.0.0.53)" "Containers cannot reach systemd-resolved's loopback. Add {\"dns\":[\"185.12.64.1\",\"8.8.8.8\"]} to /etc/docker/daemon.json and restart Docker."
+    add "Docker DNS" "fail" "Caddy using host stub resolver (127.0.0.53)" "Containers cannot reach systemd-resolved's loopback. Fix: disable stub listener (DNSStubListener=no in /etc/systemd/resolved.conf.d/) and symlink /etc/resolv.conf to /run/systemd/resolve/resolv.conf."
 elif [ "$CADDY_DNS" = "127.0.0.11" ]; then
     add "Docker DNS" "pass" "Using Docker embedded DNS" ""
 elif [ -n "$CADDY_DNS" ]; then
