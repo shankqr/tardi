@@ -19,6 +19,30 @@ if [ ! -f /etc/ssh/sshd_config.d/60-tardi.conf ] || ! grep -q "PasswordAuthentic
     systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
 fi
 
+# --- Caddy cert persistence migration (one-time) ---
+# Old compose used Docker named volumes (caddy_data, caddy_config) which can be
+# lost on container recreation. Migrate to host-mounted dirs so certs survive.
+if grep -q 'caddy_data:/data' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    mkdir -p /opt/openclaw/caddy/data /opt/openclaw/caddy/config
+
+    # Copy cert data from Docker named volumes to host dirs
+    COMPOSE_PROJECT=$(cd /opt/openclaw && docker compose ls --format json 2>/dev/null | jq -r '.[0].Name // empty' 2>/dev/null)
+    if [ -n "$COMPOSE_PROJECT" ]; then
+        # Use a temp container to access the named volume contents
+        docker run --rm -v "${COMPOSE_PROJECT}_caddy_data:/src:ro" -v /opt/openclaw/caddy/data:/dst alpine sh -c "cp -a /src/. /dst/" 2>/dev/null || true
+        docker run --rm -v "${COMPOSE_PROJECT}_caddy_config:/src:ro" -v /opt/openclaw/caddy/config:/dst alpine sh -c "cp -a /src/. /dst/" 2>/dev/null || true
+    fi
+
+    # Rewrite docker-compose.yml: named volumes → host-mounted dirs
+    sed -i 's|caddy_data:/data|./caddy/data:/data|' /opt/openclaw/docker-compose.yml
+    sed -i 's|caddy_config:/config|./caddy/config:/config|' /opt/openclaw/docker-compose.yml
+    # Remove the named volume declarations at the bottom
+    sed -i '/^volumes:$/,/^  caddy_config:$/d' /opt/openclaw/docker-compose.yml
+
+    # Restart stack to pick up new volume mounts
+    cd /opt/openclaw && docker compose down 2>/dev/null; docker compose up -d 2>/dev/null || true
+fi
+
 # Check OpenClaw gateway health
 HEALTH=$(curl -sf http://localhost:18789/health 2>/dev/null)
 if [ $? -eq 0 ]; then

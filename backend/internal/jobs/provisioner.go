@@ -160,6 +160,8 @@ usermod -aG docker openclaw
 
 # --- Directory structure ---
 mkdir -p /opt/openclaw/data/openclaw
+mkdir -p /opt/openclaw/caddy/data
+mkdir -p /opt/openclaw/caddy/config
 chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
@@ -271,8 +273,8 @@ services:
 {{- if not .Domain}}
       - ./certs:/etc/caddy/certs:ro
 {{- end}}
-      - caddy_data:/data
-      - caddy_config:/config
+      - ./caddy/data:/data
+      - ./caddy/config:/config
     env_file:
       - .env
     depends_on:
@@ -283,9 +285,6 @@ networks:
   openclaw-net:
     driver: bridge
 
-volumes:
-  caddy_data:
-  caddy_config:
 COMPOSEEOF
 
 # --- Caddyfile ---
