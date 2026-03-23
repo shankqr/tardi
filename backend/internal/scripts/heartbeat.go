@@ -157,6 +157,15 @@ cui['dangerouslyDisableDeviceAuth'] = True
 cui['allowInsecureAuth'] = True
 if 'allowedOrigins' not in cui:
     cui['allowedOrigins'] = ['*']
+# Ensure explicit domain in allowedOrigins (wildcard '*' broken in OC 2026.3.22+)
+import subprocess
+try:
+    domain = subprocess.check_output(['head', '-1', '/opt/openclaw/Caddyfile'], text=True).strip().rstrip(' {')
+    if domain:
+        origin = f'https://{domain}'
+        if origin not in cui.get('allowedOrigins', []):
+            cui.setdefault('allowedOrigins', ['*']).append(origin)
+except: pass
 cfg.setdefault('meta', {})['lastTouchedAt'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
 with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     json.dump(cfg, f, indent=2)

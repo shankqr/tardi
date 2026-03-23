@@ -174,7 +174,7 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
   "gateway": {
     "bind": "lan",
     "controlUi": {
-      "allowedOrigins": ["*"],
+      "allowedOrigins": ["*"{{if .Domain}}, "https://{{.Domain}}"{{end}}],
       "dangerouslyDisableDeviceAuth": true,
       "allowInsecureAuth": true
     },
