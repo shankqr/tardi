@@ -521,7 +521,7 @@
 				{/if}
 				<p class="mt-0.5 text-sm text-gray-500">Dedicated Agent</p>
 			</div>
-			<StatusBadge status={instance.status} />
+			<StatusBadge status={instance.status} updateStatus={instance.openclaw_update_status} />
 		</div>
 
 		{#if $dashboardState?.subscription?.cancel_at_period_end}

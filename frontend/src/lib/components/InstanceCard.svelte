@@ -28,7 +28,7 @@
 			<h3 class="font-semibold text-gray-900">{instance.name}</h3>
 			<p class="mt-0.5 text-xs text-gray-400">{planName}</p>
 		</div>
-		<StatusBadge status={instance.status} />
+		<StatusBadge status={instance.status} updateStatus={instance.openclaw_update_status} />
 	</div>
 
 	<div class="mt-4 grid grid-cols-2 gap-4 text-sm">

@@ -3,9 +3,14 @@
 
 	interface Props {
 		status: VpsStatus;
+		updateStatus?: string | null;
 	}
 
-	let { status }: Props = $props();
+	let { status, updateStatus }: Props = $props();
+
+	const isUpdatingVersion = $derived(
+		status === 'active' && !!updateStatus && ['pulling', 'updating'].includes(updateStatus)
+	);
 
 	const colors: Record<VpsStatus, string> = {
 		requested: 'bg-gray-100 text-gray-700',
@@ -44,14 +49,16 @@
 		terminated: 'Terminated',
 		error: 'Error'
 	};
+
+	const inProgressStatuses = ['provisioning', 'bootstrapping', 'installing_agent', 'restarting', 'snapshotting', 'restoring', 'upgrading', 'downgrading', 'resuming', 'suspending', 'terminating'];
 </script>
 
-<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {colors[status]}">
-	{#if ['provisioning', 'bootstrapping', 'installing_agent', 'restarting', 'snapshotting', 'restoring', 'upgrading', 'downgrading', 'resuming', 'suspending', 'terminating'].includes(status)}
+<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {isUpdatingVersion ? 'bg-blue-100 text-blue-700' : colors[status]}">
+	{#if isUpdatingVersion || inProgressStatuses.includes(status)}
 		<svg class="mr-1 h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
 			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 		</svg>
 	{/if}
-	{labels[status]}
+	{isUpdatingVersion ? 'Updating Version' : labels[status]}
 </span>
