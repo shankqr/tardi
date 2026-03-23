@@ -331,10 +331,10 @@
 			if (result.synced) {
 				stopTelegramPollTimer();
 				telegramPollTimer = setInterval(() => {
-					if (telegramSyncElapsed > 120) {
+					if (telegramSyncElapsed > 300) {
 						stopTelegramSyncTimer();
 						stopTelegramPollTimer();
-						telegramError = 'Sync is taking longer than expected — it will apply automatically within 5 minutes';
+						telegramError = 'Sync is taking longer than expected — it will apply automatically within a few minutes';
 						telegramSyncPhase = 'failed';
 						return;
 					}
@@ -751,23 +751,15 @@
 										</div>
 									</div>
 								{:else if telegramError}
-									<div class="mt-3 rounded-lg border border-red-200 bg-red-50 p-4">
-										<p class="text-xs font-medium text-red-800">{telegramError}</p>
-										<p class="text-xs text-red-600 mt-1">Your token was saved. It will apply automatically within 5 minutes.</p>
-										<div class="mt-2 flex gap-2">
-											<button
-												onclick={triggerTelegramSync}
-												class="rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700"
-											>
-												Retry
-											</button>
-											<button
-												onclick={() => { telegramSyncPhase = 'idle'; telegramError = null; }}
-												class="rounded-md border border-red-300 px-3 py-1 text-xs text-red-700 hover:bg-red-100"
-											>
-												Dismiss
-											</button>
-										</div>
+									<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+										<p class="text-xs font-medium text-amber-800">{telegramError}</p>
+										<p class="text-xs text-amber-600 mt-1">Your token was saved. It will apply automatically within a few minutes.</p>
+										<button
+											onclick={() => { telegramSyncPhase = 'idle'; telegramError = null; }}
+											class="mt-2 rounded-md border border-amber-300 px-3 py-1 text-xs text-amber-700 hover:bg-amber-100"
+										>
+											Dismiss
+										</button>
 									</div>
 								{:else}
 									<div class="mt-3 rounded-lg border border-green-200 bg-green-50 p-4">

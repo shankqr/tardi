@@ -164,10 +164,10 @@
 					// Sync triggered — now poll for completion every 5s, timeout at 120s
 					stopPollTimer();
 					pollTimer = setInterval(() => {
-						if (syncElapsed > 120) {
+						if (syncElapsed > 300) {
 							stopSyncTimer();
 							stopPollTimer();
-							syncError = 'Sync is taking longer than expected — it will apply automatically within 5 minutes';
+							syncError = 'Sync is taking longer than expected — it will apply automatically within a few minutes';
 							syncPhase = 'failed';
 							return;
 						}
@@ -251,7 +251,7 @@
 							<div class="h-1 overflow-hidden rounded-full bg-gray-200">
 								<div
 									class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
-									style="width: {Math.min(syncElapsed / 80 * 100, 95)}%"
+									style="width: {Math.min(syncElapsed / 200 * 100, 95)}%"
 								></div>
 							</div>
 							<p class="text-xs text-gray-400">This usually takes about a minute. Please don't close this page.</p>
@@ -296,26 +296,18 @@
 					{:else if syncPhase === 'failed'}
 						<div class="flex items-start justify-between">
 							<div class="flex items-start gap-3">
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-red-500 shrink-0 mt-0.5">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-amber-500 shrink-0 mt-0.5">
 									<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
 								</svg>
 								<div>
-									<p class="text-sm font-medium text-red-800">{syncError}</p>
-									<p class="text-xs text-red-600 mt-1">Your settings were saved. You can retry, or they will apply automatically within 5 minutes.</p>
-									<div class="mt-2 flex gap-2">
-										<button
-											onclick={handleSave}
-											class="rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700"
-										>
-											Retry
-										</button>
-										<button
-											onclick={dismissSync}
-											class="rounded-md border border-red-300 px-3 py-1 text-xs text-red-700 hover:bg-red-100"
-										>
-											Dismiss
-										</button>
-									</div>
+									<p class="text-sm font-medium text-amber-800">{syncError}</p>
+									<p class="text-xs text-amber-600 mt-1">Your settings were saved. They will apply automatically within a few minutes.</p>
+									<button
+										onclick={dismissSync}
+										class="mt-2 rounded-md border border-amber-300 px-3 py-1 text-xs text-amber-700 hover:bg-amber-100"
+									>
+										Dismiss
+									</button>
 								</div>
 							</div>
 						</div>
