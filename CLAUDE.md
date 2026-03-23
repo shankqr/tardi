@@ -125,7 +125,9 @@ Internal (agent tools → gateway):
 - `OPENCLAW_AUTH_TOKEN` — stored in DB, sent to frontend for building the dashboard URL (`/?token=xxx`)
 - `OPENCLAW_GATEWAY_TOKEN` — read by OpenClaw for gateway token auth. Same value as `OPENCLAW_AUTH_TOKEN`
 
-**Important: Caddy must NOT add auth headers or manage sessions.** Previous attempts to have Caddy validate tokens, set cookies, and inject `Authorization: Bearer` headers caused "gateway token missing" errors because Caddy interfered with OpenClaw's own session/WebSocket auth flow. OpenClaw handles all auth itself via `auth.mode: "token"`.
+**Important: Caddy must add Authorization header but NOT manage sessions (no cookies).** The `Authorization: Bearer` header on proxied requests makes OpenClaw skip device pairing. The Control UI JS separately reads the token from the URL **hash fragment** (`#token=xxx`, NOT `?token=xxx`) for WebSocket connections. Both mechanisms are needed:
+- `Authorization: Bearer` header via Caddy → HTTP-level auth, skips pairing
+- `#token=xxx` in URL → Control UI JS reads token for WebSocket connections
 
 **Config in `openclaw.json`:**
 ```json

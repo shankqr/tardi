@@ -288,9 +288,9 @@ networks:
 COMPOSEEOF
 
 # --- Caddyfile ---
-# Transparent reverse proxy: Caddy handles TLS only.
-# OpenClaw handles all auth via auth.mode:"token" + OPENCLAW_GATEWAY_TOKEN env var.
-# The user opens /?token=xxx → OpenClaw validates, manages sessions, serves Control UI.
+# Caddy adds Authorization header so OpenClaw skips device pairing.
+# The Control UI JS reads the token from the URL hash fragment (#token=xxx)
+# for WebSocket connections. Caddy's header handles HTTP-level auth.
 cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 {{- if .Domain}}
 {{.Domain}} {
@@ -299,7 +299,9 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 {{- end}}
 
-	reverse_proxy openclaw-gateway:18789
+	reverse_proxy openclaw-gateway:18789 {
+		header_up Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
+	}
 }
 
 {{- if .Domain}}
