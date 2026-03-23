@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -21,10 +20,9 @@ import (
 // response. This is needed for web.login.start because OpenClaw cancels the
 // pending WhatsApp login session when the operator WebSocket disconnects.
 func openclawRPCKeepAlive(ctx context.Context, ipv4, authToken, method string, params any, keepAliveDuration time.Duration, instanceID string) (json.RawMessage, error) {
-	url := fmt.Sprintf("wss://%s/?token=%s", ipv4, authToken)
+	url := fmt.Sprintf("ws://%s:18789/?token=%s", ipv4, authToken)
 
 	dialer := websocket.Dialer{
-		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Self-signed cert on user's VPS
 		HandshakeTimeout: 10 * time.Second,
 	}
 
@@ -185,15 +183,14 @@ func openclawRPCKeepAlive(ctx context.Context, ipv4, authToken, method string, p
 	return result, nil
 }
 
-// openclawRPC connects to an OpenClaw gateway via WebSocket (through Caddy),
+// openclawRPC connects to an OpenClaw gateway via WebSocket (direct to port 18789),
 // handles the connect handshake, sends an RPC method, and returns the result.
 // OpenClaw uses a custom protocol: requests are {"type":"req","id":"...","method":"...","params":{...}}
 // and responses are {"type":"res","id":"...","ok":true/false,"payload":{...},"error":{...}}.
 func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any) (json.RawMessage, error) {
-	url := fmt.Sprintf("wss://%s/?token=%s", ipv4, authToken)
+	url := fmt.Sprintf("ws://%s:18789/?token=%s", ipv4, authToken)
 
 	dialer := websocket.Dialer{
-		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Self-signed cert on user's VPS
 		HandshakeTimeout: 10 * time.Second,
 	}
 
@@ -322,10 +319,9 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 // a named event (e.g. "health") that arrives before the RPC response.
 // Returns (rpcResult, eventPayload, error). eventPayload is nil if no matching event arrived.
 func openclawRPCWithEvents(ctx context.Context, ipv4, authToken, method string, params any, captureEvent string) (json.RawMessage, json.RawMessage, error) {
-	url := fmt.Sprintf("wss://%s/?token=%s", ipv4, authToken)
+	url := fmt.Sprintf("ws://%s:18789/?token=%s", ipv4, authToken)
 
 	dialer := websocket.Dialer{
-		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // Self-signed cert on user's VPS
 		HandshakeTimeout: 10 * time.Second,
 	}
 

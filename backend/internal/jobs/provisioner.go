@@ -56,13 +56,13 @@ type CloudInitData struct {
 	ConfigVersion     int    // Initial config version to prevent redundant first sync
 	RootPassword      string // Explicitly set root password (overrides Hetzner's auto-generated one)
 	TelegramBotToken  string // Optional Telegram bot token
-	Domain            string // Optional domain for Let's Encrypt (e.g. "abc123.agents.tardi.ai"); empty = self-signed
-	PreviewDomain     string // Optional preview domain (e.g. "abc123.b.tardi.ai") for user-built apps on port 3000
+	Domain            string // Optional domain for Cloudflare Proxy (e.g. "abc12345.tardi.ai"); empty = IP-only access
+	PreviewDomain     string // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
 	HeartbeatScript   string // Latest heartbeat bash script (from scripts.HeartbeatScript)
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
-// with OpenClaw via Docker Compose + Caddy reverse proxy.
+// with OpenClaw via Docker host networking + Cloudflare Proxy for TLS.
 var cloudInitTemplate = template.Must(template.New("cloudinit").Parse(`#!/bin/bash
 set -euo pipefail
 exec > >(tee -a /var/log/openclaw-init.log) 2>&1
@@ -97,7 +97,6 @@ ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp
 ufw allow 80/tcp
-ufw allow 443/tcp
 ufw --force enable
 log_status "FIREWALL_CONFIGURED"
 
@@ -122,24 +121,6 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.
 apt-get update -qq
 apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-# --- Docker DNS fix ---
-# systemd-resolved's stub listener (127.0.0.53) is unreachable from inside
-# Docker containers because 127.0.0.53 maps to the container's own loopback,
-# not the host's. This breaks container DNS: Caddy can't resolve
-# openclaw-gateway (502) and can't reach Let's Encrypt (cert failures).
-#
-# Fix: disable the stub listener and point /etc/resolv.conf to resolved's
-# full output which lists real upstream nameservers. Docker's embedded DNS
-# (127.0.0.11) then forwards to these real servers for external resolution
-# while still handling container-to-container names (e.g. openclaw-gateway).
-mkdir -p /etc/systemd/resolved.conf.d
-cat > /etc/systemd/resolved.conf.d/docker-fix.conf <<'DNSEOF'
-[Resolve]
-DNSStubListener=no
-DNSEOF
-ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-systemctl restart systemd-resolved
-
 systemctl enable docker
 systemctl start docker
 log_status "DOCKER_INSTALLED"
@@ -160,15 +141,13 @@ usermod -aG docker openclaw
 
 # --- Directory structure ---
 mkdir -p /opt/openclaw/data/openclaw
-mkdir -p /opt/openclaw/caddy/data
-mkdir -p /opt/openclaw/caddy/config
 chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
-# bind=lan: listen on 0.0.0.0 so Caddy can reach the gateway via Docker network
-# auth=token: OpenClaw reads OPENCLAW_GATEWAY_TOKEN from env. Caddy passes it via Authorization header.
+# bind=lan: listen on 0.0.0.0 (host network exposes directly)
+# auth=token: OpenClaw reads OPENCLAW_GATEWAY_TOKEN from env.
 #   Internal tool calls authenticate automatically (OpenClaw knows its own token).
-# trustedProxies: Docker bridge network CIDRs that OpenClaw accepts proxy headers from
+# No trustedProxies — host networking, no reverse proxy in the path.
 cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
 {
   "gateway": {
@@ -178,7 +157,6 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
       "dangerouslyDisableDeviceAuth": true,
       "allowInsecureAuth": true
     },
-    "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
     "auth": {
       "mode": "token"
     }
@@ -220,38 +198,33 @@ chmod 600 /opt/openclaw/.env
 echo "{{.ConfigVersion}}" > /opt/openclaw/.config_version
 {{- end}}
 
-{{- if .Domain}}
-# --- TLS: Let's Encrypt via Caddy (automatic for domain {{.Domain}}) ---
-log_status "TLS_LETSENCRYPT_DOMAIN"
-{{- else}}
-# --- TLS: Self-signed certificate (no domain configured) ---
-mkdir -p /opt/openclaw/certs
-SERVER_IP=$(hostname -I | awk '{print $1}')
-openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
-    -keyout /opt/openclaw/certs/key.pem \
-    -out /opt/openclaw/certs/cert.pem \
-    -subj "/CN=${SERVER_IP}" \
-    -addext "subjectAltName=IP:${SERVER_IP}"
-log_status "TLS_CERT_GENERATED"
-{{- end}}
+# --- TLS: Cloudflare Proxy handles TLS at the edge ---
+# No Caddy, no self-signed certs. Cloudflare terminates TLS and connects
+# to the origin on port 80 (HTTP). iptables NAT redirects port 80 to 18789.
+log_status "TLS_CLOUDFLARE_PROXY"
 
-# --- Docker Compose ---
+# --- iptables NAT: redirect port 80 → 18789 ---
+# OpenClaw runs as UID 1000 and cannot bind port 80. Cloudflare Proxy
+# connects to the origin on port 80 (Flexible SSL mode).
+iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
+apt-get install -y -qq iptables-persistent
+netfilter-persistent save
+log_status "IPTABLES_NAT_CONFIGURED"
+
+# --- Docker Compose (single container, host networking) ---
 cat > /opt/openclaw/docker-compose.yml <<'COMPOSEEOF'
 services:
   openclaw-gateway:
     image: ghcr.io/openclaw/openclaw:{{.OpenClawImageTag}}
     container_name: openclaw-gateway
     restart: unless-stopped
+    network_mode: host
     user: "1000:1000"
     group_add:
       - "${DOCKER_GID}"
-    networks:
-      - openclaw-net
     volumes:
       - ./data/openclaw:/home/node/.openclaw:rw
       - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-      - "127.0.0.1:18789:18789"
     env_file:
       - .env
     healthcheck:
@@ -261,84 +234,7 @@ services:
       retries: 3
       start_period: 60s
 
-  caddy:
-    image: caddy:2-alpine
-    container_name: openclaw-caddy
-    restart: unless-stopped
-    networks:
-      - openclaw-net
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-{{- if not .Domain}}
-      - ./certs:/etc/caddy/certs:ro
-{{- end}}
-      - ./caddy/data:/data
-      - ./caddy/config:/config
-    env_file:
-      - .env
-    depends_on:
-      openclaw-gateway:
-        condition: service_healthy
-
-networks:
-  openclaw-net:
-    driver: bridge
-
 COMPOSEEOF
-
-# --- Caddyfile ---
-# Caddy is a transparent TLS-terminating reverse proxy. Auth is handled by the
-# Control UI JS which reads the token from the URL hash fragment (#token=xxx)
-# and sends it in the WebSocket connect message.
-cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
-{{- if .Domain}}
-{{.Domain}} {
-{{- else}}
-:443 {
-	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
-{{- end}}
-
-	reverse_proxy openclaw-gateway:18789
-}
-
-{{- if .Domain}}
-
-http://{{.Domain}} {
-	@health path /health
-	handle @health {
-		reverse_proxy openclaw-gateway:18789
-	}
-	handle {
-		redir https://{host}{uri} permanent
-	}
-}
-{{- else}}
-
-:80 {
-	@health path /health
-	handle @health {
-		reverse_proxy openclaw-gateway:18789
-	}
-	handle {
-		redir https://{host}{uri} permanent
-	}
-}
-{{- end}}
-
-{{- if .PreviewDomain}}
-
-{{.PreviewDomain}} {
-	reverse_proxy localhost:3000
-}
-
-http://{{.PreviewDomain}} {
-	redir https://{host}{uri} permanent
-}
-{{- end}}
-CADDYEOF
 log_status "FILES_WRITTEN"
 
 # --- Pre-pull images (retry on failure) ---
@@ -634,14 +530,13 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	// Compute domain if DNS is configured (known before server creation since it's based on instance ID)
+	// Flat domain scheme: <uuid8>.tardi.ai (single-level subdomain for Cloudflare Universal SSL)
+	// Preview domain: <uuid8>-b.tardi.ai (hyphen suffix, not sub-subdomain)
 	var domain, previewDomain string
 	if p.dnsClient != nil {
 		subdomain := inst.ID.String()[:8]
 		domain = fmt.Sprintf("%s.%s", subdomain, p.dnsClient.BaseDomain())
-		// Preview domain: derive from base domain by replacing "a" prefix with "b"
-		// e.g. a.tardi.ai → b.tardi.ai, a-dev.tardi.ai → b-dev.tardi.ai
-		previewBase := "b" + p.dnsClient.BaseDomain()[1:]
-		previewDomain = fmt.Sprintf("%s.%s", subdomain, previewBase)
+		previewDomain = fmt.Sprintf("%s-b.%s", subdomain, p.dnsClient.BaseDomain())
 	}
 
 	// Resolve default model from DB (falls back to hardcoded constant)
@@ -730,11 +625,11 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	// Create DNS A record now that we have the IP.
-	// Cloud-init already has the domain baked in — Caddy will retry ACME until DNS propagates.
+	// Records are created with Cloudflare Proxy enabled (proxied=true) for TLS.
 	if _, err := p.createDNSRecord(ctx, inst.ID.String(), server.IPv4); err != nil {
-		p.logger.Warn("provisioner: DNS record creation failed (instance will use self-signed TLS)",
+		p.logger.Warn("provisioner: DNS record creation failed (instance will only be accessible via IP:18789)",
 			"instance_id", inst.ID, "error", err)
-		// Non-fatal: instance works with self-signed cert if DNS fails
+		// Non-fatal but no HTTPS: Cloudflare Proxy requires DNS to work
 	}
 
 	return nil
@@ -771,9 +666,8 @@ func (p *Provisioner) createDNSRecord(ctx context.Context, instanceID string, ip
 	}
 
 	// Create preview DNS record for user-built apps
-	// Derive from base domain by replacing "a" prefix with "b"
-	previewBase := "b" + p.dnsClient.BaseDomain()[1:]
-	previewDomain := fmt.Sprintf("%s.%s", subdomain, previewBase)
+	// Flat scheme: <uuid8>-b.tardi.ai (hyphen suffix, single-level subdomain)
+	previewDomain := fmt.Sprintf("%s-b.%s", subdomain, p.dnsClient.BaseDomain())
 	previewRecordID, err := p.dnsClient.CreateARecordForDomain(ctx, previewDomain, ip)
 	if err != nil {
 		p.logger.Warn("provisioner: preview DNS record creation failed",

@@ -19,28 +19,54 @@ if [ ! -f /etc/ssh/sshd_config.d/60-tardi.conf ] || ! grep -q "PasswordAuthentic
     systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
 fi
 
-# --- Caddy cert persistence migration (one-time) ---
-# Old compose used Docker named volumes (caddy_data, caddy_config) which can be
-# lost on container recreation. Migrate to host-mounted dirs so certs survive.
-if grep -q 'caddy_data:/data' /opt/openclaw/docker-compose.yml 2>/dev/null; then
-    mkdir -p /opt/openclaw/caddy/data /opt/openclaw/caddy/config
+# --- Migrate from old 2-container Caddy setup to single container host networking ---
+# If docker-compose.yml still has the caddy service or bridge network, rewrite it.
+if grep -q 'openclaw-net\|caddy:' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    CURRENT_IMAGE=$(grep 'image:.*openclaw/openclaw' /opt/openclaw/docker-compose.yml | sed 's/.*image: *//' | tr -d ' ')
+    [ -z "$CURRENT_IMAGE" ] && CURRENT_IMAGE="ghcr.io/openclaw/openclaw:latest"
+    DOCKER_GID=$(getent group docker | cut -d: -f3)
+    cat > /opt/openclaw/docker-compose.yml <<MIGRATEEOF
+services:
+  openclaw-gateway:
+    image: ${CURRENT_IMAGE}
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    network_mode: host
+    user: "1000:1000"
+    group_add:
+      - "${DOCKER_GID}"
+    volumes:
+      - ./data/openclaw:/home/node/.openclaw:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:18789/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
-    # Copy cert data from Docker named volumes to host dirs
-    COMPOSE_PROJECT=$(cd /opt/openclaw && docker compose ls --format json 2>/dev/null | jq -r '.[0].Name // empty' 2>/dev/null)
-    if [ -n "$COMPOSE_PROJECT" ]; then
-        # Use a temp container to access the named volume contents
-        docker run --rm -v "${COMPOSE_PROJECT}_caddy_data:/src:ro" -v /opt/openclaw/caddy/data:/dst alpine sh -c "cp -a /src/. /dst/" 2>/dev/null || true
-        docker run --rm -v "${COMPOSE_PROJECT}_caddy_config:/src:ro" -v /opt/openclaw/caddy/config:/dst alpine sh -c "cp -a /src/. /dst/" 2>/dev/null || true
+MIGRATEEOF
+    # Set up iptables NAT if not already present
+    if ! iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789 2>/dev/null; then
+        iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
+        netfilter-persistent save 2>/dev/null || true
     fi
-
-    # Rewrite docker-compose.yml: named volumes → host-mounted dirs
-    sed -i 's|caddy_data:/data|./caddy/data:/data|' /opt/openclaw/docker-compose.yml
-    sed -i 's|caddy_config:/config|./caddy/config:/config|' /opt/openclaw/docker-compose.yml
-    # Remove the named volume declarations at the bottom
-    sed -i '/^volumes:$/,/^  caddy_config:$/d' /opt/openclaw/docker-compose.yml
-
-    # Restart stack to pick up new volume mounts
+    # Remove trustedProxies from openclaw.json (no longer behind reverse proxy)
+    python3 -c "
+import json
+with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
+    cfg = json.load(f)
+cfg.get('gateway', {}).pop('trustedProxies', None)
+with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
+    json.dump(cfg, f, indent=2)
+" 2>/dev/null || true
+    # Stop old stack (including caddy) and start new single-container stack
     cd /opt/openclaw && docker compose down 2>/dev/null; docker compose up -d 2>/dev/null || true
+    # Clean up old Caddy files
+    rm -f /opt/openclaw/Caddyfile
+    rm -rf /opt/openclaw/certs /opt/openclaw/caddy
 fi
 
 # Check OpenClaw gateway health
@@ -114,29 +140,17 @@ if [ "$STATUS" = "running" ]; then
     fi
 fi
 
-# --- Docker DNS drift guard (runs every heartbeat) ---
-# systemd-resolved's stub listener (127.0.0.53) is unreachable from Docker
-# containers. Disable it and point resolv.conf to real upstream nameservers
-# so Docker's embedded DNS (127.0.0.11) can forward external lookups while
-# still resolving container names (e.g. openclaw-gateway).
-if grep -q 'nameserver 127.0.0.53' /etc/resolv.conf 2>/dev/null && ! grep -q 'DNSStubListener=no' /etc/systemd/resolved.conf.d/docker-fix.conf 2>/dev/null; then
-    mkdir -p /etc/systemd/resolved.conf.d
-    echo -e '[Resolve]\nDNSStubListener=no' > /etc/systemd/resolved.conf.d/docker-fix.conf
-    ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-    systemctl restart systemd-resolved 2>/dev/null || true
-    # Remove daemon.json dns override if present (it bypasses Docker embedded DNS)
-    if [ -f /etc/docker/daemon.json ] && grep -q '"dns"' /etc/docker/daemon.json 2>/dev/null; then
-        rm -f /etc/docker/daemon.json
-        systemctl restart docker 2>/dev/null || true
-        sleep 5
-    fi
-    cd /opt/openclaw && docker compose down 2>/dev/null; docker compose up -d 2>/dev/null || true
+# --- iptables NAT drift guard (runs every heartbeat) ---
+# Ensure port 80 → 18789 NAT rule exists (Cloudflare Proxy connects on port 80).
+# OpenClaw runs as UID 1000 and cannot bind port 80 directly.
+if ! iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789 2>/dev/null; then
+    iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
+    netfilter-persistent save 2>/dev/null || true
 fi
 
 # --- Gateway auth drift guard (runs every heartbeat) ---
 # OpenClaw may overwrite openclaw.json on startup and revert auth mode.
-# We want "token" mode so internal tool calls authenticate via OPENCLAW_GATEWAY_TOKEN
-# and Caddy passes the token via Authorization header.
+# We want "token" mode so internal tool calls authenticate via OPENCLAW_GATEWAY_TOKEN.
 # IMPORTANT: This guard must NOT be gated on STATUS=running. It only edits
 # openclaw.json on disk. If the container is crash-looping because auth.mode
 # was reverted to "none" (which refuses to start with bind=lan), we need to
@@ -157,15 +171,6 @@ cui['dangerouslyDisableDeviceAuth'] = True
 cui['allowInsecureAuth'] = True
 if 'allowedOrigins' not in cui:
     cui['allowedOrigins'] = ['*']
-# Ensure explicit domain in allowedOrigins (wildcard '*' broken in OC 2026.3.22+)
-import subprocess
-try:
-    domain = subprocess.check_output(['head', '-1', '/opt/openclaw/Caddyfile'], text=True).strip().rstrip(' {')
-    if domain:
-        origin = f'https://{domain}'
-        if origin not in cui.get('allowedOrigins', []):
-            cui.setdefault('allowedOrigins', ['*']).append(origin)
-except: pass
 cfg.setdefault('meta', {})['lastTouchedAt'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
 with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     json.dump(cfg, f, indent=2)
@@ -182,70 +187,6 @@ fi
 if ! grep -q '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null; then
     OPENCLAW_TOKEN=$(grep '^OPENCLAW_AUTH_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
     [ -n "$OPENCLAW_TOKEN" ] && echo "OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_TOKEN" >> /opt/openclaw/.env
-fi
-
-# --- Ensure Caddyfile is a simple reverse proxy ---
-# Caddy is a transparent TLS-terminating proxy. Auth is handled by the Control UI
-# JS which reads the token from the URL hash fragment (#token=xxx) and sends it
-# in the WebSocket connect message. No rewrite or Authorization header needed.
-# Detect if Caddyfile has old auth patterns that need cleaning up.
-if grep -q 'respond 401\|@auth_query\|@auth_cookie\|oc_sess\|header_up Authorization\|rewrite.*token' /opt/openclaw/Caddyfile 2>/dev/null; then
-    # Detect domain vs IP-based setup
-    CADDY_DOMAIN=$(head -1 /opt/openclaw/Caddyfile | grep -oP '^[a-zA-Z0-9][\w.-]+\.[a-z]{2,}' || true)
-    PREVIEW_DOMAIN=$(grep -oP '^[a-zA-Z0-9][\w.-]+\.[a-z]{2,}' /opt/openclaw/Caddyfile | grep -v "^http" | tail -1 || true)
-    # Don't count the same domain twice
-    [ "$PREVIEW_DOMAIN" = "$CADDY_DOMAIN" ] && PREVIEW_DOMAIN=""
-
-    if [ -n "$CADDY_DOMAIN" ]; then
-        cat > /opt/openclaw/Caddyfile <<NEWCADDY
-${CADDY_DOMAIN} {
-	reverse_proxy openclaw-gateway:18789
-}
-
-http://${CADDY_DOMAIN} {
-	@health path /health
-	handle @health {
-		reverse_proxy openclaw-gateway:18789
-	}
-	handle {
-		redir https://{host}{uri} permanent
-	}
-}
-NEWCADDY
-    else
-        cat > /opt/openclaw/Caddyfile <<NEWCADDY
-:443 {
-	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
-	reverse_proxy openclaw-gateway:18789
-}
-
-:80 {
-	@health path /health
-	handle @health {
-		reverse_proxy openclaw-gateway:18789
-	}
-	handle {
-		redir https://{host}{uri} permanent
-	}
-}
-NEWCADDY
-    fi
-
-    # Re-add preview domain block if it existed
-    if [ -n "$PREVIEW_DOMAIN" ]; then
-        cat >> /opt/openclaw/Caddyfile <<PREVCADDY
-
-${PREVIEW_DOMAIN} {
-	reverse_proxy localhost:3000
-}
-
-http://${PREVIEW_DOMAIN} {
-	redir https://{host}{uri} permanent
-}
-PREVCADDY
-    fi
-
-    cd /opt/openclaw && docker compose restart caddy 2>/dev/null
 fi
 
 # --- Ensure dangerouslyDisableDeviceAuth is set for Control UI ---

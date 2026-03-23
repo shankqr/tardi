@@ -46,7 +46,7 @@ func (c *Client) CreateARecord(ctx context.Context, subdomain, ip string) (recor
 		"name":    fqdn,
 		"content": ip,
 		"ttl":     60,
-		"proxied": false,
+		"proxied": true,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
@@ -103,7 +103,7 @@ func (c *Client) CreateARecordForDomain(ctx context.Context, fqdn, ip string) (r
 		"name":    fqdn,
 		"content": ip,
 		"ttl":     60,
-		"proxied": false,
+		"proxied": true,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
@@ -159,7 +159,7 @@ func (c *Client) UpdateARecordForDomain(ctx context.Context, recordID, fqdn, ip 
 		"name":    fqdn,
 		"content": ip,
 		"ttl":     60,
-		"proxied": false,
+		"proxied": true,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
@@ -196,7 +196,7 @@ func (c *Client) UpdateARecord(ctx context.Context, recordID, subdomain, ip stri
 		"name":    fqdn,
 		"content": ip,
 		"ttl":     60,
-		"proxied": false,
+		"proxied": true,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal request: %w", err)
