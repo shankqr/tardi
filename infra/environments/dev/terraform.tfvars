@@ -1,5 +1,5 @@
 project_id       = "tardi-dev-488420"
 db_tier          = "db-f1-micro"
-frontend_url     = "https://dev.tardi-18e.pages.dev"
+frontend_url     = "https://dev.tardi-467.pages.dev"
 docker_image_tag = "latest"
 api_url          = "https://tardi-api-dev-lckw22k4gq-uc.a.run.app"
