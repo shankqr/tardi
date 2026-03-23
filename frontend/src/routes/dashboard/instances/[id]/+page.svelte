@@ -69,6 +69,7 @@
 	let telegramLoading = $state(false);
 	let telegramError = $state<string | null>(null);
 	let telegramConnected = $state(false);
+	let telegramCurrentToken = $state('');
 	let showUpdateToken = $state(false);
 	type TelegramSyncPhase = 'idle' | 'syncing' | 'finishing' | 'success' | 'failed';
 	let telegramSyncPhase = $state<TelegramSyncPhase>('idle');
@@ -434,6 +435,7 @@
 					if (!token) return;
 					const cfg = await getAgentConfig(token, instance.id);
 					telegramConnected = !!(cfg.config.telegram_bot_token && typeof cfg.config.telegram_bot_token === 'string' && cfg.config.telegram_bot_token.length > 0);
+					if (telegramConnected) telegramCurrentToken = cfg.config.telegram_bot_token as string;
 					const hasKey = (k: string): boolean => !!(cfg.config[k] && typeof cfg.config[k] === 'string' && (cfg.config[k] as string).length > 0);
 					hasApiKey = hasKey('openrouter_api_key') || hasKey('anthropic_api_key') || hasKey('openai_api_key');
 				} catch {
@@ -680,6 +682,9 @@
 										</div>
 									{/if}
 								</div>
+								{#if telegramCurrentToken && telegramSyncPhase !== 'syncing' && telegramSyncPhase !== 'finishing'}
+									<p class="mt-1 font-mono text-xs text-gray-400 break-all">{telegramCurrentToken}</p>
+								{/if}
 								{#if showUpdateToken && telegramSyncPhase === 'idle'}
 									<div class="mt-3 flex items-center gap-2">
 										<input
