@@ -107,39 +107,79 @@ The gateway uses `auth.mode: "token"` with `OPENCLAW_GATEWAY_TOKEN` env var. Thi
 - `auth.mode: "none"` — **crashes**: OpenClaw refuses to start with "Refusing to bind gateway to lan without auth" when `bind: "lan"` is set
 - `auth.mode: "trusted-proxy"` — **breaks internal tool calls**: requires `X-Forwarded-User` header from a reverse proxy, but when the agent calls tools internally (sessions_list, browser, etc.) the calls go directly to `ws://127.0.0.1:18789` bypassing Caddy — no header, no auth, unauthorized
 
-**How token mode works:**
-
-```
-External (browser → Caddy → OpenClaw):
-  1. User visits https://<domain>/?token=<OPENCLAW_AUTH_TOKEN>
-  2. Caddy is a transparent reverse proxy (TLS termination only)
-  3. OpenClaw receives /?token=xxx, validates against OPENCLAW_GATEWAY_TOKEN env var
-  4. OpenClaw manages its own session — subsequent requests authenticated internally
-
-Internal (agent tools → gateway):
-  1. Agent calls ws://127.0.0.1:18789 for tool execution
-  2. OpenClaw authenticates itself using its own OPENCLAW_GATEWAY_TOKEN → authenticated
-```
-
 **Two tokens, same value:**
-- `OPENCLAW_AUTH_TOKEN` — stored in DB, sent to frontend for building the dashboard URL (`/?token=xxx`)
+- `OPENCLAW_AUTH_TOKEN` — stored in DB, sent to frontend for building the dashboard URL
 - `OPENCLAW_GATEWAY_TOKEN` — read by OpenClaw for gateway token auth. Same value as `OPENCLAW_AUTH_TOKEN`
 
-**Important: Caddy must add Authorization header but NOT manage sessions (no cookies).** The `Authorization: Bearer` header on proxied requests makes OpenClaw skip device pairing. The Control UI JS separately reads the token from the URL **hash fragment** (`#token=xxx`, NOT `?token=xxx`) for WebSocket connections. Both mechanisms are needed:
-- `Authorization: Bearer` header via Caddy → HTTP-level auth, skips pairing
-- `#token=xxx` in URL → Control UI JS reads token for WebSocket connections
+### Control UI Dashboard Auth — How It Works
+
+The Control UI is a Lit-based SPA served by OpenClaw's gateway. It authenticates via a two-layer mechanism:
+
+**Layer 1 — Token delivery via URL hash fragment:**
+The frontend opens the dashboard as `https://<domain>/#token=<OPENCLAW_AUTH_TOKEN>`. The Control UI JS reads the token from the hash fragment (NOT query string, NOT HTTP headers) and includes it in the WebSocket `connect` message's `auth.token` field. This is the ONLY way to deliver the token to the Control UI — Caddy headers, URL rewrites, and query params do NOT work because the JS ignores them.
+
+**Layer 2 — Device pairing disabled:**
+OpenClaw normally requires "device pairing" for each new browser (crypto-based device identity + admin approval). This is disabled via `gateway.controlUi.dangerouslyDisableDeviceAuth: true` in `openclaw.json`, allowing any browser with the correct token to connect without pairing.
+
+**Full auth flow:**
+```
+Browser (user clicks "Open Agent Dashboard"):
+  1. Frontend opens https://<domain>/#token=<OPENCLAW_AUTH_TOKEN>
+  2. Caddy is a transparent reverse proxy (TLS termination only, no auth logic)
+  3. OpenClaw serves the Control UI HTML/JS
+  4. Control UI JS reads token from URL hash fragment (#token=xxx)
+  5. JS creates WebSocket to wss://<domain>/ (through Caddy)
+  6. JS sends connect message with auth.token = the hash token
+  7. OpenClaw validates token against OPENCLAW_GATEWAY_TOKEN env var
+  8. Device pairing skipped (dangerouslyDisableDeviceAuth: true)
+  9. Connected — dashboard loads
+
+Backend RPC (openclawRPC in whatsapp.go):
+  1. Backend connects to wss://<ip>/?token=<token> (token in URL)
+  2. Sends connect message WITHOUT auth field
+  3. OpenClaw uses HTTP-level token from URL — no pairing needed
+  4. Connected — RPC calls proceed
+
+Internal tool calls (agent → gateway):
+  1. Agent calls ws://127.0.0.1:18789 for tool execution
+  2. OpenClaw authenticates using OPENCLAW_GATEWAY_TOKEN env var
+```
 
 **Config in `openclaw.json`:**
 ```json
 {
   "gateway": {
     "bind": "lan",
+    "controlUi": {
+      "allowedOrigins": ["*"],
+      "dangerouslyDisableDeviceAuth": true
+    },
     "auth": { "mode": "token" }
   }
 }
 ```
 
-**Drift guard** (`heartbeat.go`): Runs every 5 minutes. If OpenClaw reverts auth mode on restart, the drift guard patches `openclaw.json` back to `token` mode and ensures `OPENCLAW_GATEWAY_TOKEN` is in `.env`.
+**What does NOT work for Control UI auth (tried and failed):**
+- `?token=xxx` in URL query string — JS deletes it from URL but does NOT use it for auth
+- Caddy `rewrite` to inject `?token=xxx` — only affects HTTP-level auth, JS still sends empty connect message
+- Caddy `header_up Authorization "Bearer xxx"` — OpenClaw ignores this header for WebSocket auth
+- `#gatewayUrl=wss://domain/?token=xxx` — treated as "pending" URL requiring user confirmation
+- `#password=xxx` — not reliably picked up by the JS WebSocket client
+- `auth.mode: "trusted-proxy"` with `X-Forwarded-User` — breaks internal tool calls
+
+**Caddy configuration (simple transparent proxy):**
+```
+<domain> {
+    reverse_proxy openclaw-gateway:18789
+}
+```
+No auth headers, no rewrites, no cookies. Caddy only does TLS termination and proxying.
+
+**Drift guard** (`heartbeat.go`): Runs every 5 minutes. Ensures:
+- `auth.mode: "token"` in `openclaw.json`
+- `OPENCLAW_GATEWAY_TOKEN` is in `.env`
+- `dangerouslyDisableDeviceAuth: true` is set
+- Caddyfile is a clean transparent proxy (removes old auth patterns)
 
 ### Telegram Config Issues — Root Causes & Fixes
 
