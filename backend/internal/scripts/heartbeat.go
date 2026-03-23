@@ -168,26 +168,21 @@ if ! grep -q '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null; then
     [ -n "$OPENCLAW_TOKEN" ] && echo "OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_TOKEN" >> /opt/openclaw/.env
 fi
 
-# --- Ensure Caddyfile uses rewrite to inject token into URL ---
-# Caddy rewrites every request URL to append ?token=xxx before proxying.
-# This is how OpenClaw authenticates WebSocket upgrades — it checks the URL
-# query param, NOT the Authorization header. With the token in the URL,
-# OpenClaw treats the connection as pre-authenticated (no device pairing).
-# Detect if Caddyfile needs rewriting: old patterns OR missing rewrite directive.
-if grep -q 'respond 401\|@auth_query\|@auth_cookie\|oc_sess\|header_up Authorization' /opt/openclaw/Caddyfile 2>/dev/null || \
-   ! grep -q 'rewrite' /opt/openclaw/Caddyfile 2>/dev/null; then
+# --- Ensure Caddyfile is a simple reverse proxy ---
+# Caddy is a transparent TLS-terminating proxy. Auth is handled by the Control UI
+# JS which reads the token from the URL hash fragment (#token=xxx) and sends it
+# in the WebSocket connect message. No rewrite or Authorization header needed.
+# Detect if Caddyfile has old auth patterns that need cleaning up.
+if grep -q 'respond 401\|@auth_query\|@auth_cookie\|oc_sess\|header_up Authorization\|rewrite.*token' /opt/openclaw/Caddyfile 2>/dev/null; then
     # Detect domain vs IP-based setup
     CADDY_DOMAIN=$(head -1 /opt/openclaw/Caddyfile | grep -oP '^[a-zA-Z0-9][\w.-]+\.[a-z]{2,}' || true)
     PREVIEW_DOMAIN=$(grep -oP '^[a-zA-Z0-9][\w.-]+\.[a-z]{2,}' /opt/openclaw/Caddyfile | grep -v "^http" | tail -1 || true)
     # Don't count the same domain twice
     [ "$PREVIEW_DOMAIN" = "$CADDY_DOMAIN" ] && PREVIEW_DOMAIN=""
 
-    OPENCLAW_TOKEN=$(grep '^OPENCLAW_AUTH_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
-    if [ -n "$OPENCLAW_TOKEN" ]; then
-        if [ -n "$CADDY_DOMAIN" ]; then
-            cat > /opt/openclaw/Caddyfile <<NEWCADDY
+    if [ -n "$CADDY_DOMAIN" ]; then
+        cat > /opt/openclaw/Caddyfile <<NEWCADDY
 ${CADDY_DOMAIN} {
-	rewrite * {path}?token=${OPENCLAW_TOKEN}
 	reverse_proxy openclaw-gateway:18789
 }
 
@@ -201,11 +196,10 @@ http://${CADDY_DOMAIN} {
 	}
 }
 NEWCADDY
-        else
-            cat > /opt/openclaw/Caddyfile <<NEWCADDY
+    else
+        cat > /opt/openclaw/Caddyfile <<NEWCADDY
 :443 {
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
-	rewrite * {path}?token=${OPENCLAW_TOKEN}
 	reverse_proxy openclaw-gateway:18789
 }
 
@@ -219,11 +213,11 @@ NEWCADDY
 	}
 }
 NEWCADDY
-        fi
+    fi
 
-        # Re-add preview domain block if it existed
-        if [ -n "$PREVIEW_DOMAIN" ]; then
-            cat >> /opt/openclaw/Caddyfile <<PREVCADDY
+    # Re-add preview domain block if it existed
+    if [ -n "$PREVIEW_DOMAIN" ]; then
+        cat >> /opt/openclaw/Caddyfile <<PREVCADDY
 
 ${PREVIEW_DOMAIN} {
 	reverse_proxy localhost:3000
@@ -233,9 +227,33 @@ http://${PREVIEW_DOMAIN} {
 	redir https://{host}{uri} permanent
 }
 PREVCADDY
-        fi
+    fi
 
-        cd /opt/openclaw && docker compose restart caddy 2>/dev/null
+    cd /opt/openclaw && docker compose restart caddy 2>/dev/null
+fi
+
+# --- Ensure dangerouslyDisableDeviceAuth is set for Control UI ---
+# Without this, the Control UI requires device pairing for every new browser,
+# which blocks the dashboard from working when opened from the Tardi frontend.
+OC_CONFIG="/opt/openclaw/data/openclaw/openclaw.json"
+if [ -f "$OC_CONFIG" ]; then
+    DISABLE_DEVICE_AUTH=$(python3 -c "
+import json
+with open('$OC_CONFIG') as f:
+    cfg = json.load(f)
+print(cfg.get('gateway',{}).get('controlUi',{}).get('dangerouslyDisableDeviceAuth', False))
+" 2>/dev/null || echo "False")
+    if [ "$DISABLE_DEVICE_AUTH" != "True" ]; then
+        python3 -c "
+import json
+with open('$OC_CONFIG') as f:
+    cfg = json.load(f)
+cfg.setdefault('gateway', {}).setdefault('controlUi', {})['dangerouslyDisableDeviceAuth'] = True
+with open('$OC_CONFIG', 'w') as f:
+    json.dump(cfg, f, indent=2)
+" 2>/dev/null
+        # Restart gateway to apply config change
+        cd /opt/openclaw && docker compose restart openclaw-gateway 2>/dev/null || true
     fi
 fi
 

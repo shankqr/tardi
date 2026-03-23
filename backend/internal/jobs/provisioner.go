@@ -174,7 +174,8 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
   "gateway": {
     "bind": "lan",
     "controlUi": {
-      "allowedOrigins": ["*"]
+      "allowedOrigins": ["*"],
+      "dangerouslyDisableDeviceAuth": true
     },
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
     "auth": {
@@ -288,10 +289,9 @@ networks:
 COMPOSEEOF
 
 # --- Caddyfile ---
-# Caddy injects ?token=xxx into every request URL before proxying.
-# This is how OpenClaw authenticates WebSocket upgrades — it checks the URL
-# query param, NOT the Authorization header. With the token in the URL,
-# OpenClaw treats the connection as pre-authenticated (no device pairing).
+# Caddy is a transparent TLS-terminating reverse proxy. Auth is handled by the
+# Control UI JS which reads the token from the URL hash fragment (#token=xxx)
+# and sends it in the WebSocket connect message.
 cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 {{- if .Domain}}
 {{.Domain}} {
@@ -300,7 +300,6 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 {{- end}}
 
-	rewrite * {path}?token={env.OPENCLAW_AUTH_TOKEN}
 	reverse_proxy openclaw-gateway:18789
 }
 
