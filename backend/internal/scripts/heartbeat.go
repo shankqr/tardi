@@ -137,13 +137,15 @@ fi
 # OpenClaw may overwrite openclaw.json on startup and revert auth mode.
 # We want "token" mode so internal tool calls authenticate via OPENCLAW_GATEWAY_TOKEN
 # and Caddy passes the token via Authorization header.
-# Cost: 1 cat+jq when config is fine.
-if [ "$STATUS" = "running" ]; then
-    GW_AUTH_MODE=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.mode // "unknown"' 2>/dev/null)
-    if [ "$GW_AUTH_MODE" != "token" ]; then
-        # Write the auth block via python (openclaw config set can't handle nested objects).
-        # Update meta.lastTouchedAt so OpenClaw detects the change and self-reloads.
-        python3 -c "
+# IMPORTANT: This guard must NOT be gated on STATUS=running. It only edits
+# openclaw.json on disk. If the container is crash-looping because auth.mode
+# was reverted to "none" (which refuses to start with bind=lan), we need to
+# fix the file while the container is stopped so the next restart succeeds.
+GW_AUTH_MODE=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.mode // "unknown"' 2>/dev/null)
+if [ "$GW_AUTH_MODE" != "token" ]; then
+    # Write the auth block via python (openclaw config set can't handle nested objects).
+    # Update meta.lastTouchedAt so OpenClaw detects the change and self-reloads.
+    python3 -c "
 import json, datetime
 with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
     cfg = json.load(f)
@@ -152,6 +154,11 @@ cfg.setdefault('meta', {})['lastTouchedAt'] = datetime.datetime.utcnow().strftim
 with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     json.dump(cfg, f, indent=2)
 " 2>/dev/null
+    # If the container is crash-looping (stopped/restarting), restart it now
+    # so it picks up the fixed config immediately instead of waiting for
+    # Docker's exponential backoff.
+    if [ "$STATUS" = "stopped" ] || [ "$CONTAINER_STATE" = "restarting" ]; then
+        cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway 2>/dev/null || true
     fi
 fi
 
