@@ -658,7 +658,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		APIURL:            p.apiURL,
 		InstanceID:        inst.ID.String(),
 		OpenClawAuthToken: openClawAuthToken,
-		OpenClawImageTag:  p.openClawImageTag,
+		OpenClawImageTag:  resolveImageTag(ctx, p.pool, p.openClawImageTag),
 		Provider:          "openrouter",
 		Model:             defaultModel,
 		RootPassword:      rootPassword,
@@ -904,8 +904,8 @@ func (p *Provisioner) stepActivate(ctx context.Context, job *models.Provisioning
 	if err := db.UpdateInstanceStatus(ctx, p.pool, job.VpsInstanceID, models.VpsStatusActive); err != nil {
 		return fmt.Errorf("activate instance: %w", err)
 	}
-	// Record the initial OpenClaw version
-	_ = db.UpdateInstanceOpenClawVersion(ctx, p.pool, job.VpsInstanceID, p.openClawImageTag, nil, nil)
+	// Record the initial OpenClaw version (use resolved tag, not static env var)
+	_ = db.UpdateInstanceOpenClawVersion(ctx, p.pool, job.VpsInstanceID, resolveImageTag(ctx, p.pool, p.openClawImageTag), nil, nil)
 	return nil
 }
 

@@ -162,7 +162,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		APIURL:            u.apiURL,
 		InstanceID:        inst.ID.String(),
 		OpenClawAuthToken: openClawAuthToken,
-		OpenClawImageTag:  u.openClawImageTag,
+		OpenClawImageTag:  resolveImageTag(ctx, u.pool, u.openClawImageTag),
 		RootPassword:      rootPassword,
 		HeartbeatScript:   scripts.HeartbeatScript,
 	}
@@ -297,7 +297,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 
 	// Step 9: Mark instance active (plan tier already updated by webhook)
 	_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusActive)
-	_ = db.UpdateInstanceOpenClawVersion(ctx, u.pool, inst.ID, u.openClawImageTag, nil, nil)
+	_ = db.UpdateInstanceOpenClawVersion(ctx, u.pool, inst.ID, resolveImageTag(ctx, u.pool, u.openClawImageTag), nil, nil)
 
 	u.logger.Info("upgrader: instance upgraded successfully",
 		"instance_id", inst.ID,

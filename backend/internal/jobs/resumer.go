@@ -123,7 +123,7 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		APIURL:            r.apiURL,
 		InstanceID:        inst.ID.String(),
 		OpenClawAuthToken: openClawAuthToken,
-		OpenClawImageTag:  r.openClawImageTag,
+		OpenClawImageTag:  resolveImageTag(ctx, r.pool, r.openClawImageTag),
 		HeartbeatScript:   scripts.HeartbeatScript,
 	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, r.pool, inst.ID)
@@ -210,8 +210,8 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 
 	// Mark instance active
 	_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusActive)
-	// Record the initial OpenClaw version
-	_ = db.UpdateInstanceOpenClawVersion(ctx, r.pool, inst.ID, r.openClawImageTag, nil, nil)
+	// Record the initial OpenClaw version (use resolved tag, not static env var)
+	_ = db.UpdateInstanceOpenClawVersion(ctx, r.pool, inst.ID, resolveImageTag(ctx, r.pool, r.openClawImageTag), nil, nil)
 
 	r.logger.Info("resumer: instance resumed successfully",
 		"instance_id", inst.ID,

@@ -70,6 +70,10 @@ func AdminSetGlobalVersionHandler(deps Dependencies) http.HandlerFunc {
 			WriteError(w, http.StatusBadRequest, "bad_request", "version is required")
 			return
 		}
+		if body.Version == "latest" {
+			WriteError(w, http.StatusBadRequest, "bad_request", "cannot set version to 'latest' — use an explicit version tag (e.g. v0.9.2)")
+			return
+		}
 
 		if err := db.SetGlobalTargetVersion(r.Context(), deps.Pool, body.Version); err != nil {
 			slog.Error("admin: set global version", "error", err)

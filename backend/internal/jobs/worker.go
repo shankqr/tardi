@@ -59,6 +59,16 @@ func (w *Worker) Start(ctx context.Context) {
 	}
 }
 
+// resolveImageTag reads the pinned OpenClaw version from the database.
+// Falls back to the env-var-based tag if the DB has no pinned version or still says "latest".
+func resolveImageTag(ctx context.Context, pool *pgxpool.Pool, fallback string) string {
+	v, err := db.GetGlobalTargetVersion(ctx, pool)
+	if err != nil || v == "" || v == "latest" {
+		return fallback
+	}
+	return v
+}
+
 func (w *Worker) poll(ctx context.Context) {
 	job, err := db.ClaimNextJob(ctx, w.pool)
 	if err != nil {
