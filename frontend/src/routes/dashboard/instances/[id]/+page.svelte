@@ -602,7 +602,10 @@
 
 					{#if instance.status === 'active' && instance.agent_status === 'running' && instance.dashboard_url && instance.openclaw_auth_token}
 						<button
-							onclick={() => window.open(`${instance.dashboard_url}/#password=${instance.openclaw_auth_token}`, '_blank')}
+							onclick={() => {
+								const wsUrl = instance.dashboard_url!.replace('https://', 'wss://') + '/?token=' + instance.openclaw_auth_token;
+								window.open(`${instance.dashboard_url}/#gatewayUrl=${encodeURIComponent(wsUrl)}`, '_blank');
+							}}
 							class="mt-4 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800"
 						>
 							Open Agent Dashboard
