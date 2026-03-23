@@ -142,15 +142,21 @@ fi
 # was reverted to "none" (which refuses to start with bind=lan), we need to
 # fix the file while the container is stopped so the next restart succeeds.
 GW_AUTH_MODE=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.mode // "unknown"' 2>/dev/null)
-GW_AUTH_SCOPES=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.scopes // empty | length' 2>/dev/null)
-if [ "$GW_AUTH_MODE" != "token" ] || [ "$GW_AUTH_SCOPES" != "5" ]; then
-    # Write the auth block via python (openclaw config set can't handle nested objects).
+GW_INSECURE_AUTH=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.controlUi.allowInsecureAuth // false' 2>/dev/null)
+if [ "$GW_AUTH_MODE" != "token" ] || [ "$GW_INSECURE_AUTH" != "true" ]; then
+    # Write the auth block and controlUi settings via python.
+    # allowInsecureAuth: required for shared token auth to grant operator scopes (OC 2026.3.22+).
     # Update meta.lastTouchedAt so OpenClaw detects the change and self-reloads.
     python3 -c "
 import json, datetime
 with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
     cfg = json.load(f)
-cfg.setdefault('gateway', {})['auth'] = {'mode': 'token', 'scopes': ['operator.read', 'operator.write', 'operator.admin', 'operator.approvals', 'operator.pairing']}
+cfg.setdefault('gateway', {})['auth'] = {'mode': 'token'}
+cui = cfg['gateway'].setdefault('controlUi', {})
+cui['dangerouslyDisableDeviceAuth'] = True
+cui['allowInsecureAuth'] = True
+if 'allowedOrigins' not in cui:
+    cui['allowedOrigins'] = ['*']
 cfg.setdefault('meta', {})['lastTouchedAt'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
 with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     json.dump(cfg, f, indent=2)

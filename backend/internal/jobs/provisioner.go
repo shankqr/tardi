@@ -175,12 +175,12 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
     "bind": "lan",
     "controlUi": {
       "allowedOrigins": ["*"],
-      "dangerouslyDisableDeviceAuth": true
+      "dangerouslyDisableDeviceAuth": true,
+      "allowInsecureAuth": true
     },
     "trustedProxies": ["172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"],
     "auth": {
-      "mode": "token",
-      "scopes": ["operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.pairing"]
+      "mode": "token"
     }
   },
   "channels": {
