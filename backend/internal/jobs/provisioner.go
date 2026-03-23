@@ -679,8 +679,10 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	if p.dnsClient != nil {
 		subdomain := inst.ID.String()[:8]
 		domain = fmt.Sprintf("%s.%s", subdomain, p.dnsClient.BaseDomain())
-		// Preview domain: replace base domain prefix (a.tardi.ai → b.tardi.ai)
-		previewDomain = fmt.Sprintf("%s.b.tardi.ai", subdomain)
+		// Preview domain: derive from base domain by replacing "a" prefix with "b"
+		// e.g. a.tardi.ai → b.tardi.ai, a-dev.tardi.ai → b-dev.tardi.ai
+		previewBase := "b" + p.dnsClient.BaseDomain()[1:]
+		previewDomain = fmt.Sprintf("%s.%s", subdomain, previewBase)
 	}
 
 	// Resolve default model from DB (falls back to hardcoded constant)
@@ -809,8 +811,10 @@ func (p *Provisioner) createDNSRecord(ctx context.Context, instanceID string, ip
 		return "", fmt.Errorf("store domain: %w", err)
 	}
 
-	// Create preview DNS record (b.tardi.ai) for user-built apps
-	previewDomain := fmt.Sprintf("%s.b.tardi.ai", subdomain)
+	// Create preview DNS record for user-built apps
+	// Derive from base domain by replacing "a" prefix with "b"
+	previewBase := "b" + p.dnsClient.BaseDomain()[1:]
+	previewDomain := fmt.Sprintf("%s.%s", subdomain, previewBase)
 	previewRecordID, err := p.dnsClient.CreateARecordForDomain(ctx, previewDomain, ip)
 	if err != nil {
 		p.logger.Warn("provisioner: preview DNS record creation failed",
