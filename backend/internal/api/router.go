@@ -58,8 +58,14 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("GET /api/instances/{id}/sync-status", SyncStatusHandler(deps))
 	authedMux.HandleFunc("POST /api/billing/portal", BillingPortalHandler(deps))
 
+	// Google OAuth (delegated account access)
+	authedMux.HandleFunc("GET /api/oauth/google/authorize", GoogleOAuthAuthorizeHandler(deps))
+	authedMux.HandleFunc("GET /api/oauth/google/status", GoogleOAuthStatusHandler(deps))
+	authedMux.HandleFunc("POST /api/oauth/google/disconnect", GoogleOAuthDisconnectHandler(deps))
+
 	// Public API (no auth)
 	mux.HandleFunc("GET /api/models", ListModelsHandler(deps))
+	mux.HandleFunc("GET /api/oauth/google/callback", GoogleOAuthCallbackHandler(deps))
 
 	// Agent phone-home endpoints (agent token auth, handled inside handlers)
 	mux.HandleFunc("GET /api/agent/config", AgentConfigHandler(deps))

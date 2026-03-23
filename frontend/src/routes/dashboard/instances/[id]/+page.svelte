@@ -22,6 +22,7 @@
 	import ProvisioningProgress from '$lib/components/ProvisioningProgress.svelte';
 	import AIProviderConfig from '$lib/components/AIProviderConfig.svelte';
 	import MagicMoment from '$lib/components/MagicMoment.svelte';
+	import GoogleConnect from '$lib/components/GoogleConnect.svelte';
 
 	const instance = $derived(
 		$dashboardState?.instances.find((i) => i.id === page.params.id) ?? null
@@ -838,6 +839,14 @@
 							{/if}
 						</div>
 					</div>
+
+					<!-- Google Account -->
+					<GoogleConnect
+						instanceId={instance.id}
+						instanceStatus={instance.status}
+						onSyncStart={() => { aiConfigSyncing = true; }}
+						onSyncEnd={() => { aiConfigSyncing = false; }}
+					/>
 
 					{#if instance.ipv4}
 						<div class="rounded-xl border border-gray-200">

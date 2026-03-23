@@ -45,6 +45,9 @@ NEW_OA_KEY=$(echo "$CONFIG" | jq -r '.config.openai_api_key // empty')
 NEW_TG_TOKEN=$(echo "$CONFIG" | jq -r '.config.telegram_bot_token // empty')
 NEW_PROVIDER=$(echo "$CONFIG" | jq -r '.config.provider // empty')
 NEW_MODEL=$(echo "$CONFIG" | jq -r '.config.model // empty')
+NEW_GOOGLE_CLIENT=$(echo "$CONFIG" | jq -r '.config.google_client_b64 // empty')
+NEW_GOOGLE_TOKEN=$(echo "$CONFIG" | jq -r '.config.google_token_b64 // empty')
+NEW_GOOGLE_EMAIL=$(echo "$CONFIG" | jq -r '.config.google_email // empty')
 REMOTE_VERSION=$(echo "$CONFIG" | jq -r '.version // 0')
 
 # Rebuild .env preserving non-key/token vars
@@ -103,6 +106,19 @@ if [ "$HEALTHY" = true ]; then
             docker exec openclaw-gateway openclaw models set "${NEW_MODEL}"
             echo "model set to ${NEW_MODEL}"
         fi
+    fi
+
+    # Write Google OAuth credential files for gog CLI
+    GOG_DIR="/opt/openclaw/data/openclaw/.config/gogcli"
+    if [ -n "$NEW_GOOGLE_TOKEN" ] && [ -n "$NEW_GOOGLE_EMAIL" ]; then
+        mkdir -p "$GOG_DIR/tokens"
+        [ -n "$NEW_GOOGLE_CLIENT" ] && echo "$NEW_GOOGLE_CLIENT" | base64 -d > "$GOG_DIR/credentials.json"
+        echo "$NEW_GOOGLE_TOKEN" | base64 -d > "$GOG_DIR/tokens/${NEW_GOOGLE_EMAIL}.json"
+        chmod -R 600 "$GOG_DIR"
+        chmod 700 "$GOG_DIR" "$GOG_DIR/tokens"
+        echo "google credentials written for ${NEW_GOOGLE_EMAIL}"
+    else
+        rm -rf "$GOG_DIR"
     fi
 
     # Write config version AFTER all patches applied so heartbeat retries

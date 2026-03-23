@@ -1090,3 +1090,114 @@ func IsModelValid(ctx context.Context, pool *pgxpool.Pool, modelID string) (bool
 	}
 	return exists, nil
 }
+
+// UpsertGoogleOAuthToken inserts or updates the Google OAuth token for a user.
+func UpsertGoogleOAuthToken(ctx context.Context, pool *pgxpool.Pool, token *models.GoogleOAuthToken) error {
+	_, err := pool.Exec(ctx, `
+		INSERT INTO google_oauth_tokens (id, user_id, google_email, access_token_enc, refresh_token_enc, token_expiry, scopes, revoked)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, false)
+		ON CONFLICT (user_id) DO UPDATE SET
+			google_email = EXCLUDED.google_email,
+			access_token_enc = EXCLUDED.access_token_enc,
+			refresh_token_enc = EXCLUDED.refresh_token_enc,
+			token_expiry = EXCLUDED.token_expiry,
+			scopes = EXCLUDED.scopes,
+			revoked = false,
+			updated_at = now()
+	`, token.ID, token.UserID, token.GoogleEmail, token.AccessTokenEnc, token.RefreshTokenEnc, token.TokenExpiry, token.Scopes)
+	if err != nil {
+		return fmt.Errorf("upsert google oauth token: %w", err)
+	}
+	return nil
+}
+
+// GetGoogleOAuthTokenByUserID returns the non-revoked Google OAuth token for a user.
+func GetGoogleOAuthTokenByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) (*models.GoogleOAuthToken, error) {
+	t := &models.GoogleOAuthToken{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, user_id, google_email, access_token_enc, refresh_token_enc, token_expiry, scopes, revoked, created_at, updated_at
+		FROM google_oauth_tokens
+		WHERE user_id = $1 AND revoked = false
+	`, userID).Scan(
+		&t.ID, &t.UserID, &t.GoogleEmail, &t.AccessTokenEnc, &t.RefreshTokenEnc,
+		&t.TokenExpiry, &t.Scopes, &t.Revoked, &t.CreatedAt, &t.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get google oauth token by user id: %w", err)
+	}
+	return t, nil
+}
+
+// GetGoogleOAuthTokenByInstanceID returns the Google OAuth token for the user who owns an instance.
+func GetGoogleOAuthTokenByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) (*models.GoogleOAuthToken, error) {
+	t := &models.GoogleOAuthToken{}
+	err := pool.QueryRow(ctx, `
+		SELECT g.id, g.user_id, g.google_email, g.access_token_enc, g.refresh_token_enc, g.token_expiry, g.scopes, g.revoked, g.created_at, g.updated_at
+		FROM google_oauth_tokens g
+		JOIN vps_instances i ON i.user_id = g.user_id
+		WHERE i.id = $1 AND g.revoked = false
+	`, instanceID).Scan(
+		&t.ID, &t.UserID, &t.GoogleEmail, &t.AccessTokenEnc, &t.RefreshTokenEnc,
+		&t.TokenExpiry, &t.Scopes, &t.Revoked, &t.CreatedAt, &t.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get google oauth token by instance id: %w", err)
+	}
+	return t, nil
+}
+
+// RevokeGoogleOAuthToken marks the Google OAuth token as revoked.
+func RevokeGoogleOAuthToken(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE google_oauth_tokens SET revoked = true, updated_at = now() WHERE user_id = $1
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("revoke google oauth token: %w", err)
+	}
+	return nil
+}
+
+// GetExpiringSoonGoogleTokens returns non-revoked tokens expiring within the given threshold.
+func GetExpiringSoonGoogleTokens(ctx context.Context, pool *pgxpool.Pool, threshold time.Duration) ([]*models.GoogleOAuthToken, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, user_id, google_email, access_token_enc, refresh_token_enc, token_expiry, scopes, revoked, created_at, updated_at
+		FROM google_oauth_tokens
+		WHERE revoked = false AND token_expiry < now() + $1::interval
+	`, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("get expiring google tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var tokens []*models.GoogleOAuthToken
+	for rows.Next() {
+		t := &models.GoogleOAuthToken{}
+		if err := rows.Scan(
+			&t.ID, &t.UserID, &t.GoogleEmail, &t.AccessTokenEnc, &t.RefreshTokenEnc,
+			&t.TokenExpiry, &t.Scopes, &t.Revoked, &t.CreatedAt, &t.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("get expiring google tokens scan: %w", err)
+		}
+		tokens = append(tokens, t)
+	}
+	return tokens, rows.Err()
+}
+
+// UpdateGoogleOAuthTokenFields updates the encrypted tokens and expiry for a Google OAuth token.
+func UpdateGoogleOAuthTokenFields(ctx context.Context, pool *pgxpool.Pool, tokenID uuid.UUID, accessEnc, refreshEnc []byte, expiry time.Time) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE google_oauth_tokens
+		SET access_token_enc = $1, refresh_token_enc = $2, token_expiry = $3, updated_at = now()
+		WHERE id = $4
+	`, accessEnc, refreshEnc, expiry, tokenID)
+	if err != nil {
+		return fmt.Errorf("update google oauth token: %w", err)
+	}
+	return nil
+}

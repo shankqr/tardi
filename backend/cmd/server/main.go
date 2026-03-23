@@ -123,6 +123,9 @@ func main() {
 	scriptPusher := jobs.NewScriptPusher(pool, logger)
 	go scriptPusher.Start(ctx)
 
+	tokenRefresher := jobs.NewTokenRefresher(pool, logger, cfg)
+	go tokenRefresher.Start(ctx)
+
 	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag)
 	upgrader := jobs.NewUpgrader(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, dnsClient)
 

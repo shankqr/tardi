@@ -23,6 +23,11 @@ type Config struct {
 	OpenClawImageTag    string
 	AdminAPIToken       string
 
+	// Google OAuth (for delegated Google account access)
+	GoogleOAuthClientID     string
+	GoogleOAuthClientSecret string
+	TokenEncryptionKey      string // 32-byte hex for AES-256-GCM token encryption
+
 	// Mock provider delays (dev only)
 	MockInitDelay      time.Duration
 	MockHeartbeatDelay time.Duration
@@ -48,6 +53,10 @@ func Load() *Config {
 		APIURL:             envOrDefault("API_URL", "http://localhost:8080"),
 		OpenClawImageTag:   envOrDefault("OPENCLAW_IMAGE_TAG", "latest"),
 		AdminAPIToken:     os.Getenv("ADMIN_API_TOKEN"),
+
+		GoogleOAuthClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
+		GoogleOAuthClientSecret: secretOrEmpty("GOOGLE_OAUTH_CLIENT_SECRET"),
+		TokenEncryptionKey:      secretOrEmpty("TOKEN_ENCRYPTION_KEY"),
 
 		MockInitDelay:      parseDuration("MOCK_INIT_DELAY", 12*time.Second),
 		MockHeartbeatDelay: parseDuration("MOCK_HEARTBEAT_DELAY", 18*time.Second),

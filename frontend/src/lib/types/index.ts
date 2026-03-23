@@ -98,6 +98,12 @@ export interface AIProviderConfig {
 	openai_api_key?: string;
 }
 
+export interface GoogleOAuthStatus {
+	connected: boolean;
+	email?: string;
+	scopes?: string[];
+}
+
 export interface PlanInfo {
 	tier: PlanTier;
 	name: string;

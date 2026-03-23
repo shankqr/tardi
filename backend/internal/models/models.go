@@ -189,6 +189,19 @@ type Model struct {
 	UpdatedAt   time.Time
 }
 
+type GoogleOAuthToken struct {
+	ID              uuid.UUID
+	UserID          uuid.UUID
+	GoogleEmail     string
+	AccessTokenEnc  []byte
+	RefreshTokenEnc []byte
+	TokenExpiry     time.Time
+	Scopes          []string
+	Revoked         bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
 type AuditLogEntry struct {
 	ID           uuid.UUID
 	UserID       uuid.UUID

@@ -1,8 +1,11 @@
 package api
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -10,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/shanq/tardi/internal/api/middleware"
+	"github.com/shanq/tardi/internal/crypto"
 	"github.com/shanq/tardi/internal/db"
 	"github.com/shanq/tardi/internal/models"
 )
@@ -42,10 +46,67 @@ func AgentConfigHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
+		// Inject Google OAuth credentials if available
+		respConfig := make(map[string]any, len(config.Config))
+		for k, v := range config.Config {
+			respConfig[k] = v
+		}
+		googleCreds := buildGoogleCredentials(r.Context(), deps, inst.ID)
+		if googleCreds != nil {
+			for k, v := range googleCreds {
+				respConfig[k] = v
+			}
+		}
+
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"config":  config.Config,
+			"config":  respConfig,
 			"version": config.Version,
 		})
+	}
+}
+
+// buildGoogleCredentials returns the base64-encoded credential fields for gog CLI,
+// or nil if no valid Google OAuth token exists.
+func buildGoogleCredentials(ctx context.Context, deps Dependencies, instanceID uuid.UUID) map[string]any {
+	if deps.Config.TokenEncryptionKey == "" {
+		return nil
+	}
+
+	gToken, err := db.GetGoogleOAuthTokenByInstanceID(ctx, deps.Pool, instanceID)
+	if err != nil {
+		return nil
+	}
+
+	encKey, err := crypto.ParseKey(deps.Config.TokenEncryptionKey)
+	if err != nil {
+		slog.Error("google creds: invalid encryption key", "error", err)
+		return nil
+	}
+
+	accessToken, err := crypto.Decrypt(gToken.AccessTokenEnc, encKey)
+	if err != nil {
+		slog.Error("google creds: decrypt access token", "error", err)
+		return nil
+	}
+
+	refreshToken, err := crypto.Decrypt(gToken.RefreshTokenEnc, encKey)
+	if err != nil {
+		slog.Error("google creds: decrypt refresh token", "error", err)
+		return nil
+	}
+
+	// Build OAuth client credentials JSON (for gog auth credentials)
+	clientJSON := fmt.Sprintf(`{"installed":{"client_id":%q,"client_secret":%q,"auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token"}}`,
+		deps.Config.GoogleOAuthClientID, deps.Config.GoogleOAuthClientSecret)
+
+	// Build user token JSON (for gog auth import)
+	tokenJSON := fmt.Sprintf(`{"access_token":%q,"refresh_token":%q,"token_type":"Bearer","expiry":%q}`,
+		string(accessToken), string(refreshToken), gToken.TokenExpiry.Format("2006-01-02T15:04:05Z"))
+
+	return map[string]any{
+		"google_client_b64": base64.StdEncoding.EncodeToString([]byte(clientJSON)),
+		"google_token_b64":  base64.StdEncoding.EncodeToString([]byte(tokenJSON)),
+		"google_email":      gToken.GoogleEmail,
 	}
 }
 

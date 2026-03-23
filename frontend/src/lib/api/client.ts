@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/sveltekit';
-import type { DashboardState, ModelInfo, Snapshot, VpsInstance } from '$lib/types';
+import type { DashboardState, GoogleOAuthStatus, ModelInfo, Snapshot, VpsInstance } from '$lib/types';
 import { mockDashboardState } from './mock';
 import { getApiUrl } from '$lib/stores/config';
 
@@ -522,6 +522,44 @@ export async function runDoctor(token: string, instanceId: string): Promise<Doct
 	} finally {
 		clearTimeout(timeout);
 	}
+}
+
+// --- Google OAuth ---
+
+export async function getGoogleOAuthUrl(token: string): Promise<{ redirect_url: string }> {
+	if (USE_MOCK) {
+		return { redirect_url: '#' };
+	}
+
+	return apiFetch(
+		`${getApiUrl()}/api/oauth/google/authorize`,
+		{ headers: authHeaders(token) },
+		'getGoogleOAuthUrl'
+	);
+}
+
+export async function getGoogleOAuthStatus(token: string): Promise<GoogleOAuthStatus> {
+	if (USE_MOCK) {
+		return { connected: false };
+	}
+
+	return apiFetch(
+		`${getApiUrl()}/api/oauth/google/status`,
+		{ headers: authHeaders(token) },
+		'getGoogleOAuthStatus'
+	);
+}
+
+export async function disconnectGoogle(token: string): Promise<{ disconnected: boolean }> {
+	if (USE_MOCK) {
+		return { disconnected: true };
+	}
+
+	return apiFetch(
+		`${getApiUrl()}/api/oauth/google/disconnect`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'disconnectGoogle'
+	);
 }
 
 export async function createPortalSession(token: string, flow?: string): Promise<{ url: string }> {
