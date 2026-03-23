@@ -74,7 +74,7 @@ func openclawRPCKeepAlive(ctx context.Context, ipv4, authToken, method string, p
 				"mode":     "webchat",
 			},
 			"role":   "operator",
-			"scopes": []string{"operator.admin", "operator.approvals", "operator.pairing"},
+			"scopes": []string{"operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.pairing"},
 			"caps":   []string{"tool-events"},
 		},
 	}
@@ -239,7 +239,7 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 				"mode":     "webchat",
 			},
 			"role":   "operator",
-			"scopes": []string{"operator.admin", "operator.approvals", "operator.pairing"},
+			"scopes": []string{"operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.pairing"},
 			"caps":   []string{"tool-events"},
 		},
 	}
@@ -359,7 +359,7 @@ func openclawRPCWithEvents(ctx context.Context, ipv4, authToken, method string, 
 			"client": map[string]any{
 				"id": "openclaw-control-ui", "version": "1.0", "platform": "linux", "mode": "webchat",
 			},
-			"role": "operator", "scopes": []string{"operator.admin", "operator.approvals", "operator.pairing"},
+			"role": "operator", "scopes": []string{"operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.pairing"},
 			"caps": []string{"tool-events"},
 		},
 	}
