@@ -288,9 +288,10 @@ networks:
 COMPOSEEOF
 
 # --- Caddyfile ---
-# Caddy adds Authorization header so OpenClaw skips device pairing.
-# The Control UI JS reads the token from the URL hash fragment (#token=xxx)
-# for WebSocket connections. Caddy's header handles HTTP-level auth.
+# Caddy injects ?token=xxx into every request URL before proxying.
+# This is how OpenClaw authenticates WebSocket upgrades — it checks the URL
+# query param, NOT the Authorization header. With the token in the URL,
+# OpenClaw treats the connection as pre-authenticated (no device pairing).
 cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 {{- if .Domain}}
 {{.Domain}} {
@@ -299,9 +300,8 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 {{- end}}
 
-	reverse_proxy openclaw-gateway:18789 {
-		header_up Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
-	}
+	rewrite * {path}?token={env.OPENCLAW_AUTH_TOKEN}
+	reverse_proxy openclaw-gateway:18789
 }
 
 {{- if .Domain}}
