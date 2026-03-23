@@ -288,11 +288,9 @@ networks:
 COMPOSEEOF
 
 # --- Caddyfile ---
-# Cookie-based auth flow:
-# 1. User visits /?token=xxx → Caddy validates, sets oc_sess cookie, proxies with Authorization: Bearer
-# 2. Subsequent requests (JS, CSS, WebSocket) carry the cookie → Caddy proxies with Authorization: Bearer
-# 3. Static assets (/assets/*, favicon) are public (no secrets, just bundled JS/CSS)
-# 4. Unauthenticated requests get 401
+# Transparent reverse proxy: Caddy handles TLS only.
+# OpenClaw handles all auth via auth.mode:"token" + OPENCLAW_GATEWAY_TOKEN env var.
+# The user opens /?token=xxx → OpenClaw validates, manages sessions, serves Control UI.
 cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 {{- if .Domain}}
 {{.Domain}} {
@@ -301,51 +299,7 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
 {{- end}}
 
-	# Static assets - no auth needed (bundled JS/CSS/images)
-	# NOTE: /__openclaw__/* is NOT included here because the Control UI
-	# also uses that prefix for WebSocket connections. Those need the
-	# Authorization header, so they must go through @auth_cookie.
-	@static {
-		path /assets/* /favicon.* /apple-touch-icon.png
-	}
-	handle @static {
-		reverse_proxy openclaw-gateway:18789
-	}
-
-	# Health check - no auth
-	@health path /health
-	handle @health {
-		reverse_proxy openclaw-gateway:18789
-	}
-
-	# Auth via token query param - sets session cookie for subsequent requests
-	@auth_query {
-		query token={env.OPENCLAW_AUTH_TOKEN}
-	}
-	handle @auth_query {
-		header Set-Cookie "oc_sess={env.OPENCLAW_AUTH_TOKEN}; Path=/; Secure; HttpOnly; SameSite=None; Max-Age=86400"
-		reverse_proxy openclaw-gateway:18789 {
-			header_up Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
-			header_up Origin "https://localhost:18789"
-			header_up Connection {header.Connection}
-			header_up Upgrade {header.Upgrade}
-		}
-	}
-
-	# Auth via session cookie (WebSocket and subsequent page requests)
-	@auth_cookie {
-		expression {http.request.cookie.oc_sess} == {env.OPENCLAW_AUTH_TOKEN}
-	}
-	handle @auth_cookie {
-		reverse_proxy openclaw-gateway:18789 {
-			header_up Authorization "Bearer {env.OPENCLAW_AUTH_TOKEN}"
-			header_up Origin "https://localhost:18789"
-			header_up Connection {header.Connection}
-			header_up Upgrade {header.Upgrade}
-		}
-	}
-
-	respond 401
+	reverse_proxy openclaw-gateway:18789
 }
 
 {{- if .Domain}}

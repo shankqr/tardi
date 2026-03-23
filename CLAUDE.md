@@ -112,9 +112,9 @@ The gateway uses `auth.mode: "token"` with `OPENCLAW_GATEWAY_TOKEN` env var. Thi
 ```
 External (browser → Caddy → OpenClaw):
   1. User visits https://<domain>/?token=<OPENCLAW_AUTH_TOKEN>
-  2. Caddy validates token, sets oc_sess cookie
-  3. Caddy proxies to OpenClaw with: Authorization: Bearer <OPENCLAW_AUTH_TOKEN>
-  4. OpenClaw validates against OPENCLAW_GATEWAY_TOKEN env var → authenticated
+  2. Caddy is a transparent reverse proxy (TLS termination only)
+  3. OpenClaw receives /?token=xxx, validates against OPENCLAW_GATEWAY_TOKEN env var
+  4. OpenClaw manages its own session — subsequent requests authenticated internally
 
 Internal (agent tools → gateway):
   1. Agent calls ws://127.0.0.1:18789 for tool execution
@@ -122,8 +122,10 @@ Internal (agent tools → gateway):
 ```
 
 **Two tokens, same value:**
-- `OPENCLAW_AUTH_TOKEN` — used by Caddy for user-facing auth (cookie/query param validation) and passed to OpenClaw via `Authorization: Bearer` header
+- `OPENCLAW_AUTH_TOKEN` — stored in DB, sent to frontend for building the dashboard URL (`/?token=xxx`)
 - `OPENCLAW_GATEWAY_TOKEN` — read by OpenClaw for gateway token auth. Same value as `OPENCLAW_AUTH_TOKEN`
+
+**Important: Caddy must NOT add auth headers or manage sessions.** Previous attempts to have Caddy validate tokens, set cookies, and inject `Authorization: Bearer` headers caused "gateway token missing" errors because Caddy interfered with OpenClaw's own session/WebSocket auth flow. OpenClaw handles all auth itself via `auth.mode: "token"`.
 
 **Config in `openclaw.json`:**
 ```json
@@ -135,7 +137,7 @@ Internal (agent tools → gateway):
 }
 ```
 
-**Drift guard** (`heartbeat.go`): Runs every 5 minutes. If OpenClaw reverts auth mode on restart, the drift guard patches `openclaw.json` back to `token` mode, migrates Caddy's `X-Forwarded-User` header to `Authorization: Bearer` (one-time), and ensures `OPENCLAW_GATEWAY_TOKEN` is in `.env`.
+**Drift guard** (`heartbeat.go`): Runs every 5 minutes. If OpenClaw reverts auth mode on restart, the drift guard patches `openclaw.json` back to `token` mode and ensures `OPENCLAW_GATEWAY_TOKEN` is in `.env`.
 
 ### Telegram Config Issues — Root Causes & Fixes
 

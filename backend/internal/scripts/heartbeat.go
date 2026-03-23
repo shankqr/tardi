@@ -162,28 +162,73 @@ with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     fi
 fi
 
-# --- Caddy auth header migration (one-time) ---
-# Old config used X-Forwarded-User for trusted-proxy mode. Token mode needs
-# Authorization: Bearer header instead. Patch Caddyfile and restart Caddy.
-if grep -q 'X-Forwarded-User' /opt/openclaw/Caddyfile 2>/dev/null; then
-    OPENCLAW_TOKEN=$(grep '^OPENCLAW_AUTH_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
-    if [ -n "$OPENCLAW_TOKEN" ]; then
-        sed -i 's|header_up X-Forwarded-User owner|header_up Authorization "Bearer '"$OPENCLAW_TOKEN"'"|' /opt/openclaw/Caddyfile
-        cd /opt/openclaw && docker compose restart caddy 2>/dev/null
-    fi
-fi
-
 # Ensure OPENCLAW_GATEWAY_TOKEN is in .env (needed for token auth mode)
 if ! grep -q '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null; then
     OPENCLAW_TOKEN=$(grep '^OPENCLAW_AUTH_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
     [ -n "$OPENCLAW_TOKEN" ] && echo "OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_TOKEN" >> /opt/openclaw/.env
 fi
 
-# --- Remove /__openclaw__/* from Caddy static handler (one-time) ---
-# The Control UI uses /__openclaw__/* for WebSocket connections too. Having it
-# in the @static handler bypasses auth → "gateway token missing" error.
-if grep -q '__openclaw__' /opt/openclaw/Caddyfile 2>/dev/null; then
-    sed -i 's| /__openclaw__/\*||' /opt/openclaw/Caddyfile
+# --- Simplify Caddyfile: remove Caddy-level auth (one-time) ---
+# Old config had @auth_query/@auth_cookie matchers that added Authorization
+# headers. This interfered with OpenClaw's own token-based session management,
+# causing "gateway token missing" errors. OpenClaw handles auth itself via
+# auth.mode:"token" + OPENCLAW_GATEWAY_TOKEN env var — Caddy just needs to proxy.
+if grep -q 'respond 401\|@auth_query\|@auth_cookie\|oc_sess' /opt/openclaw/Caddyfile 2>/dev/null; then
+    # Detect domain vs IP-based setup
+    CADDY_DOMAIN=$(head -1 /opt/openclaw/Caddyfile | grep -oP '^[a-zA-Z0-9][\w.-]+\.[a-z]{2,}' || true)
+    PREVIEW_DOMAIN=$(grep -oP '^[a-zA-Z0-9][\w.-]+\.[a-z]{2,}' /opt/openclaw/Caddyfile | grep -v "^http" | tail -1 || true)
+    # Don't count the same domain twice
+    [ "$PREVIEW_DOMAIN" = "$CADDY_DOMAIN" ] && PREVIEW_DOMAIN=""
+
+    if [ -n "$CADDY_DOMAIN" ]; then
+        cat > /opt/openclaw/Caddyfile <<NEWCADDY
+${CADDY_DOMAIN} {
+	reverse_proxy openclaw-gateway:18789
+}
+
+http://${CADDY_DOMAIN} {
+	@health path /health
+	handle @health {
+		reverse_proxy openclaw-gateway:18789
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}
+NEWCADDY
+    else
+        cat > /opt/openclaw/Caddyfile <<'NEWCADDY'
+:443 {
+	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+	reverse_proxy openclaw-gateway:18789
+}
+
+:80 {
+	@health path /health
+	handle @health {
+		reverse_proxy openclaw-gateway:18789
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}
+NEWCADDY
+    fi
+
+    # Re-add preview domain block if it existed
+    if [ -n "$PREVIEW_DOMAIN" ]; then
+        cat >> /opt/openclaw/Caddyfile <<PREVCADDY
+
+${PREVIEW_DOMAIN} {
+	reverse_proxy localhost:3000
+}
+
+http://${PREVIEW_DOMAIN} {
+	redir https://{host}{uri} permanent
+}
+PREVCADDY
+    fi
+
     cd /opt/openclaw && docker compose restart caddy 2>/dev/null
 fi
 
