@@ -179,6 +179,14 @@ if ! grep -q '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null; then
     [ -n "$OPENCLAW_TOKEN" ] && echo "OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_TOKEN" >> /opt/openclaw/.env
 fi
 
+# --- Remove /__openclaw__/* from Caddy static handler (one-time) ---
+# The Control UI uses /__openclaw__/* for WebSocket connections too. Having it
+# in the @static handler bypasses auth → "gateway token missing" error.
+if grep -q '__openclaw__' /opt/openclaw/Caddyfile 2>/dev/null; then
+    sed -i 's| /__openclaw__/\*||' /opt/openclaw/Caddyfile
+    cd /opt/openclaw && docker compose restart caddy 2>/dev/null
+fi
+
 # Check for config changes
 REMOTE_VERSION=$(echo "$RESPONSE" | jq -r '.config_version // 0' 2>/dev/null)
 LOCAL_VERSION=$(cat /opt/openclaw/.config_version 2>/dev/null || echo "0")

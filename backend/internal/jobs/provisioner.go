@@ -289,8 +289,8 @@ COMPOSEEOF
 
 # --- Caddyfile ---
 # Cookie-based auth flow:
-# 1. User visits /?token=xxx → Caddy validates, sets oc_sess cookie, proxies with X-Forwarded-User
-# 2. Subsequent requests (JS, CSS, WebSocket) carry the cookie → Caddy proxies with X-Forwarded-User
+# 1. User visits /?token=xxx → Caddy validates, sets oc_sess cookie, proxies with Authorization: Bearer
+# 2. Subsequent requests (JS, CSS, WebSocket) carry the cookie → Caddy proxies with Authorization: Bearer
 # 3. Static assets (/assets/*, favicon) are public (no secrets, just bundled JS/CSS)
 # 4. Unauthenticated requests get 401
 cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
@@ -302,8 +302,11 @@ cat > /opt/openclaw/Caddyfile <<'CADDYEOF'
 {{- end}}
 
 	# Static assets - no auth needed (bundled JS/CSS/images)
+	# NOTE: /__openclaw__/* is NOT included here because the Control UI
+	# also uses that prefix for WebSocket connections. Those need the
+	# Authorization header, so they must go through @auth_cookie.
 	@static {
-		path /assets/* /favicon.* /apple-touch-icon.png /__openclaw__/*
+		path /assets/* /favicon.* /apple-touch-icon.png
 	}
 	handle @static {
 		reverse_proxy openclaw-gateway:18789
