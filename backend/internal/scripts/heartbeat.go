@@ -168,13 +168,14 @@ if ! grep -q '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null; then
     [ -n "$OPENCLAW_TOKEN" ] && echo "OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_TOKEN" >> /opt/openclaw/.env
 fi
 
-# --- Ensure Caddyfile has Authorization header (skips device pairing) ---
-# Caddy must add Authorization: Bearer header so OpenClaw treats connections as
-# pre-authenticated and skips device pairing. The Control UI JS reads the token
-# from the URL hash fragment (#token=xxx) for WebSocket connections separately.
-# Detect if Caddyfile needs rewriting: old auth matchers OR missing Auth header.
-if grep -q 'respond 401\|@auth_query\|@auth_cookie\|oc_sess' /opt/openclaw/Caddyfile 2>/dev/null || \
-   ! grep -q 'header_up Authorization' /opt/openclaw/Caddyfile 2>/dev/null; then
+# --- Ensure Caddyfile uses rewrite to inject token into URL ---
+# Caddy rewrites every request URL to append ?token=xxx before proxying.
+# This is how OpenClaw authenticates WebSocket upgrades — it checks the URL
+# query param, NOT the Authorization header. With the token in the URL,
+# OpenClaw treats the connection as pre-authenticated (no device pairing).
+# Detect if Caddyfile needs rewriting: old patterns OR missing rewrite directive.
+if grep -q 'respond 401\|@auth_query\|@auth_cookie\|oc_sess\|header_up Authorization' /opt/openclaw/Caddyfile 2>/dev/null || \
+   ! grep -q 'rewrite' /opt/openclaw/Caddyfile 2>/dev/null; then
     # Detect domain vs IP-based setup
     CADDY_DOMAIN=$(head -1 /opt/openclaw/Caddyfile | grep -oP '^[a-zA-Z0-9][\w.-]+\.[a-z]{2,}' || true)
     PREVIEW_DOMAIN=$(grep -oP '^[a-zA-Z0-9][\w.-]+\.[a-z]{2,}' /opt/openclaw/Caddyfile | grep -v "^http" | tail -1 || true)
@@ -186,9 +187,8 @@ if grep -q 'respond 401\|@auth_query\|@auth_cookie\|oc_sess' /opt/openclaw/Caddy
         if [ -n "$CADDY_DOMAIN" ]; then
             cat > /opt/openclaw/Caddyfile <<NEWCADDY
 ${CADDY_DOMAIN} {
-	reverse_proxy openclaw-gateway:18789 {
-		header_up Authorization "Bearer ${OPENCLAW_TOKEN}"
-	}
+	rewrite * {path}?token=${OPENCLAW_TOKEN}
+	reverse_proxy openclaw-gateway:18789
 }
 
 http://${CADDY_DOMAIN} {
@@ -205,9 +205,8 @@ NEWCADDY
             cat > /opt/openclaw/Caddyfile <<NEWCADDY
 :443 {
 	tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
-	reverse_proxy openclaw-gateway:18789 {
-		header_up Authorization "Bearer ${OPENCLAW_TOKEN}"
-	}
+	rewrite * {path}?token=${OPENCLAW_TOKEN}
+	reverse_proxy openclaw-gateway:18789
 }
 
 :80 {
