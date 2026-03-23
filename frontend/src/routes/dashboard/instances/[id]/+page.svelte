@@ -41,7 +41,8 @@
 	let restarting = $state(false);
 	let resettingPassword = $state(false);
 	let actionError = $state<string | null>(null);
-	let showPassword = $state(false);
+	let revealedPassword = $state<string | null>(null);
+	let hidePasswordTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Rename state
 	let editing = $state(false);
@@ -240,20 +241,31 @@
 		}
 	}
 
-	async function handleResetPassword() {
+	async function handleShowPassword() {
 		if (!instance) return;
 		resettingPassword = true;
 		actionError = null;
 		try {
 			const token = await getIdToken();
 			if (!token) throw new Error('Not authenticated');
-			await resetPassword(token, instance.id);
-			await refreshDashboard();
-			showPassword = true;
+			const result = await resetPassword(token, instance.id);
+			revealedPassword = result.root_password;
+			if (hidePasswordTimer) clearTimeout(hidePasswordTimer);
+			hidePasswordTimer = setTimeout(() => {
+				revealedPassword = null;
+			}, 30_000);
 		} catch (err) {
-			actionError = err instanceof Error ? err.message : 'Password reset failed';
+			actionError = err instanceof Error ? err.message : 'Show password failed';
 		} finally {
 			resettingPassword = false;
+		}
+	}
+
+	function hidePassword() {
+		revealedPassword = null;
+		if (hidePasswordTimer) {
+			clearTimeout(hidePasswordTimer);
+			hidePasswordTimer = null;
 		}
 	}
 
@@ -866,43 +878,44 @@
 														</button>
 													</dd>
 												</div>
-												{#if instance.root_password}
-													<div>
-														<dt class="text-gray-500">Root Password</dt>
-														<dd class="mt-1 flex items-center gap-2">
+												<div>
+													<dt class="text-gray-500">Root Password</dt>
+													<dd class="mt-1 flex items-center gap-2">
+														{#if revealedPassword}
 															<code class="flex-1 rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">
-																{showPassword ? instance.root_password : '••••••••••••'}
+																{revealedPassword}
 															</code>
 															<button
-																onclick={() => (showPassword = !showPassword)}
-																class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
+																onclick={() => navigator.clipboard.writeText(revealedPassword ?? '')}
+																class="rounded-md border border-gray-300 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+																title="Copy password"
 															>
-																{showPassword ? 'Hide' : 'Show'}
+																<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+																	<path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+																	<path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+																</svg>
 															</button>
 															<button
-																onclick={() => navigator.clipboard.writeText(instance.root_password ?? '')}
+																onclick={hidePassword}
 																class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
 															>
-																Copy
+																Hide
 															</button>
-														</dd>
-													</div>
-												{:else}
-													<div>
-														<dt class="text-gray-500">Root Password</dt>
-														<dd class="mt-1 text-xs text-gray-400">No password stored. Use Reset Password to generate one.</dd>
-													</div>
-												{/if}
+														{:else}
+															<code class="flex-1 rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-400">
+																••••••••••••
+															</code>
+															<button
+																onclick={handleShowPassword}
+																disabled={resettingPassword || instance.status !== 'active'}
+																class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+															>
+																{resettingPassword ? 'Resetting...' : 'Show'}
+															</button>
+														{/if}
+													</dd>
+												</div>
 											</dl>
-											<div class="mt-4 border-t border-gray-100 pt-3">
-												<button
-													onclick={handleResetPassword}
-													disabled={resettingPassword || instance.status !== 'active'}
-													class="text-xs text-gray-500 hover:text-gray-700 disabled:opacity-50"
-												>
-													{resettingPassword ? 'Resetting...' : 'Reset Password'}
-												</button>
-											</div>
 										</div>
 									{/if}
 

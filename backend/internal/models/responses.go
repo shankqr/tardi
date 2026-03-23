@@ -58,7 +58,7 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 		Region:    inst.Region,
 		CreatedAt: inst.CreatedAt.Format(time.RFC3339),
 	}
-	r.RootPassword = inst.RootPassword
+	// root_password intentionally omitted — frontend fetches via reset endpoint
 	r.AgentStatus = inst.AgentStatus
 	r.OpenClawAuthToken = inst.OpenClawAuthToken
 	r.OpenClawVersion = inst.OpenClawVersion
