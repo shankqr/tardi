@@ -62,11 +62,14 @@ cfg.get('gateway', {}).pop('trustedProxies', None)
 with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     json.dump(cfg, f, indent=2)
 " 2>/dev/null || true
-    # Stop old stack (including caddy) and start new single-container stack
-    cd /opt/openclaw && docker compose down 2>/dev/null; docker compose up -d 2>/dev/null || true
-    # Clean up old Caddy files
+    # Force-remove orphaned Caddy container (may not be in new compose file)
+    docker rm -f openclaw-caddy 2>/dev/null || true
+    # Stop old stack and start new single-container stack
+    cd /opt/openclaw && docker compose down --remove-orphans 2>/dev/null; docker compose up -d 2>/dev/null || true
+    # Clean up old Caddy files and image
     rm -f /opt/openclaw/Caddyfile
     rm -rf /opt/openclaw/certs /opt/openclaw/caddy
+    docker image rm caddy:2-alpine 2>/dev/null || true
 fi
 
 # Check OpenClaw gateway health
@@ -138,6 +141,12 @@ if [ "$STATUS" = "running" ]; then
             fi
         fi
     fi
+fi
+
+# --- Remove orphaned Caddy container if still running ---
+if docker ps -q -f name=openclaw-caddy 2>/dev/null | grep -q .; then
+    docker rm -f openclaw-caddy 2>/dev/null || true
+    docker image rm caddy:2-alpine 2>/dev/null || true
 fi
 
 # --- iptables NAT drift guard (runs every heartbeat) ---
