@@ -20,7 +20,6 @@ import (
 	"github.com/shanq/tardi/internal/dns"
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
-	"github.com/shanq/tardi/internal/scripts"
 )
 
 // frameworkCodes maps agent framework names to short codes for server naming.
@@ -59,7 +58,6 @@ type CloudInitData struct {
 	TelegramBotToken   string // Optional Telegram bot token
 	Domain             string // Optional domain for Cloudflare Proxy (e.g. "abc12345.tardi.ai"); empty = IP-only access
 	PreviewDomain      string // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
-	HeartbeatScript    string // Latest heartbeat bash script (from scripts.HeartbeatScript)
 	BackendEgressCIDRs string // Comma-separated CIDRs for backend egress IPs (restricts UFW SSH + OpenClaw access)
 	AllModelIDs        []string // All enabled model IDs from Tardi catalog (for OC dashboard dropdown)
 }
@@ -298,10 +296,14 @@ RestartSec=30
 WantedBy=multi-user.target
 SVCEOF
 
-# --- Heartbeat script (from shared constant, always up-to-date) ---
-cat > /opt/openclaw/heartbeat.sh <<'HBEOF'
-{{.HeartbeatScript}}HBEOF
-chmod +x /opt/openclaw/heartbeat.sh
+# --- Heartbeat script (downloaded from backend API to keep cloud-init under 32KB) ---
+for i in $(seq 1 10); do
+    if curl -sf -H "Authorization: Bearer {{.AgentToken}}" "{{.APIURL}}/api/agent/heartbeat-script" -o /opt/openclaw/heartbeat.sh; then
+        chmod +x /opt/openclaw/heartbeat.sh
+        break
+    fi
+    sleep 5
+done
 
 # --- Heartbeat systemd timer (every 5 minutes) ---
 cat > /etc/systemd/system/openclaw-heartbeat.service <<'HBSVCEOF'
@@ -605,7 +607,6 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		SSHPublicKey:       p.sshPublicKey,
 		Domain:             domain,
 		PreviewDomain:      previewDomain,
-		HeartbeatScript:    scripts.HeartbeatScript,
 		BackendEgressCIDRs: p.backendEgressCIDRs,
 	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, p.pool, inst.ID)

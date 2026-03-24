@@ -71,6 +71,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	// Agent phone-home endpoints (agent token auth, handled inside handlers)
 	mux.HandleFunc("GET /api/agent/config", AgentConfigHandler(deps))
 	mux.HandleFunc("POST /api/agent/heartbeat", AgentHeartbeatHandler(deps))
+	mux.HandleFunc("GET /api/agent/heartbeat-script", AgentHeartbeatScriptHandler(deps))
 
 	// Admin endpoints (admin token auth)
 	adminMux := http.NewServeMux()

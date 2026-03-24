@@ -16,6 +16,7 @@ import (
 	"github.com/shanq/tardi/internal/crypto"
 	"github.com/shanq/tardi/internal/db"
 	"github.com/shanq/tardi/internal/models"
+	"github.com/shanq/tardi/internal/scripts"
 )
 
 // AgentConfigHandler returns the agent configuration for a VPS instance.
@@ -337,6 +338,27 @@ func UpdateAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 			"config":  saved.Config,
 			"version": saved.Version,
 		})
+	}
+}
+
+// AgentHeartbeatScriptHandler serves the latest heartbeat bash script.
+// Called by cloud-init at boot and by config sync to keep the script fresh.
+// Authenticated by agent token.
+func AgentHeartbeatScriptHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := extractAgentToken(r)
+		if token == "" {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "missing agent token")
+			return
+		}
+
+		if _, err := db.GetInstanceByAgentToken(r.Context(), deps.Pool, token); err != nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "invalid agent token")
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/x-shellscript")
+		w.Write([]byte(scripts.HeartbeatScript))
 	}
 }
 

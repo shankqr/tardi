@@ -13,7 +13,6 @@ import (
 	"github.com/shanq/tardi/internal/dns"
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
-	"github.com/shanq/tardi/internal/scripts"
 )
 
 const (
@@ -169,7 +168,6 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		OpenClawImageTag:   resolveImageTag(ctx, u.pool, u.openClawImageTag),
 		RootPassword:       rootPassword,
 		SSHPublicKey:       u.sshPublicKey,
-		HeartbeatScript:    scripts.HeartbeatScript,
 		BackendEgressCIDRs: u.backendEgressCIDRs,
 	}
 

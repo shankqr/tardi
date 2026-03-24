@@ -11,7 +11,6 @@ import (
 	"github.com/shanq/tardi/internal/db"
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
-	"github.com/shanq/tardi/internal/scripts"
 )
 
 const (
@@ -129,7 +128,6 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		OpenClawAuthToken:  openClawAuthToken,
 		OpenClawImageTag:   resolveImageTag(ctx, r.pool, r.openClawImageTag),
 		SSHPublicKey:       r.sshPublicKey,
-		HeartbeatScript:    scripts.HeartbeatScript,
 		BackendEgressCIDRs: r.backendEgressCIDRs,
 	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, r.pool, inst.ID)

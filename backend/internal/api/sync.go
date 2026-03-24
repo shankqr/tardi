@@ -13,24 +13,23 @@ import (
 
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/db"
-	"github.com/shanq/tardi/internal/scripts"
 	"github.com/shanq/tardi/internal/sshexec"
 )
 
 // buildConfigSyncScript returns the inline config-sync script run via SSH.
-// It embeds the latest heartbeat script so that old VPSes get updated
-// heartbeat code (with Telegram drift guard) on every sync.
+// It downloads the latest heartbeat script from the backend API so that
+// old VPSes get updated heartbeat code (with Telegram drift guard) on every sync.
 func buildConfigSyncScript() string {
 	return `#!/bin/bash
 set -euo pipefail
 
-# Update heartbeat script to latest version (fixes stale heartbeat on old VPSes)
-cat > /opt/openclaw/heartbeat.sh <<'HBEOF'
-` + scripts.HeartbeatScript + `HBEOF
-chmod +x /opt/openclaw/heartbeat.sh
 # Source only the vars we need (full source breaks on unquoted values with spaces)
 export API_URL=$(grep '^API_URL=' /opt/openclaw/.env | cut -d= -f2-)
 export AGENT_TOKEN=$(grep '^AGENT_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
+
+# Update heartbeat script to latest version (downloaded from backend API)
+curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/heartbeat-script" -o /opt/openclaw/heartbeat.sh
+chmod +x /opt/openclaw/heartbeat.sh
 
 CONFIG=$(curl -sf "${API_URL}/api/agent/config" \
     -H "Authorization: Bearer ${AGENT_TOKEN}" 2>/dev/null)
