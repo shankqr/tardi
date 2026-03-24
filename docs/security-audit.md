@@ -1,8 +1,8 @@
 # Security Audit — Tardi VPS Single-Container Architecture
 
-> **Date:** 2026-03-24
+> **Date:** 2026-03-24 (updated)
 > **Scope:** Full security analysis of the single-container VPS architecture with host networking and Cloudflare Proxy TLS termination.
-> **Codebase state:** Post-UFW hardening (commit `a76aba6` — port 18789 restricted to Cloudflare IPs, port 22 restricted to backend egress CIDRs).
+> **Codebase state:** Post-SSH hardening (commit `0aba4d7` — SSH key-based auth only, password auth disabled, port 18789 restricted to Cloudflare IPs, port 22 restricted to backend egress CIDRs).
 
 ---
 
@@ -25,7 +25,7 @@ Internet → Cloudflare (TLS) → VPS:80 (HTTP) → iptables NAT → 0.0.0.0:187
 |---|---|---|---|---|
 | VPS :80 (HTTP via Cloudflare) | OpenClaw token (hash fragment) | Cloudflare edge TLS | Internet via Cloudflare | **OK** — protected by Cloudflare proxy |
 | VPS :18789 (WebSocket direct) | OpenClaw token in URL query | **None (plaintext ws://)** | Cloudflare IPs + backend egress CIDRs | **HARDENED** — no longer open to all |
-| VPS :22 (SSH) | Root password (24-char hex) | SSH encryption | Backend egress CIDRs (or all if unconfigured) | **PARTIAL** — needs `BACKEND_EGRESS_CIDRS` |
+| VPS :22 (SSH) | Ed25519 key (backend only) | SSH encryption | Backend egress CIDRs (or all if unconfigured) | **HARDENED** — key-only auth, password disabled |
 | Backend API (Cloud Run) | Firebase JWT | Cloud Run TLS | Internet | **OK** |
 | Backend → VPS RPC | Token in `ws://` URL | **None** | Cloud Run → internet → VPS | **RISK** — plaintext token on wire |
 | Agent → Backend heartbeat | Agent token Bearer | HTTPS | VPS → Cloud Run | **OK** |
@@ -42,8 +42,8 @@ Internet → Cloudflare (TLS) → VPS:80 (HTTP) → iptables NAT → 0.0.0.0:187
 | 80/tcp | ALLOW | Anywhere | Receives Cloudflare Proxy traffic (HTTP Flexible SSL) |
 | 18789 | ALLOW | Cloudflare IPv4 CIDRs | NAT'd port-80 traffic (PREROUTING rewrites dest to 18789 before UFW INPUT) |
 | 18789 | ALLOW | `BACKEND_EGRESS_CIDRS` | Backend WebSocket RPC (direct to VPS IP) |
-| 22/tcp | ALLOW | `BACKEND_EGRESS_CIDRS` | SSH config sync (when CIDRs configured) |
-| 22/tcp | ALLOW | Anywhere | SSH fallback (when `BACKEND_EGRESS_CIDRS` not set) |
+| 22/tcp | ALLOW | `BACKEND_EGRESS_CIDRS` | SSH config sync (when CIDRs configured). Key-based auth only — password disabled at sshd level |
+| 22/tcp | ALLOW | Anywhere | SSH fallback (when `BACKEND_EGRESS_CIDRS` not set). Still key-only — password brute force not possible |
 | All others | DENY | — | Default deny incoming |
 
 **Files:**
@@ -94,7 +94,8 @@ Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker co
 | AGENT_TOKEN (64-char hex) | `crypto/rand` at provisioning | DB: `agent_token_secret_name` (plaintext) | None | Never |
 | OPENCLAW_AUTH_TOKEN (64-char hex) | `crypto/rand` at provisioning | DB: `openclaw_auth_token` (plaintext) | None | Never |
 | OPENCLAW_GATEWAY_TOKEN | Same value as OPENCLAW_AUTH_TOKEN | VPS: `/opt/openclaw/.env` (chmod 600) | None | Never |
-| Root Password (24-char hex) | `crypto/rand` at provisioning | DB: `root_password` (plaintext) | None | Never |
+| Root Password (24-char hex) | `crypto/rand` at provisioning | DB: `root_password` (plaintext) | None | Never — **no longer used for SSH** (password auth disabled) |
+| SSH Private Key (Ed25519) | One-time manual generation | GCP Secret Manager (base64 PEM) | Manual | Never |
 | Firebase JWT | Firebase Auth SDK | Client-side (browser) | Automatic | ~1 hour |
 | Google OAuth tokens | OAuth2 flow | DB: AES-256-GCM encrypted | Auto-refresh by token_refresh job | Access: 1 hour, Refresh: long-lived |
 | Admin API token | Manual configuration | Environment variable | Manual | Never |
@@ -126,8 +127,12 @@ Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker co
 ### 3d. Backend → VPS (SSH + WebSocket RPC)
 
 **SSH:**
-- Root user, password auth, `InsecureIgnoreHostKey()`
-- No host key pinning (MITM-able on network path)
+- Root user, Ed25519 key-based auth (password auth disabled on VPS)
+- Private key stored in GCP Secret Manager, mounted as `SSH_PRIVATE_KEY` env var on Cloud Run
+- Public key injected into `/root/.ssh/authorized_keys` via cloud-init (new VPSes) and ScriptPusher (existing)
+- `PermitRootLogin prohibit-password` + `PasswordAuthentication no` enforced by heartbeat drift guard
+- `InsecureIgnoreHostKey()` — no host key pinning (MITM-able on network path)
+- Password fallback still in code for transition safety, but VPS sshd rejects password auth
 - Used for: config sync, script push, dashboard token generation, status checks
 
 **WebSocket RPC:**
@@ -168,18 +173,19 @@ Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker co
 | File | Permissions | Contents |
 |---|---|---|
 | `/opt/openclaw/.env` | 600 (owner-only) | AGENT_TOKEN, OPENCLAW_AUTH_TOKEN, OPENCLAW_GATEWAY_TOKEN, API keys, TELEGRAM_BOT_TOKEN, BACKEND_EGRESS_CIDRS |
+| `/root/.ssh/authorized_keys` | 600 (root-only) | Backend Ed25519 public key (same key across all VPSes) |
 | `/opt/openclaw/data/openclaw/openclaw.json` | 1000:1000 | Gateway auth token (written by OpenClaw), auth mode, Control UI settings |
 | `/opt/openclaw/data/openclaw/.config/gogcli/` | 600 | Google OAuth credentials.json and refresh tokens (base64-decoded) |
 
 ### 4b. Database Secrets (plaintext)
 
 These are stored **unencrypted** in PostgreSQL:
-- `root_password` — SSH root password for every VPS
+- `root_password` — root password set during provisioning. **No longer grants SSH access** (password auth disabled on VPS sshd). Kept in DB for Hetzner API compatibility but unused operationally.
 - `openclaw_auth_token` — OpenClaw gateway auth token
 - `agent_token_secret_name` — VPS heartbeat auth token (field name is misleading — stores plaintext, not a secret manager reference)
 
-**Risk:** A database breach exposes root SSH access to **all active VPS instances**.
-**Recommendation:** Encrypt with GCP KMS envelope encryption. Decrypt only when needed.
+**Risk (reduced):** A database breach no longer exposes SSH access (key is in Secret Manager, not DB). However, `openclaw_auth_token` still grants OpenClaw dashboard access.
+**Recommendation:** Encrypt tokens with GCP KMS envelope encryption. Decrypt only when needed.
 
 ### 4c. Google OAuth Token Encryption
 
@@ -300,33 +306,43 @@ OAuth callback sends result to **any opener window**. A malicious page that open
 
 ## 7. SSH Security
 
-### 7a. Root Password Auth Enabled
+### 7a. Key-Based Auth Only (password auth disabled)
 
-- `PermitRootLogin yes` + `PasswordAuthentication yes` in sshd_config
-- Cloud-init sets password via `chpasswd`
-- Heartbeat re-enables password auth every 5 minutes (overrides cloud-init's default disable)
-- No `fail2ban` or SSH rate limiting
+- `PermitRootLogin prohibit-password` + `PasswordAuthentication no` in sshd_config
+- Ed25519 public key injected into `/root/.ssh/authorized_keys` during cloud-init
+- Private key stored in GCP Secret Manager (`SSH_PRIVATE_KEY`), mounted on Cloud Run
+- Single key pair for all VPSes (blast radius equivalent to backend compromise)
+- Root password still set via `chpasswd` (Hetzner API compat) but **sshd rejects password auth**
+- No `fail2ban` needed — password brute force not possible with key-only auth
 
 **Files:**
-- Cloud-init: `backend/internal/jobs/provisioner.go` lines 120-124
-- Heartbeat: `backend/internal/scripts/heartbeat.go` lines 14-20
+- Cloud-init: `backend/internal/jobs/provisioner.go` (SSH key injection + sshd config)
+- Config: `backend/internal/config/config.go` (key loading + public key derivation)
+- SSH client: `backend/internal/sshexec/exec.go` (key auth first, password fallback)
 
-### 7b. InsecureIgnoreHostKey
+### 7b. SSH Key Drift Guard
 
-`ssh.InsecureIgnoreHostKey()` — no host key verification. MITM attack on the network path between Cloud Run and VPS can intercept root password.
+- Heartbeat checks if old `PasswordAuthentication yes` config exists
+- Only flips to `no` if `/root/.ssh/authorized_keys` has content (safety check to avoid lockout)
+- ScriptPusher injects public key + disables password auth when pushing heartbeat scripts to existing VPSes
+
+**File:** `backend/internal/scripts/heartbeat.go` lines 14-25
+
+### 7c. InsecureIgnoreHostKey
+
+`ssh.InsecureIgnoreHostKey()` — no host key verification. MITM on the Cloud Run → VPS path could intercept the SSH session. Risk is **reduced** with key-based auth (attacker cannot steal a reusable password) but session hijacking is still possible.
 
 **Recommendation:** Record host key at provisioning time (first SSH connection or Hetzner API) and verify on subsequent connections.
 
 **File:** `backend/internal/sshexec/exec.go` line 20
 
-### 7c. SSH Access Control (current state)
+### 7d. SSH Access Control (current state)
 
 - **With `BACKEND_EGRESS_CIDRS` set:** UFW restricts port 22 to backend egress IPs only
-- **Without `BACKEND_EGRESS_CIDRS`:** Port 22 open to all sources (fallback)
-- No SSH key auth — password only
-- Password is 24-char hex (~96 bits entropy) — strong against online brute force
+- **Without `BACKEND_EGRESS_CIDRS`:** Port 22 open to all sources — but only key auth accepted, so brute force is not feasible
+- **Defense in depth:** Even without CIDR restriction, an attacker needs the Ed25519 private key (stored only in GCP Secret Manager)
 
-**Action needed:** Configure Cloud NAT with static egress IP and set `BACKEND_EGRESS_CIDRS` env var on Cloud Run to lock down SSH.
+**Recommended improvement:** Configure Cloud NAT with static egress IP and set `BACKEND_EGRESS_CIDRS` to restrict port 22 at the firewall level as well.
 
 ---
 
@@ -336,7 +352,7 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 
 | Guard | What it checks | What it fixes |
 |---|---|---|
-| SSH password auth | `/etc/ssh/sshd_config.d/60-tardi.conf` exists | Rewrites and restarts sshd |
+| SSH key-only auth | `PasswordAuthentication yes` in `60-tardi.conf` (old config) | Flips to `no` + `prohibit-password` if authorized_keys has content |
 | iptables NAT | `PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789` | Adds rule and saves |
 | UFW hardening | Blanket `18789/tcp ALLOW Anywhere` exists | Replaces with per-Cloudflare-CIDR rules |
 | Cloudflare IPs | Marker file older than 24 hours | Fetches and adds new CIDRs |
@@ -360,7 +376,8 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 |---|---|---|---|---|
 | AGENT_TOKEN | Provisioning | Never | Instance deletion | Never |
 | OPENCLAW_AUTH_TOKEN | Provisioning | Never | Instance deletion | Never |
-| Root Password | Provisioning | Never | Instance deletion | Never |
+| Root Password | Provisioning | Never | Instance deletion | Never — **unused** (password auth disabled) |
+| SSH Private Key | One-time manual | Manual | Secret Manager version delete | Never |
 | Dashboard Device Token | On-demand (`/dashboard-token`) | Each request generates new | Previous stays valid | Never |
 | Firebase JWT | User login | Automatic (Firebase SDK) | User logout / Firebase admin | ~1 hour |
 | Google OAuth Access | OAuth flow | `token_refresh` job | User disconnects Google | 1 hour |
@@ -394,7 +411,9 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 | # | Finding | Status |
 |---|---|---|
 | ~~1~~ | ~~Port 18789 open to all sources~~ | **FIXED** — Restricted to Cloudflare + backend egress CIDRs |
-| ~~2~~ | ~~SSH open to all sources~~ | **PARTIAL** — Restricted when `BACKEND_EGRESS_CIDRS` set, open otherwise |
+| ~~2~~ | ~~SSH open to all sources with password auth~~ | **FIXED** — Key-based auth only (Ed25519), password auth disabled. UFW restricts to backend CIDRs when configured. |
+| ~~3~~ | ~~Root passwords in DB grant SSH access~~ | **FIXED** — Passwords still in DB but sshd rejects password auth. SSH key in Secret Manager only. |
+| ~~4~~ | ~~SSH password/IP exposed in frontend UI~~ | **FIXED** — SSH access section removed from dashboard |
 
 ### CRITICAL (requires immediate action)
 
@@ -408,12 +427,12 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 | # | Finding | File | Recommendation |
 |---|---|---|---|
 | 3 | Backend→VPS RPC over plaintext `ws://` (token on wire) | `whatsapp.go:191` | Route through Cloudflare domain (`wss://`) or WireGuard tunnel |
-| 4 | SSH `InsecureIgnoreHostKey()` enables MITM | `exec.go:20` | Pin host key at provisioning time |
-| 5 | Root passwords stored plaintext in DB | DB schema | KMS envelope encryption |
+| 4 | SSH `InsecureIgnoreHostKey()` enables MITM | `exec.go:20` | Pin host key at provisioning time (risk reduced — key auth means no password to steal, but session hijack still possible) |
+| 5 | OpenClaw tokens stored plaintext in DB | DB schema | KMS envelope encryption (root password risk eliminated — no longer grants SSH) |
 | 6 | OAuth state in-memory (multi-instance CSRF) | `google_oauth.go:36-52` | HMAC-signed state tokens or DB |
 | 7 | Rate limiter uses `RemoteAddr` (broken behind proxy) | `ratelimit.go:18` | Use `X-Forwarded-For` |
 | 8 | No container resource limits | `provisioner.go` compose template | Add `mem_limit`, `cpus`, `pids_limit` |
-| 9 | Complete SSH lockdown pending | UFW rules | Configure Cloud NAT + set `BACKEND_EGRESS_CIDRS` |
+| 9 | UFW SSH restriction needs `BACKEND_EGRESS_CIDRS` | UFW rules | Configure Cloud NAT + set `BACKEND_EGRESS_CIDRS` (defense-in-depth — key auth already prevents unauthorized access) |
 | 10 | Port 80 still open to all sources (direct IP bypass possible) | `provisioner.go:99` | Restrict to Cloudflare IPs (same as 18789) |
 
 ### MEDIUM (address within 1 month)
@@ -442,18 +461,18 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 ## 12. Recommended Remediation Order
 
 ### Phase 1 — Immediate (before next user onboarding)
-1. Configure Cloud NAT with static egress IP → set `BACKEND_EGRESS_CIDRS` → complete SSH lockdown
+1. ~~Configure SSH key-based auth~~ — **DONE** (Ed25519 key auth, password disabled)
 2. Restrict port 80 to Cloudflare IPs (same approach as 18789)
 3. Fix rate limiter to use `X-Forwarded-For`
 
 ### Phase 2 — Short-term (1-2 weeks)
 4. Add container resource limits (`mem_limit: 3g`, `cpus: 3`, `pids_limit: 512`)
-5. Encrypt root passwords and tokens in DB with KMS
+5. Encrypt OpenClaw tokens in DB with KMS (root password no longer security-critical)
 6. Fix OAuth state store (HMAC-signed tokens)
 7. Pin SSH host keys at provisioning
 8. Fix `postMessage('*')` in OAuth callback
 9. Add rate limiter cleanup goroutine
-10. Add `fail2ban` for SSH in cloud-init
+10. Configure Cloud NAT with static egress IP → set `BACKEND_EGRESS_CIDRS` (defense-in-depth for SSH + 18789)
 
 ### Phase 3 — Medium-term (1 month)
 11. Docker socket proxy to restrict container API access
@@ -467,11 +486,15 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 
 ## 13. Verification Checklist
 
+- [x] **SSH password auth rejected** — `ssh -o PreferredAuthentications=password root@<ip>` returns `Permission denied (publickey,password)`
+- [x] **SSH key auth works** — `ssh -i <private-key> root@<ip>` succeeds
+- [x] **sshd config enforced** — `/etc/ssh/sshd_config.d/60-tardi.conf` contains `PasswordAuthentication no`, `PubkeyAuthentication yes`, `PermitRootLogin prohibit-password`
+- [x] **authorized_keys populated** — `/root/.ssh/authorized_keys` contains the Ed25519 public key
 - [ ] **Port scan** a VPS from external IP — only 80 should respond from arbitrary IPs
 - [ ] **Direct WebSocket** to `ws://<vps-ip>:18789/health` from non-Cloudflare IP — should be blocked by UFW
 - [ ] **Direct WebSocket** from Cloudflare IP range — should succeed (for NAT'd traffic)
-- [ ] **SSH** from non-backend IP — should be blocked when `BACKEND_EGRESS_CIDRS` is set
+- [ ] **SSH from non-backend IP** — should be blocked when `BACKEND_EGRESS_CIDRS` is set (even without it, key auth prevents unauthorized access)
 - [ ] **Rate limiter test** — verify different clients get independent rate limit buckets
 - [ ] **Cloud-init logs** — check `/var/log/cloud-init-output.log` permissions
 - [ ] **Cloudflare IP refresh** — verify `find /opt/openclaw/.cf_ufw_updated -mmin +1440` triggers refresh
-- [ ] **Token in DB** — verify `root_password` and `openclaw_auth_token` columns contain plaintext (confirms encryption needed)
+- [ ] **Token in DB** — verify `openclaw_auth_token` columns contain plaintext (confirms encryption needed)
