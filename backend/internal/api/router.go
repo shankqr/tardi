@@ -53,6 +53,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("POST /api/instances/{id}/telegram/disconnect", TelegramDisconnectHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/telegram/cleanup", TelegramCleanupHandler(deps))
 	authedMux.HandleFunc("GET /api/instances/{id}/diagnostics", DiagnosticsHandler(deps))
+	authedMux.HandleFunc("POST /api/instances/{id}/dashboard-token", DashboardTokenHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/doctor", DoctorHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/sync-config", SyncConfigHandler(deps))
 	authedMux.HandleFunc("GET /api/instances/{id}/sync-status", SyncStatusHandler(deps))

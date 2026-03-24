@@ -20,14 +20,13 @@ import (
 // response. This is needed for web.login.start because OpenClaw cancels the
 // pending WhatsApp login session when the operator WebSocket disconnects.
 func openclawRPCKeepAlive(ctx context.Context, ipv4, authToken, method string, params any, keepAliveDuration time.Duration, instanceID string) (json.RawMessage, error) {
-	url := fmt.Sprintf("ws://%s:18789/", ipv4)
+	url := fmt.Sprintf("ws://%s:18789/?token=%s", ipv4, authToken)
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	headers := http.Header{"X-Forwarded-User": []string{"tardi-backend"}}
-	conn, _, err := dialer.DialContext(ctx, url, headers)
+	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("websocket dial: %w", err)
 	}
@@ -189,14 +188,13 @@ func openclawRPCKeepAlive(ctx context.Context, ipv4, authToken, method string, p
 // OpenClaw uses a custom protocol: requests are {"type":"req","id":"...","method":"...","params":{...}}
 // and responses are {"type":"res","id":"...","ok":true/false,"payload":{...},"error":{...}}.
 func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any) (json.RawMessage, error) {
-	url := fmt.Sprintf("ws://%s:18789/", ipv4)
+	url := fmt.Sprintf("ws://%s:18789/?token=%s", ipv4, authToken)
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	headers := http.Header{"X-Forwarded-User": []string{"tardi-backend"}}
-	conn, _, err := dialer.DialContext(ctx, url, headers)
+	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("websocket dial: %w", err)
 	}
@@ -321,14 +319,13 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 // a named event (e.g. "health") that arrives before the RPC response.
 // Returns (rpcResult, eventPayload, error). eventPayload is nil if no matching event arrived.
 func openclawRPCWithEvents(ctx context.Context, ipv4, authToken, method string, params any, captureEvent string) (json.RawMessage, json.RawMessage, error) {
-	url := fmt.Sprintf("ws://%s:18789/", ipv4)
+	url := fmt.Sprintf("ws://%s:18789/?token=%s", ipv4, authToken)
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	headers := http.Header{"X-Forwarded-User": []string{"tardi-backend"}}
-	conn, _, err := dialer.DialContext(ctx, url, headers)
+	conn, _, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("websocket dial: %w", err)
 	}

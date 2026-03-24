@@ -146,9 +146,9 @@ chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
 # bind=lan: listen on 0.0.0.0 (host network exposes directly)
-# auth=trusted-proxy: OpenClaw trusts X-Forwarded-User header from Cloudflare proxy.
-#   Grants full operator scopes without tokens. Internal tool calls (loopback)
-#   also work because OpenClaw trusts all connections in this mode.
+# auth=token: OpenClaw reads OPENCLAW_GATEWAY_TOKEN from env.
+#   Internal tool calls authenticate automatically (OpenClaw knows its own token).
+# No trustedProxies — host networking, no reverse proxy in the path.
 cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
 {
   "gateway": {
@@ -159,7 +159,7 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
       "allowInsecureAuth": true
     },
     "auth": {
-      "mode": "trusted-proxy"
+      "mode": "token"
     }
   },
   "channels": {
@@ -181,6 +181,7 @@ AGENT_TOKEN={{.AgentToken}}
 API_URL={{.APIURL}}
 INSTANCE_ID={{.InstanceID}}
 OPENCLAW_AUTH_TOKEN={{.OpenClawAuthToken}}
+OPENCLAW_GATEWAY_TOKEN={{.OpenClawAuthToken}}
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
 NODE_ENV=production
 ENVEOF

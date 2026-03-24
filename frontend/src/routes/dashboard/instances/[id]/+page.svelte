@@ -16,6 +16,7 @@
 		syncConfig,
 		getSyncStatus,
 		runDoctor,
+		getDashboardToken,
 		type HealthCheck
 	} from '$lib/api/client';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -617,8 +618,15 @@
 
 					{#if instance.status === 'active' && instance.agent_status === 'running' && instance.dashboard_url}
 						<button
-							onclick={() => {
-								window.open(instance.dashboard_url!, '_blank');
+							onclick={async () => {
+								try {
+									const token = await getIdToken();
+									if (!token) return;
+									const { token: scopedToken } = await getDashboardToken(instance!.id, token);
+									window.open(`${instance!.dashboard_url!}/#token=${scopedToken}`, '_blank');
+								} catch {
+									alert('Failed to generate dashboard token. Please try again.');
+								}
 							}}
 							class="mt-4 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800"
 						>

@@ -163,20 +163,22 @@ ufw allow 18789/tcp 2>/dev/null || true
 
 # --- Gateway auth drift guard (runs every heartbeat) ---
 # OpenClaw may overwrite openclaw.json on startup and revert auth mode.
-# We want "trusted-proxy" mode so the dashboard loads without tokens and
-# operator scopes are granted automatically.
+# We want "token" mode so internal tool calls authenticate via OPENCLAW_GATEWAY_TOKEN.
 # IMPORTANT: This guard must NOT be gated on STATUS=running. It only edits
 # openclaw.json on disk. If the container is crash-looping because auth.mode
 # was reverted to "none" (which refuses to start with bind=lan), we need to
 # fix the file while the container is stopped so the next restart succeeds.
 GW_AUTH_MODE=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.mode // "unknown"' 2>/dev/null)
 GW_INSECURE_AUTH=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.controlUi.allowInsecureAuth // false' 2>/dev/null)
-if [ "$GW_AUTH_MODE" != "trusted-proxy" ] || [ "$GW_INSECURE_AUTH" != "true" ]; then
+if [ "$GW_AUTH_MODE" != "token" ] || [ "$GW_INSECURE_AUTH" != "true" ]; then
+    # Write the auth block and controlUi settings via python.
+    # allowInsecureAuth: required for shared token auth to grant operator scopes (OC 2026.3.22+).
+    # Update meta.lastTouchedAt so OpenClaw detects the change and self-reloads.
     python3 -c "
 import json, datetime
 with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
     cfg = json.load(f)
-cfg.setdefault('gateway', {})['auth'] = {'mode': 'trusted-proxy'}
+cfg.setdefault('gateway', {})['auth'] = {'mode': 'token'}
 cui = cfg['gateway'].setdefault('controlUi', {})
 cui['dangerouslyDisableDeviceAuth'] = True
 cui['allowInsecureAuth'] = True
@@ -194,8 +196,11 @@ with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     fi
 fi
 
-# Remove stale OPENCLAW_GATEWAY_TOKEN from .env (no longer needed with trusted-proxy)
-sed -i '/^OPENCLAW_GATEWAY_TOKEN=/d' /opt/openclaw/.env 2>/dev/null || true
+# Ensure OPENCLAW_GATEWAY_TOKEN is in .env (needed for token auth mode)
+if ! grep -q '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null; then
+    OPENCLAW_TOKEN=$(grep '^OPENCLAW_AUTH_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
+    [ -n "$OPENCLAW_TOKEN" ] && echo "OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_TOKEN" >> /opt/openclaw/.env
+fi
 
 # --- Ensure dangerouslyDisableDeviceAuth is set for Control UI ---
 # Without this, the Control UI requires device pairing for every new browser,

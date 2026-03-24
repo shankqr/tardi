@@ -524,6 +524,30 @@ export async function runDoctor(token: string, instanceId: string): Promise<Doct
 	}
 }
 
+// --- Dashboard Token ---
+
+export async function getDashboardToken(
+	instanceId: string,
+	token: string
+): Promise<{ token: string }> {
+	if (USE_MOCK) {
+		await new Promise((r) => setTimeout(r, 500));
+		return { token: 'mock-scoped-token-abc123' };
+	}
+
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 30_000);
+	try {
+		return await apiFetch(
+			`${getApiUrl()}/api/instances/${instanceId}/dashboard-token`,
+			{ method: 'POST', headers: authHeaders(token), signal: controller.signal },
+			'getDashboardToken'
+		);
+	} finally {
+		clearTimeout(timeout);
+	}
+}
+
 // --- Google OAuth ---
 
 export async function getGoogleOAuthUrl(token: string): Promise<{ redirect_url: string }> {
