@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { initAuth, user } from '$lib/stores/auth';
 	import { apiUrl, stripePricingTableId, stripePublishableKey } from '$lib/stores/config';
+	import { initTheme } from '$lib/stores/theme';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import ComingSoon from '$lib/components/ComingSoon.svelte';
@@ -29,6 +30,7 @@
 	});
 
 	onMount(() => {
+		initTheme();
 		if (!comingSoon) {
 			initAuth();
 		}
@@ -42,7 +44,7 @@
 {#if comingSoon}
 	<ComingSoon />
 {:else}
-	<div class="flex min-h-screen flex-col">
+	<div class="flex min-h-screen flex-col bg-white dark:bg-gray-950">
 		<Navbar />
 		<main class="flex-1">
 			{@render children()}

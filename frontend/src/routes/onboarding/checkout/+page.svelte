@@ -29,14 +29,14 @@
 
 <div class="mx-auto max-w-2xl py-12 px-4">
 	<!-- Progress -->
-	<div class="flex items-center justify-center gap-2 text-sm text-gray-400">
+	<div class="flex items-center justify-center gap-2 text-sm text-gray-400 dark:text-gray-500">
 		<span>1. Sign Up</span>
 		<span>&rarr;</span>
-		<span class="font-medium text-gray-900">2. Checkout</span>
+		<span class="font-medium text-gray-900 dark:text-white">2. Checkout</span>
 	</div>
 
-	<h1 class="mt-8 text-2xl font-bold text-gray-900 text-center">Choose your plan</h1>
-	<p class="mt-2 text-center text-sm text-gray-500">
+	<h1 class="mt-8 text-2xl font-bold text-gray-900 dark:text-white text-center">Choose your plan</h1>
+	<p class="mt-2 text-center text-sm text-gray-500 dark:text-gray-400">
 		Subscribe to get your dedicated AI agent infrastructure.
 	</p>
 
@@ -52,21 +52,21 @@
 			</div>
 		{:else}
 			<!-- Dev fallback when Stripe config is missing -->
-			<div class="mt-6 rounded-xl border border-gray-200 p-6 text-center">
-				<p class="text-sm text-gray-500">Stripe Pricing Table not configured.</p>
-				<p class="mt-1 text-xs text-gray-400">
+			<div class="mt-6 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-center">
+				<p class="text-sm text-gray-500 dark:text-gray-400">Stripe Pricing Table not configured.</p>
+				<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
 					Set STRIPE_PRICING_TABLE_ID and STRIPE_PUBLISHABLE_KEY in environment.
 				</p>
 				<a
 					href="/onboarding/success"
-					class="mt-4 inline-block rounded-lg bg-gray-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
+					class="mt-4 inline-block rounded-lg bg-gray-900 dark:bg-white px-6 py-2.5 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100"
 				>
 					Simulate Checkout (Dev)
 				</a>
 			</div>
 		{/if}
 
-		<p class="text-center text-xs text-gray-400">
+		<p class="text-center text-xs text-gray-400 dark:text-gray-500">
 			Powered by Stripe. Your payment details are handled securely.
 		</p>
 	</div>

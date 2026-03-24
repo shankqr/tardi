@@ -177,7 +177,7 @@
 	}
 </script>
 
-<div class="rounded-xl border border-gray-200 p-5">
+<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
 	<div class="flex items-center gap-2">
 		<!-- Google icon -->
 		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-5 w-5">
@@ -186,26 +186,26 @@
 			<path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
 			<path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
 		</svg>
-		<h3 class="text-sm font-semibold text-gray-900">Google Account</h3>
+		<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Google Account</h3>
 	</div>
-	<p class="mt-1 text-xs text-gray-400">Connect your Google account so your agent can use Calendar, Gmail, Docs, Sheets, and Drive</p>
+	<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Connect your Google account so your agent can use Calendar, Gmail, Docs, Sheets, and Drive</p>
 
 	<div class="mt-4">
 		{#if status.connected}
 			{#if syncPhase === 'syncing' || syncPhase === 'finishing'}
 				<!-- Syncing state -->
 				<div class="space-y-3">
-					<div class="flex items-center gap-2 text-sm text-amber-700">
+					<div class="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
 						<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 						</svg>
 						<span>{syncPhase === 'finishing' ? 'Finishing up...' : `Syncing credentials to your agent (${syncElapsed}s)`}</span>
 					</div>
-					<p class="text-xs text-gray-400">This usually takes about a minute.</p>
+					<p class="text-xs text-gray-400 dark:text-gray-500">This usually takes about a minute.</p>
 				</div>
 			{:else if syncPhase === 'success'}
-				<div class="flex items-center gap-2 text-sm text-green-700">
+				<div class="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
 					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
 						<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
 					</svg>
@@ -214,7 +214,7 @@
 			{:else}
 				<!-- Connected state -->
 				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-2 text-sm text-green-700">
+					<div class="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
 						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
 							<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
 						</svg>
@@ -223,7 +223,7 @@
 					<button
 						onclick={handleDisconnect}
 						disabled={loading || !isActive}
-						class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+						class="rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
 					>
 						{loading ? 'Disconnecting...' : 'Disconnect'}
 					</button>
@@ -233,7 +233,7 @@
 			<!-- Disconnected state -->
 			{#if syncPhase === 'syncing' || syncPhase === 'finishing'}
 				<div class="space-y-3">
-					<div class="flex items-center gap-2 text-sm text-amber-700">
+					<div class="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
 						<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -245,7 +245,7 @@
 				<button
 					onclick={handleConnect}
 					disabled={loading || !isActive}
-					class="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+					class="rounded-lg bg-gray-900 dark:bg-white px-4 py-2 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 				>
 					{loading ? 'Connecting...' : 'Connect Google Account'}
 				</button>
@@ -253,7 +253,7 @@
 		{/if}
 
 		{#if error}
-			<p class="mt-3 text-xs text-red-600">{error}</p>
+			<p class="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>
 		{/if}
 	</div>
 </div>

@@ -36,20 +36,20 @@
 						<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
 					</svg>
 				</div>
-				<span class="text-sm text-gray-500">{step.label}</span>
+				<span class="text-sm text-gray-500 dark:text-gray-400">{step.label}</span>
 			{:else if state === 'current'}
-				<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-yellow-500 bg-yellow-50">
-					<svg class="h-3.5 w-3.5 animate-spin text-yellow-600" viewBox="0 0 24 24" fill="none">
+				<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/30">
+					<svg class="h-3.5 w-3.5 animate-spin text-yellow-600 dark:text-yellow-400" viewBox="0 0 24 24" fill="none">
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 					</svg>
 				</div>
-				<span class="text-sm font-medium text-gray-900">{step.label}</span>
+				<span class="text-sm font-medium text-gray-900 dark:text-white">{step.label}</span>
 			{:else}
-				<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-gray-200">
-					<div class="h-2 w-2 rounded-full bg-gray-200"></div>
+				<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-gray-200 dark:border-gray-700">
+					<div class="h-2 w-2 rounded-full bg-gray-200 dark:bg-gray-700"></div>
 				</div>
-				<span class="text-sm text-gray-400">{step.label}</span>
+				<span class="text-sm text-gray-400 dark:text-gray-500">{step.label}</span>
 			{/if}
 		</div>
 	{/each}

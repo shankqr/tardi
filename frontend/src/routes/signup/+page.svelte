@@ -50,20 +50,20 @@
 
 <div class="flex min-h-[calc(100vh-10rem)] items-center justify-center px-4">
 	<div class="w-full max-w-md">
-		<h1 class="text-2xl font-bold text-gray-900 text-center">Create your account</h1>
-		<p class="mt-2 text-center text-sm text-gray-500">
-			Already have an account? <a href="/login" class="text-gray-900 font-medium hover:underline">Log in</a>
+		<h1 class="text-2xl font-bold text-gray-900 dark:text-white text-center">Create your account</h1>
+		<p class="mt-2 text-center text-sm text-gray-500 dark:text-gray-400">
+			Already have an account? <a href="/login" class="text-gray-900 dark:text-white font-medium hover:underline">Log in</a>
 		</p>
 
 		<div class="mt-8">
 			{#if $authError || validationError}
-				<div class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{validationError || $authError}</div>
+				<div class="mb-4 rounded-lg bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400">{validationError || $authError}</div>
 			{/if}
 
 			<button
 				onclick={handleGoogleSignUp}
 				disabled={googleSubmitting || submitting}
-				class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+				class="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
 			>
 				<svg class="h-5 w-5" viewBox="0 0 24 24">
 					<path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
@@ -76,48 +76,48 @@
 
 			<div class="relative my-6">
 				<div class="absolute inset-0 flex items-center">
-					<div class="w-full border-t border-gray-200"></div>
+					<div class="w-full border-t border-gray-200 dark:border-gray-700"></div>
 				</div>
 				<div class="relative flex justify-center text-sm">
-					<span class="bg-white px-4 text-gray-400">or</span>
+					<span class="bg-white dark:bg-gray-950 px-4 text-gray-400 dark:text-gray-500">or</span>
 				</div>
 			</div>
 
 			<form onsubmit={handleSubmit} class="space-y-4">
 				<div>
-					<label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+					<label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
 					<input
 						id="email"
 						type="email"
 						bind:value={email}
 						required
-						class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+						class="mt-1 block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
 						placeholder="you@example.com"
 					/>
 				</div>
 
 				<div>
-					<label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+					<label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
 					<input
 						id="password"
 						type="password"
 						bind:value={password}
 						required
 						minlength="8"
-						class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+						class="mt-1 block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
 						placeholder="Min 8 characters"
 					/>
 				</div>
 
 				<div>
-					<label for="confirm-password" class="block text-sm font-medium text-gray-700">Confirm password</label>
+					<label for="confirm-password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Confirm password</label>
 					<input
 						id="confirm-password"
 						type="password"
 						bind:value={confirmPassword}
 						required
 						minlength="8"
-						class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+						class="mt-1 block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
 						placeholder="Repeat password"
 					/>
 				</div>
@@ -125,14 +125,14 @@
 				<button
 					type="submit"
 					disabled={submitting || googleSubmitting}
-					class="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+					class="w-full rounded-lg bg-gray-900 dark:bg-white px-4 py-2.5 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 				>
 					{submitting ? 'Creating account...' : 'Create account'}
 				</button>
 			</form>
 		</div>
 
-		<p class="mt-6 text-center text-xs text-gray-400">
+		<p class="mt-6 text-center text-xs text-gray-400 dark:text-gray-500">
 			By creating an account, you agree to our Terms of Service and Privacy Policy.
 		</p>
 	</div>

@@ -208,39 +208,39 @@
 	});
 </script>
 
-<div class="rounded-xl border border-gray-200 p-5">
-	<h3 class="text-sm font-semibold text-gray-900">AI Provider</h3>
-	<p class="mt-1 text-xs text-gray-400">Configure your OpenRouter API key and model</p>
+<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+	<h3 class="text-sm font-semibold text-gray-900 dark:text-white">AI Provider</h3>
+	<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Configure your OpenRouter API key and model</p>
 
 	{#if loading}
 		<div class="mt-4 flex items-center justify-center py-4">
-			<p class="text-sm text-gray-400">Loading...</p>
+			<p class="text-sm text-gray-400 dark:text-gray-500">Loading...</p>
 		</div>
 	{:else}
 		<div class="mt-4 space-y-4">
 			<!-- Sync progress overlay -->
 			{#if syncPhase !== 'idle'}
-				<div class="rounded-lg border p-4 {syncPhase === 'success' ? 'border-green-200 bg-green-50' : syncPhase === 'failed' ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}">
+				<div class="rounded-lg border p-4 {syncPhase === 'success' ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20' : syncPhase === 'failed' ? 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800'}">
 					{#if syncPhase === 'saving' || (syncPhase === 'syncing' && !envChanged)}
 						<div class="flex items-center gap-3">
-							<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+							<svg class="h-4 w-4 animate-spin text-gray-600 dark:text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none">
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 							</svg>
 							<div>
-								<p class="text-sm font-medium text-gray-900">Applying to your agent...</p>
+								<p class="text-sm font-medium text-gray-900 dark:text-white">Applying to your agent...</p>
 							</div>
 						</div>
 					{:else if syncPhase === 'syncing' && envChanged}
 						<div class="space-y-3">
 							<div class="flex items-center gap-3">
-								<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+								<svg class="h-4 w-4 animate-spin text-gray-600 dark:text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none">
 									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 								</svg>
 								<div class="flex-1">
-									<p class="text-sm font-medium text-gray-900">Applying to your agent...</p>
-									<p class="text-xs text-gray-500">
+									<p class="text-sm font-medium text-gray-900 dark:text-white">Applying to your agent...</p>
+									<p class="text-xs text-gray-500 dark:text-gray-400">
 										{#if syncElapsed < 10}
 											Connecting to your agent
 										{:else if syncElapsed < 30}
@@ -250,27 +250,27 @@
 										{:else}
 											Waiting for health check
 										{/if}
-										<span class="ml-1 tabular-nums text-gray-400">{syncElapsed}s</span>
+										<span class="ml-1 tabular-nums text-gray-400 dark:text-gray-500">{syncElapsed}s</span>
 									</p>
 								</div>
 							</div>
-							<div class="h-1 overflow-hidden rounded-full bg-gray-200">
+							<div class="h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
 								<div
-									class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
+									class="h-full rounded-full bg-gray-600 dark:bg-gray-400 transition-all duration-1000 ease-linear"
 									style="width: {Math.min(syncElapsed / 120 * 100, 95)}%"
 								></div>
 							</div>
-							<p class="text-xs text-gray-400">Restarting your agent with the new API key. This usually takes about a minute.</p>
+							<p class="text-xs text-gray-400 dark:text-gray-500">Restarting your agent with the new API key. This usually takes about a minute.</p>
 						</div>
 					{:else if syncPhase === 'success'}
 						<div class="flex items-center justify-between">
 							<div class="flex items-center gap-3">
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-green-600 shrink-0">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-green-600 dark:text-green-400 shrink-0">
 									<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
 								</svg>
 								<div>
-									<p class="text-sm font-medium text-green-800">Configuration applied successfully</p>
-									<p class="text-xs text-green-600">Your agent is now running with the new settings</p>
+									<p class="text-sm font-medium text-green-800 dark:text-green-400">Configuration applied successfully</p>
+									<p class="text-xs text-green-600 dark:text-green-400">Your agent is now running with the new settings</p>
 								</div>
 							</div>
 							<button onclick={dismissSync} class="text-green-500 hover:text-green-700" aria-label="Dismiss">
@@ -286,11 +286,11 @@
 									<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
 								</svg>
 								<div>
-									<p class="text-sm font-medium text-amber-800">{syncError}</p>
-									<p class="text-xs text-amber-600 mt-1">Your settings were saved. They will apply automatically within a few minutes.</p>
+									<p class="text-sm font-medium text-amber-800 dark:text-amber-400">{syncError}</p>
+									<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Your settings were saved. They will apply automatically within a few minutes.</p>
 									<button
 										onclick={dismissSync}
-										class="mt-2 rounded-md border border-amber-300 px-3 py-1 text-xs text-amber-700 hover:bg-amber-100"
+										class="mt-2 rounded-md border border-amber-300 dark:border-amber-700 px-3 py-1 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30"
 									>
 										Dismiss
 									</button>
@@ -303,7 +303,7 @@
 
 			<!-- OpenRouter API Key -->
 			<div>
-				<label for="openrouter-key" class="text-sm font-medium text-gray-700">OpenRouter API Key</label>
+				<label for="openrouter-key" class="text-sm font-medium text-gray-700 dark:text-gray-300">OpenRouter API Key</label>
 				<div class="mt-1.5 flex gap-2">
 					<div class="relative flex-1">
 						<input
@@ -313,34 +313,34 @@
 							oninput={(e) => { openrouterKey = e.currentTarget.value; keyDirty = true; }}
 							placeholder="sk-or-v1-..."
 							disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing'}
-							class="block w-full rounded-lg border border-gray-300 px-3 py-2 pr-16 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
+							class="block w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 pr-16 text-sm text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400 disabled:opacity-50 dark:bg-gray-800"
 						/>
 						<button
 							type="button"
 							onclick={() => (showKey = !showKey)}
-							class="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs text-gray-400 hover:text-gray-600"
+							class="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-0.5 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 						>
 							{showKey ? 'Hide' : 'Show'}
 						</button>
 					</div>
 				</div>
 				{#if openrouterKey && !keyDirty}
-					<p class="mt-1 text-xs text-gray-400">Key is saved. Enter a new key to update it.</p>
+					<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Key is saved. Enter a new key to update it.</p>
 				{/if}
 			</div>
 
 			<!-- Model selector -->
 			<div>
-				<label for="model-select" class="text-sm font-medium text-gray-700">Model</label>
+				<label for="model-select" class="text-sm font-medium text-gray-700 dark:text-gray-300">Model</label>
 				{#if modelsError}
-					<p class="mt-1.5 text-xs text-red-500">Could not load models. Try refreshing the page.</p>
+					<p class="mt-1.5 text-xs text-red-500 dark:text-red-400">Could not load models. Try refreshing the page.</p>
 				{:else}
 					<select
 						id="model-select"
 						bind:value={selectedModel}
 						onchange={() => { if (models.some((m) => m.id === selectedModel)) customModel = null; }}
 						disabled={disabled || !hasExistingKey || syncPhase === 'saving' || syncPhase === 'syncing'}
-						class="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
+						class="mt-1.5 block w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400 disabled:opacity-50 dark:bg-gray-800"
 					>
 						{#each models as model (model.id)}
 							<option value={model.id}>
@@ -353,7 +353,7 @@
 					</select>
 				{/if}
 				{#if !hasExistingKey}
-					<p class="mt-1.5 text-xs text-gray-400">Save your OpenRouter API key first to change the model.</p>
+					<p class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">Save your OpenRouter API key first to change the model.</p>
 				{/if}
 			</div>
 
@@ -361,9 +361,9 @@
 			{#if selectedModelInfo}
 				<div class="space-y-2">
 					{#if selectedModelInfo.description}
-						<p class="text-xs text-gray-500">{selectedModelInfo.description}</p>
+						<p class="text-xs text-gray-500 dark:text-gray-400">{selectedModelInfo.description}</p>
 					{/if}
-					<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
+					<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400 dark:text-gray-500">
 						{#if selectedModelInfo.context_length}
 							<span>Context: {(selectedModelInfo.context_length / 1000).toFixed(0)}K tokens</span>
 						{/if}
@@ -375,20 +375,20 @@
 
 			<!-- Paid model top-up notice -->
 			{#if selectedModelInfo && selectedModelInfo.tier === 'paid'}
-				<div class="rounded-lg border border-blue-200 bg-blue-50 p-3">
+				<div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3">
 					<div class="flex items-start gap-2.5">
 						<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4 text-blue-500 shrink-0 mt-0.5">
 							<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" />
 						</svg>
 						<div>
-							<p class="text-sm font-medium text-blue-800">This model requires OpenRouter credits</p>
-							<p class="mt-0.5 text-xs text-blue-600">
+							<p class="text-sm font-medium text-blue-800 dark:text-blue-300">This model requires OpenRouter credits</p>
+							<p class="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
 								Make sure your OpenRouter account has sufficient credits.
 								<a
 									href="https://openrouter.ai/credits"
 									target="_blank"
 									rel="noopener noreferrer"
-									class="inline-flex items-center gap-0.5 font-medium underline hover:text-blue-800"
+									class="inline-flex items-center gap-0.5 font-medium underline hover:text-blue-800 dark:hover:text-blue-300"
 								>
 									Top up your account
 									<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="h-3 w-3">
@@ -407,7 +407,7 @@
 					type="button"
 					onclick={handleSave}
 					disabled={disabled || modelsError || (!hasExistingKey && !keyDirty) || syncPhase === 'saving' || syncPhase === 'syncing'}
-					class="rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+					class="rounded-lg bg-gray-900 dark:bg-white px-4 py-2.5 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 				>
 					{syncPhase === 'saving' || syncPhase === 'syncing' ? 'Applying...' : 'Save'}
 				</button>
@@ -415,7 +415,7 @@
 					href="https://openrouter.ai/keys"
 					target="_blank"
 					rel="noopener noreferrer"
-					class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+					class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
 				>
 					Get API Key
 					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3.5 w-3.5">
@@ -426,16 +426,16 @@
 				<button
 					type="button"
 					onclick={() => (showGuide = !showGuide)}
-					class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+					class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
 				>
 					{showGuide ? 'Hide Guide' : 'Guide Me'}
 				</button>
 			</div>
 
 			{#if showGuide}
-				<div class="rounded-lg border border-blue-200 bg-blue-50 p-4">
+				<div class="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4">
 					<div class="flex items-start justify-between">
-						<h4 class="text-sm font-semibold text-blue-900">How to get your OpenRouter API key</h4>
+						<h4 class="text-sm font-semibold text-blue-900 dark:text-blue-300">How to get your OpenRouter API key</h4>
 						<button
 							type="button"
 							onclick={() => (showGuide = false)}
@@ -447,12 +447,12 @@
 							</svg>
 						</button>
 					</div>
-					<ol class="mt-3 space-y-2 text-sm text-blue-800">
-						<li><span class="font-semibold">1.</span> Go to <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" class="underline hover:text-blue-900">openrouter.ai</a> and click <span class="font-semibold">Sign Up</span></li>
+					<ol class="mt-3 space-y-2 text-sm text-blue-800 dark:text-blue-300">
+						<li><span class="font-semibold">1.</span> Go to <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" class="underline hover:text-blue-900 dark:hover:text-blue-200">openrouter.ai</a> and click <span class="font-semibold">Sign Up</span></li>
 						<li><span class="font-semibold">2.</span> Create an account using your email, Google, or GitHub</li>
-						<li><span class="font-semibold">3.</span> Once logged in, go to <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="underline hover:text-blue-900">openrouter.ai/keys</a></li>
+						<li><span class="font-semibold">3.</span> Once logged in, go to <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" class="underline hover:text-blue-900 dark:hover:text-blue-200">openrouter.ai/keys</a></li>
 						<li><span class="font-semibold">4.</span> Click <span class="font-semibold">Create Key</span> and give it a name (e.g. "Tardi")</li>
-						<li><span class="font-semibold">5.</span> Copy the key (starts with <code class="rounded bg-blue-100 px-1 py-0.5 text-xs">sk-or-v1-...</code>) and paste it in the field above</li>
+						<li><span class="font-semibold">5.</span> Copy the key (starts with <code class="rounded bg-blue-100 dark:bg-blue-900/30 px-1 py-0.5 text-xs">sk-or-v1-...</code>) and paste it in the field above</li>
 					</ol>
 				</div>
 			{/if}

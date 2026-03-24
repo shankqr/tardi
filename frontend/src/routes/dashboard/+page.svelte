@@ -40,33 +40,33 @@
 
 {#if $dashboardLoading}
 	<div class="flex items-center justify-center py-20">
-		<p class="text-gray-400">Loading dashboard...</p>
+		<p class="text-gray-400 dark:text-gray-500">Loading dashboard...</p>
 	</div>
 {:else if $dashboardError}
-	<div class="rounded-lg bg-red-50 p-4 text-sm text-red-700">{$dashboardError}</div>
+	<div class="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-400">{$dashboardError}</div>
 {:else if $dashboardState}
 	<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 		<!-- Main content -->
 		<div class="lg:col-span-2 space-y-6">
-			<h2 class="text-lg font-semibold text-gray-900">Your Agent</h2>
+			<h2 class="text-lg font-semibold text-gray-900 dark:text-white">Your Agent</h2>
 
 			{#if activeInstance}
 				<InstanceCard instance={activeInstance} planName={plans[$dashboardState.subscription?.plan ?? 'standard']?.name ?? 'Standard'} />
 			{:else if $dashboardState.subscription}
 				<!-- Has subscription but no instance — show deploy card -->
-				<div class="rounded-xl border border-gray-200 p-6">
-					<h3 class="text-sm font-semibold text-gray-900">Deploy your agent</h3>
-					<p class="mt-1 text-sm text-gray-500">
+				<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+					<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Deploy your agent</h3>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 						Your subscription is active. Deploy your dedicated AI agent to get started.
 					</p>
 
 					{#if deployError}
-						<div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{deployError}</div>
+						<div class="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400">{deployError}</div>
 					{/if}
 
 					<form onsubmit={handleDeploy} class="mt-4 space-y-4">
 						<div>
-							<label for="agent-name" class="block text-sm font-medium text-gray-700"
+							<label for="agent-name" class="block text-sm font-medium text-gray-700 dark:text-gray-300"
 								>Agent Name</label
 							>
 							<input
@@ -74,14 +74,14 @@
 								type="text"
 								bind:value={agentName}
 								required
-								class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+								class="mt-1 block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
 								placeholder="e.g. my-trading-agent"
 							/>
 						</div>
 						<button
 							type="submit"
 							disabled={deploying}
-							class="rounded-lg bg-gray-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+							class="rounded-lg bg-gray-900 dark:bg-white px-6 py-2.5 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 						>
 							{deploying ? 'Deploying...' : 'Deploy Agent'}
 						</button>
@@ -89,11 +89,11 @@
 				</div>
 			{:else}
 				<!-- No subscription — prompt to subscribe -->
-				<div class="rounded-xl border border-dashed border-gray-300 p-10 text-center">
-					<p class="text-gray-500">No active subscription</p>
+				<div class="rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-10 text-center">
+					<p class="text-gray-500 dark:text-gray-400">No active subscription</p>
 					<a
 						href="/onboarding/checkout"
-						class="mt-2 inline-block text-sm font-medium text-gray-900 hover:underline"
+						class="mt-2 inline-block text-sm font-medium text-gray-900 dark:text-white hover:underline"
 					>
 						Subscribe to deploy your agent
 					</a>

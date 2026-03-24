@@ -483,16 +483,16 @@
 
 {#if $dashboardLoading || !$dashboardState}
 	<div class="flex items-center justify-center py-20">
-		<p class="text-gray-400">Loading...</p>
+		<p class="text-gray-400 dark:text-gray-500">Loading...</p>
 	</div>
 {:else if !instance}
 	<div class="py-10 text-center">
-		<p class="text-gray-500">Agent not found</p>
-		<a href="/dashboard" class="mt-2 inline-block text-sm text-gray-900 hover:underline">Back to dashboard</a>
+		<p class="text-gray-500 dark:text-gray-400">Agent not found</p>
+		<a href="/dashboard" class="mt-2 inline-block text-sm text-gray-900 dark:text-white hover:underline">Back to dashboard</a>
 	</div>
 {:else}
 	<div>
-		<a href="/dashboard" class="text-sm text-gray-500 hover:text-gray-700">&larr; Back to dashboard</a>
+		<a href="/dashboard" class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">&larr; Back to dashboard</a>
 
 		<div class="mt-4 flex items-start justify-between">
 			<div>
@@ -501,31 +501,31 @@
 						<input
 							type="text"
 							bind:value={editName}
-							class="rounded-md border border-gray-300 px-2 py-1 text-xl font-bold text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xl font-bold text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
 							autofocus
 							onkeydown={(e) => { if (e.key === 'Escape') editing = false; }}
 						/>
 						<button
 							type="submit"
 							disabled={saving}
-							class="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+							class="rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 						>
 							{saving ? 'Saving...' : 'Save'}
 						</button>
 						<button
 							type="button"
 							onclick={() => (editing = false)}
-							class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+							class="rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
 						>
 							Cancel
 						</button>
 					</form>
 				{:else}
 					<div class="flex items-center gap-2">
-						<h2 class="text-xl font-bold text-gray-900">{instance.name}</h2>
+						<h2 class="text-xl font-bold text-gray-900 dark:text-white">{instance.name}</h2>
 						<button
 							onclick={startEditing}
-							class="rounded-md p-1 text-gray-400 hover:text-gray-600"
+							class="rounded-md p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 							title="Rename agent"
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
@@ -534,13 +534,13 @@
 						</button>
 					</div>
 				{/if}
-				<p class="mt-0.5 text-sm text-gray-500">Dedicated Agent</p>
+				<p class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">Dedicated Agent</p>
 			</div>
 			<StatusBadge status={instance.status} updateStatus={instance.openclaw_update_status} />
 		</div>
 
 		{#if $dashboardState?.subscription?.cancel_at_period_end}
-			<div class="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-700">
+			<div class="mt-4 rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 p-3 text-sm text-orange-700 dark:text-orange-400">
 				Your subscription is canceling. This agent and all snapshots will be deleted on
 				{new Date($dashboardState.subscription.current_period_end).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.
 				<a href="/dashboard/billing" class="font-medium underline">Manage billing</a> to undo.
@@ -548,30 +548,30 @@
 		{/if}
 
 		{#if actionError}
-			<div class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+			<div class="mt-4 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400">
 				{actionError}
 			</div>
 		{/if}
 
 		{#if restoreResult === 'success'}
-			<div class="mt-4 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+			<div class="mt-4 flex items-center justify-between rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-3 text-sm text-green-700 dark:text-green-400">
 				<span>Snapshot restored successfully. A new root password has been generated.</span>
 				<button onclick={() => (restoreResult = null)} class="ml-3 text-green-500 hover:text-green-700">&times;</button>
 			</div>
 		{:else if restoreResult === 'failed'}
-			<div class="mt-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+			<div class="mt-4 flex items-center justify-between rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400">
 				<span>Snapshot restore failed. Your agent may need attention.</span>
 				<button onclick={() => (restoreResult = null)} class="ml-3 text-red-500 hover:text-red-700">&times;</button>
 			</div>
 		{/if}
 
 		{#if snapshotResult === 'success'}
-			<div class="mt-4 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+			<div class="mt-4 flex items-center justify-between rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-3 text-sm text-green-700 dark:text-green-400">
 				<span>Snapshot created successfully.</span>
 				<button onclick={() => (snapshotResult = null)} class="ml-3 text-green-500 hover:text-green-700">&times;</button>
 			</div>
 		{:else if snapshotResult === 'failed'}
-			<div class="mt-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+			<div class="mt-4 flex items-center justify-between rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400">
 				<span>Snapshot creation failed.</span>
 				<button onclick={() => (snapshotResult = null)} class="ml-3 text-red-500 hover:text-red-700">&times;</button>
 			</div>
@@ -580,24 +580,24 @@
 		{#if isSettingUp}
 			<div class="mt-12 flex justify-center">
 				<div class="w-full max-w-md">
-					<div class="rounded-xl border border-gray-200 p-8 text-center">
+					<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
 						{#if instance.status === 'error'}
-							<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+							<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
 								<svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
 								</svg>
 							</div>
-							<h3 class="text-lg font-semibold text-gray-900">Setup Failed</h3>
-							<p class="mt-2 text-sm text-gray-500">Something went wrong while setting up your agent. Our team has been notified and is looking into it.</p>
+							<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Setup Failed</h3>
+							<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Something went wrong while setting up your agent. Our team has been notified and is looking into it.</p>
 						{:else}
-							<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+							<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
 								<svg class="h-6 w-6 animate-spin text-gray-600" viewBox="0 0 24 24" fill="none">
 									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 								</svg>
 							</div>
-							<h3 class="text-lg font-semibold text-gray-900">Setting up your agent</h3>
-							<p class="mt-2 text-sm text-gray-500">This usually takes 2–3 minutes</p>
+							<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Setting up your agent</h3>
+							<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">This usually takes 2–3 minutes</p>
 
 							<div class="mt-6 text-left">
 								{#if isProvisioning}
@@ -622,13 +622,13 @@
 													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 												</svg>
 											</div>
-											<span class="text-sm font-medium text-gray-900">Starting OpenClaw</span>
+											<span class="text-sm font-medium text-gray-900 dark:text-white">Starting OpenClaw</span>
 										</div>
 									</div>
 								{/if}
 							</div>
 
-							<p class="mt-6 text-xs text-gray-400">
+							<p class="mt-6 text-xs text-gray-400 dark:text-gray-500">
 								{Math.floor(setupElapsed / 60)}:{String(setupElapsed % 60).padStart(2, '0')} elapsed
 							</p>
 						{/if}
@@ -639,15 +639,15 @@
 		<div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
 			<!-- Left column -->
 			<div class="space-y-6">
-				<div class="rounded-xl border border-gray-200 p-5">
-					<h3 class="text-sm font-semibold text-gray-900">Agent Details</h3>
+				<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+					<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Agent Details</h3>
 					<dl class="mt-4 space-y-3 text-sm">
 						<div class="flex justify-between">
-							<dt class="text-gray-500">IP Address</dt>
-							<dd class="font-mono text-gray-900">{instance.ipv4 ?? '—'}</dd>
+							<dt class="text-gray-500 dark:text-gray-400">IP Address</dt>
+							<dd class="font-mono text-gray-900 dark:text-white">{instance.ipv4 ?? '—'}</dd>
 						</div>
 						<div class="flex justify-between">
-							<dt class="text-gray-500">OpenClaw</dt>
+							<dt class="text-gray-500 dark:text-gray-400">OpenClaw</dt>
 							<dd>
 								{#if isProvisioning || activationCooloff}
 									<span class="inline-flex items-center gap-1.5 text-gray-500">
@@ -686,12 +686,12 @@
 							</dd>
 						</div>
 						<div class="flex justify-between">
-							<dt class="text-gray-500">Last Heartbeat</dt>
-							<dd class="text-gray-900">{timeAgo(instance.last_heartbeat_at)}</dd>
+							<dt class="text-gray-500 dark:text-gray-400">Last Heartbeat</dt>
+							<dd class="text-gray-900 dark:text-white">{timeAgo(instance.last_heartbeat_at)}</dd>
 						</div>
 						<div class="flex justify-between">
-							<dt class="text-gray-500">Created</dt>
-							<dd class="text-gray-900">{new Date(instance.created_at).toLocaleDateString()}</dd>
+							<dt class="text-gray-500 dark:text-gray-400">Created</dt>
+							<dd class="text-gray-900 dark:text-white">{new Date(instance.created_at).toLocaleDateString()}</dd>
 						</div>
 					</dl>
 
@@ -720,7 +720,7 @@
 									}
 								}}
 								disabled={dashboardBtnLoading}
-								class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-70"
+								class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-70"
 							>
 								{#if dashboardBtnLoading}
 									<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -733,7 +733,7 @@
 								{/if}
 							</button>
 						{:else}
-							<p class="mt-4 text-xs text-gray-400">Set up your OpenRouter API key below to access the dashboard.</p>
+							<p class="mt-4 text-xs text-gray-400 dark:text-gray-500">Set up your OpenRouter API key below to access the dashboard.</p>
 						{/if}
 					{/if}
 				</div>
@@ -741,19 +741,19 @@
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
 					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsaved={recheckConfig} onsyncchange={(s) => aiConfigSyncing = s} />
 
-					<div class="rounded-xl border border-gray-200 p-5">
+					<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
 						<div class="flex items-center gap-2">
 							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5 text-[#2AABEE]">
 								<path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
 							</svg>
-							<h3 class="text-sm font-semibold text-gray-900">Telegram</h3>
+							<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Telegram</h3>
 						</div>
-						<p class="mt-1 text-xs text-gray-400">Link a Telegram bot to enable messaging through your agent</p>
+						<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Link a Telegram bot to enable messaging through your agent</p>
 
 						<div class="mt-4">
 							{#if !hasApiKey && !telegramConnected}
-								<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-									<p class="text-xs text-gray-500">Set up your AI provider key above before connecting Telegram.</p>
+								<div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3">
+									<p class="text-xs text-gray-500 dark:text-gray-400">Set up your AI provider key above before connecting Telegram.</p>
 								</div>
 							{:else if telegramConnected}
 								<div class="flex items-center justify-between">
@@ -779,14 +779,14 @@
 										<div class="flex items-center gap-3">
 											<button
 												onclick={() => { showUpdateToken = !showUpdateToken; telegramError = null; }}
-												class="text-xs text-gray-500 hover:text-gray-700"
+												class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
 											>
 												{showUpdateToken ? 'Cancel' : 'Update Token'}
 											</button>
 											<button
 												onclick={handleTelegramDisconnect}
 												disabled={telegramLoading}
-												class="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-50"
+												class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"
 											>
 												{telegramLoading ? 'Disconnecting...' : 'Disconnect'}
 											</button>
@@ -794,7 +794,7 @@
 									{/if}
 								</div>
 								{#if telegramCurrentToken && telegramSyncPhase !== 'syncing' && telegramSyncPhase !== 'finishing'}
-									<p class="mt-1 font-mono text-xs text-gray-400 break-all">{telegramCurrentToken}</p>
+									<p class="mt-1 font-mono text-xs text-gray-400 dark:text-gray-500 break-all">{telegramCurrentToken}</p>
 								{/if}
 								{#if showUpdateToken && telegramSyncPhase === 'idle'}
 									<div class="mt-3 flex items-center gap-2">
@@ -803,19 +803,19 @@
 											bind:value={telegramToken}
 											placeholder="Paste new bot token"
 											disabled={telegramLoading || instance.status !== 'active'}
-											class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500 disabled:opacity-50"
+											class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-gray-500 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-500 dark:focus:ring-gray-400 disabled:opacity-50"
 										/>
 										<button
 											onclick={handleTelegramConnect}
 											disabled={telegramLoading || !telegramToken.trim() || instance.status !== 'active'}
-											class="inline-flex items-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+											class="inline-flex items-center rounded-lg bg-gray-900 dark:bg-white px-4 py-2 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 										>
 											{telegramLoading ? 'Updating...' : 'Update'}
 										</button>
 									</div>
 								{/if}
 								{#if telegramSyncPhase === 'syncing'}
-									<div class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+									<div class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
 										<div class="space-y-3">
 											<div class="flex items-center gap-3">
 												<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
@@ -823,8 +823,8 @@
 													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 												</svg>
 												<div class="flex-1">
-													<p class="text-sm font-medium text-gray-900">Deploying Telegram bot to your agent...</p>
-													<p class="text-xs text-gray-500">
+													<p class="text-sm font-medium text-gray-900 dark:text-white">Deploying Telegram bot to your agent...</p>
+													<p class="text-xs text-gray-500 dark:text-gray-400">
 														{#if telegramSyncElapsed < 10}
 															Connecting to your agent
 														{:else if telegramSyncElapsed < 30}
@@ -838,17 +838,17 @@
 													</p>
 												</div>
 											</div>
-											<div class="h-1 overflow-hidden rounded-full bg-gray-200">
+											<div class="h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
 												<div
-													class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
+													class="h-full rounded-full bg-gray-600 dark:bg-gray-400 transition-all duration-1000 ease-linear"
 													style="width: {Math.min(telegramSyncElapsed / 80 * 100, 95)}%"
 												></div>
 											</div>
-											<p class="text-xs text-gray-400">This usually takes about a minute. Please wait before messaging the bot.</p>
+											<p class="text-xs text-gray-400 dark:text-gray-500">This usually takes about a minute. Please wait before messaging the bot.</p>
 										</div>
 									</div>
 								{:else if telegramSyncPhase === 'finishing'}
-									<div class="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+									<div class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
 										<div class="space-y-3">
 											<div class="flex items-center gap-3">
 												<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
@@ -856,79 +856,79 @@
 													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 												</svg>
 												<div class="flex-1">
-													<p class="text-sm font-medium text-gray-900">Finalizing Telegram bot setup...</p>
-													<p class="text-xs text-gray-500">Almost ready</p>
+													<p class="text-sm font-medium text-gray-900 dark:text-white">Finalizing Telegram bot setup...</p>
+													<p class="text-xs text-gray-500 dark:text-gray-400">Almost ready</p>
 												</div>
 											</div>
-											<div class="h-1 overflow-hidden rounded-full bg-gray-200">
+											<div class="h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
 												<div
-													class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
+													class="h-full rounded-full bg-gray-600 dark:bg-gray-400 transition-all duration-1000 ease-linear"
 													style="width: 95%"
 												></div>
 											</div>
-											<p class="text-xs text-gray-400">Please wait before messaging the bot.</p>
+											<p class="text-xs text-gray-400 dark:text-gray-500">Please wait before messaging the bot.</p>
 										</div>
 									</div>
 								{:else if telegramSyncPhase === 'success'}
-									<div class="mt-3 rounded-lg border border-green-200 bg-green-50 p-4">
+									<div class="mt-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
 										<div class="flex items-center gap-3">
 											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-green-600 shrink-0">
 												<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
 											</svg>
 											<div>
-												<p class="text-sm font-medium text-green-800">Telegram bot deployed successfully</p>
-												<p class="text-xs text-green-600">Anyone who messages your bot will get a response from your AI agent</p>
+												<p class="text-sm font-medium text-green-800 dark:text-green-400">Telegram bot deployed successfully</p>
+												<p class="text-xs text-green-600 dark:text-green-400">Anyone who messages your bot will get a response from your AI agent</p>
 											</div>
 										</div>
 									</div>
 								{:else if telegramError}
-									<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-										<p class="text-xs font-medium text-amber-800">{telegramError}</p>
-										<p class="text-xs text-amber-600 mt-1">Your token was saved. It will apply automatically within a few minutes.</p>
+									<div class="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+										<p class="text-xs font-medium text-amber-800 dark:text-amber-400">{telegramError}</p>
+										<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Your token was saved. It will apply automatically within a few minutes.</p>
 										<button
 											onclick={() => { telegramSyncPhase = 'idle'; telegramError = null; }}
-											class="mt-2 rounded-md border border-amber-300 px-3 py-1 text-xs text-amber-700 hover:bg-amber-100"
+											class="mt-2 rounded-md border border-amber-300 dark:border-amber-700 px-3 py-1 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30"
 										>
 											Dismiss
 										</button>
 									</div>
 								{:else}
-									<div class="mt-3 rounded-lg border border-green-200 bg-green-50 p-4">
-										<h4 class="text-sm font-semibold text-green-900">Your Telegram bot is live!</h4>
-										<p class="mt-1 text-xs text-green-800">Anyone who messages your bot on Telegram will get a response from your AI agent.</p>
+									<div class="mt-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
+										<h4 class="text-sm font-semibold text-green-900 dark:text-green-400">Your Telegram bot is live!</h4>
+										<p class="mt-1 text-xs text-green-800 dark:text-green-400">Anyone who messages your bot on Telegram will get a response from your AI agent.</p>
 									</div>
 								{/if}
 							{:else}
-								<div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-700">
-									<p class="font-semibold text-gray-900">How to set up your Telegram bot:</p>
+								<div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-xs text-gray-700 dark:text-gray-300">
+									<p class="font-semibold text-gray-900 dark:text-white">How to set up your Telegram bot:</p>
 									<ol class="mt-2 space-y-2.5">
 										<li>
 											<span class="font-semibold">1.</span> Open Telegram and search for
 											<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#2AABEE] underline hover:text-blue-700">@BotFather</a>
 										</li>
 										<li>
-											<span class="font-semibold">2.</span> Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/newbot</code> to create a new bot
+											<span class="font-semibold">2.</span> Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/newbot</code> to create a new bot
 										</li>
 										<li>
 											<span class="font-semibold">3.</span> Choose a <span class="font-semibold">display name</span> for your bot (e.g. "My AI Agent")
 										</li>
 										<li>
-											<span class="font-semibold">4.</span> Choose a <span class="font-semibold">username</span> ending in <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">bot</code> (e.g. <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">my_ai_agent_bot</code>)
+											<span class="font-semibold">4.</span> Choose a <span class="font-semibold">username</span> ending in <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">bot</code> (e.g. <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">my_ai_agent_bot</code>)
 										</li>
 										<li>
-											<span class="font-semibold">5.</span> BotFather will send you an <span class="font-semibold">API token</span> &mdash; copy it (looks like <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">123456:ABC-DEF1234...</code>)
+											<span class="font-semibold">5.</span> BotFather will send you an <span class="font-semibold">API token</span> &mdash; copy it (looks like <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">123456:ABC-DEF1234...</code>)
 										</li>
 										<li>
 											<span class="font-semibold">6.</span> Paste the token below and click <span class="font-semibold">Connect</span>
 										</li>
 									</ol>
 
-									<div class="mt-3 border-t border-gray-200 pt-3">
-										<p class="font-semibold text-gray-900">Optional: Customize your bot</p>
-										<ul class="mt-1.5 space-y-1 text-gray-600">
-											<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setdescription</code> to BotFather to set a bio</li>
-											<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setuserpic</code> to BotFather to set a profile picture</li>
-											<li>&bull; Send <code class="rounded bg-gray-200 px-1.5 py-0.5 font-mono text-gray-800">/setabouttext</code> to set the "About" section</li>
+									<div class="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
+										<p class="font-semibold text-gray-900 dark:text-white">Optional: Customize your bot</p>
+										<ul class="mt-1.5 space-y-1 text-gray-600 dark:text-gray-400">
+											<li>&bull; Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/setdescription</code> to BotFather to set a bio</li>
+											<li>&bull; Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/setuserpic</code> to BotFather to set a profile picture</li>
+											<li>&bull; Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/setabouttext</code> to set the "About" section</li>
 										</ul>
 									</div>
 								</div>
@@ -942,12 +942,12 @@
 										bind:value={telegramToken}
 										placeholder="Paste your bot token here"
 										disabled={telegramLoading || instance.status !== 'active'}
-										class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500 disabled:opacity-50"
+										class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-gray-500 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-500 dark:focus:ring-gray-400 disabled:opacity-50"
 									/>
 									<button
 										onclick={handleTelegramConnect}
 										disabled={telegramLoading || !telegramToken.trim() || instance.status !== 'active'}
-										class="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+										class="inline-flex items-center gap-2 rounded-lg bg-gray-900 dark:bg-white px-4 py-2 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 									>
 										{telegramLoading ? 'Connecting...' : 'Connect'}
 									</button>
@@ -965,61 +965,61 @@
 					/>
 
 					{#if instance.ipv4}
-						<div class="rounded-xl border border-gray-200">
+						<div class="rounded-xl border border-gray-200 dark:border-gray-700">
 							<button
 								onclick={() => (powerUserOpen = !powerUserOpen)}
 								class="flex w-full items-center justify-between p-5"
 							>
 								<div class="text-left">
-									<h3 class="text-sm font-semibold text-gray-900">Power User</h3>
-									<p class="mt-1 text-xs text-gray-400">Advanced settings and SSH connection</p>
+									<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Power User</h3>
+									<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Advanced settings and SSH connection</p>
 								</div>
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
 									viewBox="0 0 20 20"
 									fill="currentColor"
-									class="h-5 w-5 text-gray-400 transition-transform {powerUserOpen ? 'rotate-180' : ''}"
+									class="h-5 w-5 text-gray-400 dark:text-gray-500 transition-transform {powerUserOpen ? 'rotate-180' : ''}"
 								>
 									<path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
 								</svg>
 							</button>
 
 							{#if powerUserOpen}
-								<div class="space-y-4 border-t border-gray-200 p-5">
+								<div class="space-y-4 border-t border-gray-200 dark:border-gray-700 p-5">
 									<div class="flex gap-3">
 										<button
 											onclick={handleRestart}
 											disabled={restarting || instance.status !== 'active'}
-											class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+											class="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
 										>
 											{instance.status === 'restarting' ? 'Restarting...' : restarting ? 'Restarting...' : 'Restart'}
 										</button>
 										<button
 											onclick={handleRunDoctor}
 											disabled={doctorRunning || instance.status !== 'active'}
-											class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+											class="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
 										>
 											{doctorRunning ? 'Checking...' : 'Health Check'}
 										</button>
 									</div>
 
 									{#if doctorChecks !== null || doctorRaw !== null || doctorError !== null}
-										<div class="rounded-lg border border-gray-200 p-4">
+										<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
 											<div class="flex items-center justify-between">
-												<h4 class="text-sm font-medium text-gray-900">Health Check Results</h4>
+												<h4 class="text-sm font-medium text-gray-900 dark:text-white">Health Check Results</h4>
 												<button
 													onclick={() => { doctorChecks = null; doctorRaw = null; doctorError = null; }}
-													class="text-xs text-gray-400 hover:text-gray-600"
+													class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 												>Dismiss</button>
 											</div>
 											{#if doctorError}
-												<div class="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+												<div class="mt-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-xs text-red-700 dark:text-red-400">
 													{doctorError}
 												</div>
 											{:else if doctorChecks}
 												<div class="mt-3 space-y-1.5">
 													{#each doctorChecks as check (check.name)}
-														<div class="flex items-start gap-2.5 rounded-lg px-3 py-2 {check.status === 'fail' ? 'bg-red-50' : check.status === 'warn' ? 'bg-yellow-50' : ''}">
+														<div class="flex items-start gap-2.5 rounded-lg px-3 py-2 {check.status === 'fail' ? 'bg-red-50 dark:bg-red-900/20' : check.status === 'warn' ? 'bg-yellow-50 dark:bg-yellow-900/20' : ''}">
 															<span class="mt-0.5 shrink-0 text-sm">
 																{#if check.status === 'pass'}
 																	<span class="text-green-600">&#10003;</span>
@@ -1033,8 +1033,8 @@
 															</span>
 															<div class="min-w-0 flex-1">
 																<div class="flex items-baseline gap-2">
-																	<span class="text-xs font-medium text-gray-500">{check.name}</span>
-																	<span class="text-xs {check.status === 'fail' ? 'text-red-700 font-medium' : check.status === 'warn' ? 'text-yellow-700' : 'text-gray-700'}">{check.message}</span>
+																	<span class="text-xs font-medium text-gray-500 dark:text-gray-400">{check.name}</span>
+																	<span class="text-xs {check.status === 'fail' ? 'text-red-700 dark:text-red-400 font-medium' : check.status === 'warn' ? 'text-yellow-700 dark:text-yellow-400' : 'text-gray-700 dark:text-gray-300'}">{check.message}</span>
 																</div>
 																{#if check.detail}
 																	<p class="mt-0.5 text-xs text-gray-400 whitespace-pre-wrap break-words">{check.detail}</p>
@@ -1044,8 +1044,8 @@
 													{/each}
 												</div>
 												{#if doctorChecks.some(c => c.status === 'fail')}
-													<div class="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500">
-														Issues found. Try <button onclick={handleRestart} class="font-medium text-gray-700 hover:underline">restarting your agent</button> if problems persist.
+													<div class="mt-3 border-t border-gray-100 dark:border-gray-800 pt-3 text-xs text-gray-500 dark:text-gray-400">
+														Issues found. Try <button onclick={handleRestart} class="font-medium text-gray-700 dark:text-gray-300 hover:underline">restarting your agent</button> if problems persist.
 													</div>
 												{/if}
 											{:else if doctorRaw}
@@ -1059,7 +1059,7 @@
 					{/if}
 
 					{#if !isConfigSyncing && !isProvisioning && !activationCooloff && !recentlyRestarted && (instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found')}
-						<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 flex items-center justify-between">
+						<div class="rounded-lg border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 p-3 text-sm text-yellow-800 dark:text-yellow-400 flex items-center justify-between">
 							{#if instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
 								<span>Your agent appears stopped. Restart to bring it back online.</span>
 								<button
@@ -1088,8 +1088,8 @@
 			<!-- Right column -->
 			<div class="space-y-6">
 				{#if isProvisioning}
-					<div class="rounded-xl border border-gray-200 p-5">
-						<h3 class="text-sm font-semibold text-gray-900">Provisioning Progress</h3>
+					<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+						<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Provisioning Progress</h3>
 						<div class="mt-4">
 							<ProvisioningProgress currentStep={instance.step} />
 						</div>
@@ -1097,30 +1097,30 @@
 				{/if}
 
 				{#if instance.status === 'restoring'}
-					<div class="rounded-xl border border-blue-300 bg-blue-50 p-5">
+					<div class="rounded-xl border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-5">
 						<div class="flex items-center gap-3">
 							<svg class="h-5 w-5 animate-spin text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none">
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 							</svg>
 							<div>
-								<h3 class="text-sm font-semibold text-blue-900">Restoring from Snapshot</h3>
-								<p class="mt-1 text-xs text-blue-700">Your agent is being rebuilt from a snapshot. This may take a few minutes. A new root password will be generated.</p>
+								<h3 class="text-sm font-semibold text-blue-900 dark:text-blue-300">Restoring from Snapshot</h3>
+								<p class="mt-1 text-xs text-blue-700 dark:text-blue-400">Your agent is being rebuilt from a snapshot. This may take a few minutes. A new root password will be generated.</p>
 							</div>
 						</div>
 					</div>
 				{/if}
 
 				{#if instance.status === 'snapshotting'}
-					<div class="rounded-xl border border-blue-300 bg-blue-50 p-5">
+					<div class="rounded-xl border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-5">
 						<div class="flex items-center gap-3">
 							<svg class="h-5 w-5 animate-spin text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none">
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 							</svg>
 							<div>
-								<h3 class="text-sm font-semibold text-blue-900">Creating Snapshot</h3>
-								<p class="mt-1 text-xs text-blue-700">A snapshot of your agent's current state is being created. This may take a few minutes.</p>
+								<h3 class="text-sm font-semibold text-blue-900 dark:text-blue-300">Creating Snapshot</h3>
+								<p class="mt-1 text-xs text-blue-700 dark:text-blue-400">A snapshot of your agent's current state is being created. This may take a few minutes.</p>
 							</div>
 						</div>
 					</div>
@@ -1133,20 +1133,20 @@
 				{/if}
 
 				{#if instance.status === 'active' || instance.status === 'snapshotting' || instance.status === 'restoring' || instance.status === 'restarting'}
-					<div class="rounded-xl border border-gray-200 p-5">
+					<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
 						<div class="flex items-center justify-between">
-							<h3 class="text-sm font-semibold text-gray-900">Snapshots</h3>
-							<span class="text-xs text-gray-400">{instanceSnapshots.length}/3 used</span>
+							<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Snapshots</h3>
+							<span class="text-xs text-gray-400 dark:text-gray-500">{instanceSnapshots.length}/3 used</span>
 						</div>
-						<p class="mt-1 text-xs text-gray-400">Create backups of your agent's disk state</p>
+						<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Create backups of your agent's disk state</p>
 
 						{#if instanceSnapshots.length > 0}
 							<div class="mt-4 space-y-3">
 								{#each instanceSnapshots as snap (snap.id)}
-									<div class="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2.5">
+									<div class="flex items-center justify-between rounded-lg border border-gray-100 dark:border-gray-800 px-3 py-2.5">
 										<div class="min-w-0 flex-1">
-											<p class="text-sm font-medium text-gray-900 truncate">{snap.name}</p>
-											<p class="text-xs text-gray-400">
+											<p class="text-sm font-medium text-gray-900 dark:text-white truncate">{snap.name}</p>
+											<p class="text-xs text-gray-400 dark:text-gray-500">
 												{new Date(snap.created_at).toLocaleDateString()}
 												{#if snap.size_gb}
 													&middot; {snap.size_gb.toFixed(1)} GB
@@ -1184,7 +1184,7 @@
 															type="text"
 															bind:value={confirmDeleteInput}
 															placeholder={snap.name}
-															class="w-40 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+															class="w-40 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs text-gray-900 dark:text-white focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
 														/>
 														<div class="flex items-center gap-1.5">
 															<button
@@ -1206,7 +1206,7 @@
 													<button
 														onclick={() => (confirmRestoreId = snap.id)}
 														disabled={instance.status !== 'active'}
-														class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+														class="rounded-md border border-gray-300 dark:border-gray-600 px-2.5 py-1 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
 														title="Restore agent from this snapshot"
 													>
 														Restore
@@ -1214,7 +1214,7 @@
 													<button
 														onclick={() => promptDeleteSnapshot(snap.id)}
 														disabled={deletingSnapshotId === snap.id || isBusy}
-														class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+														class="rounded-md border border-gray-300 dark:border-gray-600 px-2.5 py-1 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
 														title="Delete this snapshot"
 													>
 														{deletingSnapshotId === snap.id ? 'Deleting...' : 'Delete'}
@@ -1236,21 +1236,21 @@
 							<p class="mt-4 text-xs text-gray-400">No snapshots yet</p>
 						{/if}
 
-						<div class="mt-4 border-t border-gray-100 pt-3">
+						<div class="mt-4 border-t border-gray-100 dark:border-gray-800 pt-3">
 							{#if showSnapshotForm}
 								<form onsubmit={(e) => { e.preventDefault(); handleCreateSnapshot(); }} class="flex items-center gap-2">
 									<input
 										type="text"
 										bind:value={snapshotName}
 										placeholder="Snapshot name"
-										class="flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+										class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1.5 text-sm text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
 										autofocus
 										onkeydown={(e) => { if (e.key === 'Escape') { showSnapshotForm = false; snapshotName = ''; } }}
 									/>
 									<button
 										type="submit"
 										disabled={creatingSnapshot || !snapshotName.trim()}
-										class="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+										class="rounded-md bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 									>
 										{creatingSnapshot ? 'Creating...' : 'Create'}
 									</button>
@@ -1266,7 +1266,7 @@
 								<button
 									onclick={() => (showSnapshotForm = true)}
 									disabled={instanceSnapshots.length >= 3 || instance.status !== 'active'}
-									class="text-sm text-gray-900 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+									class="text-sm text-gray-900 dark:text-white hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									+ Create Snapshot
 								</button>
