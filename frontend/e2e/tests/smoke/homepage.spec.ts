@@ -4,7 +4,7 @@ test.describe('Homepage', () => {
 	test('hero section renders with headline', async ({ page }) => {
 		await page.goto('/');
 		await expect(
-			page.getByText('Deploy your AI agent')
+			page.getByRole('heading', { name: 'Deploy your AI agent in' })
 		).toBeVisible();
 	});
 

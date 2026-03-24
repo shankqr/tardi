@@ -53,6 +53,7 @@ test.describe('Password reset', () => {
 
 		const signInBtn = page.getByRole('button', { name: 'Sign in' });
 		await expect(signInBtn).toBeVisible({ timeout: 10_000 });
+		await page.waitForTimeout(1000);
 
 		// Switch to forgot password mode
 		await page.getByRole('button', { name: 'Forgot password?' }).click();
