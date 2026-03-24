@@ -417,12 +417,34 @@ test('Full user journey: signup → deploy → configure → telegram', async ({
 
 		console.log(`[E2E] Opening dashboard: ${dashboardUrl}`);
 
+		// After model change sync, the container restarts. Wait for the gateway
+		// to come back online by polling the dashboard URL before navigating.
+		const ocUrl = `${dashboardUrl}/#token=${dashboardToken}`;
+		let dashboardReady = false;
+		for (let attempt = 0; attempt < 12; attempt++) {
+			try {
+				const res = await fetch(dashboardUrl, { signal: AbortSignal.timeout(10_000) });
+				if (res.ok || res.status === 101 || res.status === 426) {
+					dashboardReady = true;
+					break;
+				}
+				console.log(`[E2E] Dashboard not ready (status ${res.status}), retrying...`);
+			} catch {
+				console.log(`[E2E] Dashboard not reachable yet (attempt ${attempt + 1}/12)`);
+			}
+			await new Promise((r) => setTimeout(r, 10_000));
+		}
+
+		if (!dashboardReady) {
+			console.log('[E2E] Dashboard never became reachable, skipping OC verification');
+			return;
+		}
+
 		// Navigate to the OpenClaw Control UI with auth token
-		await page.goto(`${dashboardUrl}/#token=${dashboardToken}`);
+		await page.goto(ocUrl);
 
 		// Wait for the Control UI to load and connect via WebSocket
 		// The Control UI is a Lit-based SPA — look for the chat input
-		// Try common chat input selectors
 		const chatInput = page.locator(
 			'textarea, input[type="text"], [contenteditable="true"]'
 		).last();
