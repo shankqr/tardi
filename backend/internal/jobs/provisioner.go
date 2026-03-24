@@ -362,8 +362,10 @@ if [ "$HEALTHY" = true ]; then
 {{- if .Model}}
 {{- if eq .Provider "openrouter"}}
     docker exec openclaw-gateway openclaw models set "openrouter/{{.Model}}" 2>/dev/null
+    docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "openrouter/{{.Model}}"
 {{- else}}
     docker exec openclaw-gateway openclaw models set "{{.Model}}" 2>/dev/null
+    docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "{{.Model}}"
 {{- end}}
 {{- end}}
 

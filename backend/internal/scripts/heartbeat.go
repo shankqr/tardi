@@ -153,12 +153,15 @@ if [ "$STATUS" = "running" ]; then
                 fi
             done
         fi
-        # Set active model last so it becomes the default
+        # Set active model last and set it as the primary model.
+        # "openclaw models set" only registers it — "config set" makes it primary.
         if [ -n "$SAVED_MODEL" ]; then
             if [ "$SAVED_PROVIDER" = "openrouter" ]; then
                 docker exec openclaw-gateway openclaw models set "openrouter/${SAVED_MODEL}" 2>/dev/null
+                docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "openrouter/${SAVED_MODEL}" 2>/dev/null
             else
                 docker exec openclaw-gateway openclaw models set "${SAVED_MODEL}" 2>/dev/null
+                docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "${SAVED_MODEL}" 2>/dev/null
             fi
         fi
     fi
@@ -372,9 +375,11 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
             fi
             if [ -n "$NEW_MODEL" ]; then
                 if [ "$NEW_PROVIDER" = "openrouter" ]; then
-                    docker exec openclaw-gateway openclaw models set "openrouter/${NEW_MODEL}"
+                    docker exec openclaw-gateway openclaw models set "openrouter/${NEW_MODEL}" 2>/dev/null
+                    docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "openrouter/${NEW_MODEL}"
                 else
-                    docker exec openclaw-gateway openclaw models set "${NEW_MODEL}"
+                    docker exec openclaw-gateway openclaw models set "${NEW_MODEL}" 2>/dev/null
+                    docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "${NEW_MODEL}"
                 fi
             fi
 

@@ -126,15 +126,18 @@ if [ "$HEALTHY" = true ]; then
         echo "registered $(echo "$ALL_MODEL_IDS" | wc -w | tr -d ' ') models in OpenClaw"
     fi
 
-    # Set the user's selected model last so it becomes the active default
+    # Set the user's selected model as the active primary model.
+    # "openclaw models set" only REGISTERS a model in the dropdown — it does
+    # NOT change the primary. We must also "config set" the primary explicitly.
     if [ -n "$NEW_MODEL" ]; then
         if [ "$NEW_PROVIDER" = "openrouter" ]; then
-            docker exec openclaw-gateway openclaw models set "openrouter/${NEW_MODEL}"
-            echo "model set to openrouter/${NEW_MODEL}"
+            FULL_MODEL="openrouter/${NEW_MODEL}"
         else
-            docker exec openclaw-gateway openclaw models set "${NEW_MODEL}"
-            echo "model set to ${NEW_MODEL}"
+            FULL_MODEL="${NEW_MODEL}"
         fi
+        docker exec openclaw-gateway openclaw models set "$FULL_MODEL" 2>/dev/null
+        docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "$FULL_MODEL"
+        echo "model set to $FULL_MODEL"
     fi
 
     # Write Google OAuth credential files for gog CLI
