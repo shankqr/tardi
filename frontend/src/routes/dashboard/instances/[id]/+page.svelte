@@ -119,32 +119,13 @@
 	});
 
 	// Post-activation cooling-off: suppress health status for 5 minutes
-	// after provisioning completes, so users don't see transient "Unhealthy".
-	let activationCooloff = $state(false);
-	let activationCooloffTimer: ReturnType<typeof setTimeout> | null = null;
-
-	$effect(() => {
-		if (isProvisioning) {
-			// Still provisioning — ensure cooloff is armed for when it finishes
-			activationCooloff = true;
-			if (activationCooloffTimer) clearTimeout(activationCooloffTimer);
-			activationCooloffTimer = null;
-		} else if (activationCooloff && instance?.agent_status === 'running') {
-			// Healthy heartbeat arrived — end cooloff early
-			activationCooloff = false;
-			if (activationCooloffTimer) clearTimeout(activationCooloffTimer);
-			activationCooloffTimer = null;
-		} else if (activationCooloff && !activationCooloffTimer && !isProvisioning) {
-			// Just transitioned out of provisioning — start 5-min timer
-			activationCooloffTimer = setTimeout(() => {
-				activationCooloff = false;
-				activationCooloffTimer = null;
-			}, 5 * 60 * 1000);
-		}
-		return () => {
-			if (activationCooloffTimer) clearTimeout(activationCooloffTimer);
-		};
-	});
+	// after creation if the agent hasn't reported healthy yet.
+	// Derived from server data so it survives page navigation.
+	const activationCooloff = $derived(
+		instance?.status === 'active' &&
+		instance.agent_status !== 'running' &&
+		(Date.now() - new Date(instance.created_at).getTime()) < 5 * 60 * 1000
+	);
 
 	// Doctor state
 	let doctorRunning = $state(false);
