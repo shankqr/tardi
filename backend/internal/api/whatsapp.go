@@ -467,12 +467,32 @@ func WhatsAppQRHandler(deps Dependencies) http.HandlerFunc {
 		force := r.URL.Query().Get("force") == "true"
 
 		// Use config.patch to ensure WhatsApp and web channels are enabled.
-		patchResult, patchErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "config.patch", map[string]any{
-			"channels": map[string]any{
-				"web":      map[string]any{"enabled": true},
-				"whatsapp": map[string]any{"enabled": true, "dmPolicy": "pairing", "groupPolicy": "disabled"},
-			},
-		})
+		// First get the current config hash (required by config.patch).
+		getResult, getErr := openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "config.get", map[string]any{})
+		var patchResult json.RawMessage
+		var patchErr error
+		if getErr != nil {
+			patchErr = fmt.Errorf("config.get: %w", getErr)
+		} else {
+			var configResp struct {
+				Hash string `json:"hash"`
+			}
+			if err := json.Unmarshal(getResult, &configResp); err != nil || configResp.Hash == "" {
+				patchErr = fmt.Errorf("config.get: missing hash")
+			} else {
+				patch := map[string]any{
+					"channels": map[string]any{
+						"web":      map[string]any{"enabled": true},
+						"whatsapp": map[string]any{"enabled": true, "dmPolicy": "pairing", "groupPolicy": "disabled"},
+					},
+				}
+				patchJSON, _ := json.Marshal(patch)
+				patchResult, patchErr = openclawRPC(ctx, *inst.IPv4, *inst.OpenClawAuthToken, "config.patch", map[string]any{
+					"raw":      string(patchJSON),
+					"baseHash": configResp.Hash,
+				})
+			}
+		}
 		if patchErr != nil {
 			slog.Warn("whatsapp qr: config.patch failed",
 				"error", patchErr,

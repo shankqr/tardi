@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -151,10 +152,23 @@ func TelegramDisconnectHandler(deps Dependencies) http.HandlerFunc {
 // NOTE: OpenClaw owns openclaw.json and overwrites it on startup — editing
 // the file directly is useless. Config changes MUST go through config.patch RPC.
 func patchTelegramConfig(ctx context.Context, ipv4, authToken string) error {
-	// config.patch with the Telegram settings directly as params.
+	// First, get the current config hash (required by config.patch)
+	getResult, err := openclawRPC(ctx, ipv4, authToken, "config.get", map[string]any{})
+	if err != nil {
+		return fmt.Errorf("config.get: %w", err)
+	}
+
+	var configResp struct {
+		Hash string `json:"hash"`
+	}
+	if err := json.Unmarshal(getResult, &configResp); err != nil || configResp.Hash == "" {
+		return fmt.Errorf("config.get: missing hash")
+	}
+
+	// config.patch requires {raw: "<json string>", hash: "<current hash>"}.
 	// - streaming:"off" prevents double replies (the actual root cause)
 	// - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
-	_, err := openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
+	patch := map[string]any{
 		"channels": map[string]any{
 			"telegram": map[string]any{
 				"enabled":     true,
@@ -164,6 +178,12 @@ func patchTelegramConfig(ctx context.Context, ipv4, authToken string) error {
 				"groupPolicy": "disabled",
 			},
 		},
+	}
+	patchJSON, _ := json.Marshal(patch)
+
+	_, err = openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
+		"raw":      string(patchJSON),
+		"baseHash": configResp.Hash,
 	})
 	return err
 }
