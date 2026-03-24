@@ -21,10 +21,11 @@ import (
 // "GatewayRequestError: missing scope: operator.read".
 //
 // Fix: rotate a device token with all operator scopes, then set it as the
-// gateway auth token. This way the token serves dual purpose — gateway
-// authentication AND operator scope authorization.
+// gateway auth token. The token now serves dual purpose — gateway auth AND
+// operator scope authorization.
 //
-// Also syncs the token back to DB so backend RPC calls stay in sync.
+// We use `openclaw gateway restart` (internal process restart) to apply the
+// new token, which preserves the config unlike `docker compose restart`.
 func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := middleware.UserFromContext(r.Context())
@@ -54,11 +55,11 @@ func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// 1. Read current gateway token
-		// 2. Get first paired device ID
-		// 3. Rotate device token with all operator scopes
-		// 4. Set the scoped token as the new gateway auth token
-		// The token now serves dual purpose: gateway auth + operator scopes.
+		// 1. Read current gateway token from openclaw.json
+		// 2. Rotate paired device token with all operator scopes
+		// 3. Set rotated token as gateway auth token
+		// 4. Internal gateway restart to apply (preserves config, unlike container restart)
+		// 5. Wait for healthy, then return the scoped token
 		script := `#!/bin/bash
 set -e
 GW_TOKEN=$(cat /opt/openclaw/data/openclaw/openclaw.json | jq -r '.gateway.auth.token // empty')
@@ -83,10 +84,17 @@ NEW_TOKEN=$(echo "$RESULT" | jq -r '.token // empty')
 if [ -z "$NEW_TOKEN" ]; then
     echo '{"error":"rotate failed"}' && exit 0
 fi
+# Set rotated device token as gateway token and restart to apply
 docker exec openclaw-gateway openclaw config set gateway.auth.token "$NEW_TOKEN" >/dev/null 2>&1
+docker exec openclaw-gateway openclaw gateway restart >/dev/null 2>&1 || true
+# Wait for gateway to come back healthy
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 3
+    if curl -sf http://localhost:18789/health >/dev/null 2>&1; then break; fi
+done
 echo "$RESULT"
 `
-		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, script, 30*time.Second)
+		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, script, 60*time.Second)
 		if err != nil {
 			slog.Error("dashboard-token: ssh failed", "error", err, "instance_id", instanceID)
 			WriteError(w, http.StatusBadGateway, "gateway_error", "failed to generate dashboard token")
