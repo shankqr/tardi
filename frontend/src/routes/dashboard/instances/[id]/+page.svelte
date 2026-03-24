@@ -60,6 +60,7 @@
 
 	// API key gate
 	let hasApiKey = $state(false);
+	let dashboardLoading = $state(false);
 
 	// Telegram state
 	let telegramToken = $state('');
@@ -624,6 +625,7 @@
 						{#if hasApiKey}
 							<button
 								onclick={async () => {
+									dashboardLoading = true;
 									try {
 										const token = await getIdToken();
 										if (!token) return;
@@ -631,11 +633,20 @@
 										window.open(`${instance!.dashboard_url!}/#token=${scopedToken}`, '_blank');
 									} catch {
 										alert('Failed to generate dashboard token. Please try again.');
+									} finally {
+										dashboardLoading = false;
 									}
 								}}
-								class="mt-4 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800"
+								disabled={dashboardLoading}
+								class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-70"
 							>
 								Open Agent Dashboard
+								{#if dashboardLoading}
+									<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+									</svg>
+								{/if}
 							</button>
 						{:else}
 							<p class="mt-4 text-xs text-gray-400">Set up your OpenRouter API key below to access the dashboard.</p>
