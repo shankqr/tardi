@@ -42,10 +42,12 @@ test.describe('Signup validation', () => {
 		await page.locator('#confirm-password').click();
 		await page.locator('#confirm-password').pressSequentially('123', { delay: 20 });
 
-		// The form has minlength=8 on password fields, so we need to bypass
-		// HTML validation by removing the attribute, then submit
-		await page.locator('#password').evaluate((el) => el.removeAttribute('minlength'));
-		await page.locator('#confirm-password').evaluate((el) => el.removeAttribute('minlength'));
+		// The form has minlength=8 on password fields — disable HTML validation
+		// entirely by setting noValidate on the form, which is more reliable than
+		// removing individual attributes (Svelte may re-apply them on re-render)
+		await page.locator('form').evaluate((form) => {
+			(form as HTMLFormElement).noValidate = true;
+		});
 
 		await createBtn.click();
 

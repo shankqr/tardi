@@ -6,12 +6,13 @@ test.describe('Password reset', () => {
 
 		const signInBtn = page.getByRole('button', { name: 'Sign in' });
 		await expect(signInBtn).toBeVisible({ timeout: 10_000 });
+		await page.waitForTimeout(1000);
 
 		// Click "Forgot password?" link
 		await page.getByRole('button', { name: 'Forgot password?' }).click();
 
 		// Verify the heading changed
-		await expect(page.getByText('Reset your password')).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible({ timeout: 10_000 });
 
 		// Verify email input is still present
 		await expect(page.locator('#email')).toBeVisible();
@@ -55,7 +56,7 @@ test.describe('Password reset', () => {
 
 		// Switch to forgot password mode
 		await page.getByRole('button', { name: 'Forgot password?' }).click();
-		await expect(page.getByText('Reset your password')).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible({ timeout: 10_000 });
 
 		// Click "Back to login"
 		await page.getByRole('button', { name: 'Back to login' }).click();
