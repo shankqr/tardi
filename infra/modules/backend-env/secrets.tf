@@ -164,3 +164,60 @@ resource "google_secret_manager_secret_version" "cloudflare_base_domain" {
     ignore_changes = [secret_data]
   }
 }
+
+# Google OAuth client ID — for delegated Google account access
+resource "google_secret_manager_secret" "google_oauth_client_id" {
+  secret_id = "${var.environment}-google-oauth-client-id"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "google_oauth_client_id" {
+  secret      = google_secret_manager_secret.google_oauth_client_id.id
+  secret_data = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+# Google OAuth client secret — for delegated Google account access
+resource "google_secret_manager_secret" "google_oauth_client_secret" {
+  secret_id = "${var.environment}-google-oauth-client-secret"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "google_oauth_client_secret" {
+  secret      = google_secret_manager_secret.google_oauth_client_secret.id
+  secret_data = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+# Token encryption key — AES-256-GCM key for encrypting OAuth tokens at rest
+resource "google_secret_manager_secret" "token_encryption_key" {
+  secret_id = "${var.environment}-token-encryption-key"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "token_encryption_key" {
+  secret      = google_secret_manager_secret.token_encryption_key.id
+  secret_data = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
