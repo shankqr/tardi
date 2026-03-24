@@ -98,6 +98,7 @@ OpenClaw is the AI agent runtime that runs on each user's VPS inside a Docker co
 
 - **OpenClaw owns `openclaw.json`** — it overwrites the file on startup with its internal config. Do NOT rely on editing this file externally; changes will be lost.
 - **Config changes** must go through OpenClaw's `config.patch` WebSocket RPC (see `whatsapp.go` for examples), or be set before the very first boot.
+- **`config.patch` format**: Requires `{raw: "<JSON string of patch>", baseHash: "<hash from config.get>"}`. NOT `hash` (rejected as unexpected property), NOT direct config as params (rejected as missing `raw`). Always call `config.get` first to obtain the `baseHash`.
 - **Telegram bot token** is passed via `TELEGRAM_BOT_TOKEN` env var. OpenClaw auto-detects it and configures the Telegram channel automatically.
 
 ### Gateway Auth — Token Mode
