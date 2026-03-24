@@ -54,18 +54,22 @@ func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Read the gateway token from openclaw.json (source of truth — may differ
-		// from DB if OpenClaw regenerated it on restart). Also ensure trustedProxies
-		// is set so operator scopes are granted through Cloudflare's proxy.
+		// Read the gateway token from .env (OpenClaw reads OPENCLAW_GATEWAY_TOKEN
+		// from the env var — it does NOT store it in openclaw.json). Also ensure
+		// trustedProxies is set so operator scopes work through Cloudflare's proxy.
 		script := `#!/bin/bash
 set -e
 OC_CFG="/opt/openclaw/data/openclaw/openclaw.json"
-GW_TOKEN=$(cat "$OC_CFG" | jq -r '.gateway.auth.token // empty')
+# Token sources: .env (set at provisioning), then openclaw.json (set by config commands)
+GW_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
+if [ -z "$GW_TOKEN" ]; then
+    GW_TOKEN=$(cat "$OC_CFG" 2>/dev/null | jq -r '.gateway.auth.token // empty')
+fi
 if [ -z "$GW_TOKEN" ]; then
     echo '{"error":"no gateway token"}' && exit 0
 fi
 # Ensure trustedProxies is set (Cloudflare adds X-Forwarded-For)
-TRUSTED=$(cat "$OC_CFG" | jq -r '.gateway.trustedProxies // empty')
+TRUSTED=$(cat "$OC_CFG" 2>/dev/null | jq -r '.gateway.trustedProxies // empty')
 if [ -z "$TRUSTED" ] || [ "$TRUSTED" = "null" ]; then
     python3 -c "
 import json, datetime
