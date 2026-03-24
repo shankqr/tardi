@@ -127,6 +127,17 @@
 		(Date.now() - new Date(instance.created_at).getTime()) < 5 * 60 * 1000
 	);
 
+	// Config-sync grace: if agent is unhealthy but had a heartbeat within
+	// the last 90s, it's likely mid-restart from a config change. Derived
+	// from server data so it survives page navigation.
+	const recentlyRestarted = $derived(
+		instance?.status === 'active' &&
+		instance.agent_status !== 'running' &&
+		instance.agent_status !== null &&
+		instance.last_heartbeat_at !== null &&
+		(Date.now() - new Date(instance.last_heartbeat_at).getTime()) < 90_000
+	);
+
 	// Doctor state
 	let doctorRunning = $state(false);
 	let doctorChecks = $state<HealthCheck[] | null>(null);
@@ -564,7 +575,7 @@
 										</svg>
 										Setting up…
 									</span>
-								{:else if isConfigSyncing}
+								{:else if isConfigSyncing || recentlyRestarted}
 									<span class="inline-flex items-center gap-1.5 text-blue-700">
 										<svg class="h-3.5 w-3.5 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
 											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -955,7 +966,7 @@
 						</div>
 					{/if}
 
-					{#if !isConfigSyncing && !isProvisioning && !activationCooloff && (instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found')}
+					{#if !isConfigSyncing && !isProvisioning && !activationCooloff && !recentlyRestarted && (instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found')}
 						<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 flex items-center justify-between">
 							{#if instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
 								<span>Your agent appears stopped. Restart to bring it back online.</span>
