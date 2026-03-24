@@ -200,33 +200,8 @@
 		stopPollTimer();
 	}
 
-	async function checkRunningSync() {
-		if (syncPhase !== 'idle') return;
-		try {
-			const token = await getIdToken();
-			if (!token) return;
-			const result = await getSyncStatus(token, instanceId);
-			if (result.status === 'running' && syncPhase === 'idle') {
-				syncPhase = 'syncing';
-				startSyncTimer();
-				stopPollTimer();
-				pollTimer = setInterval(() => {
-					if (syncElapsed > 300) {
-						stopSyncTimer();
-						stopPollTimer();
-						syncError = 'Sync is taking longer than expected';
-						syncPhase = 'failed';
-						return;
-					}
-					pollSyncStatus();
-				}, 5000);
-			}
-		} catch { /* ignore */ }
-	}
-
 	onMount(() => {
 		loadConfig();
-		checkRunningSync();
 	});
 </script>
 
