@@ -15,16 +15,10 @@ import (
 	"github.com/shanq/tardi/internal/sshexec"
 )
 
-// DashboardTokenHandler reads the current gateway token from the VPS and
-// ensures trustedProxies is configured so operator scopes work.
-//
-// Background: Cloudflare adds X-Forwarded-For headers. Without
-// gateway.trustedProxies, OpenClaw treats the connection as coming from an
-// untrusted proxy and won't grant operator scopes — causing
-// "GatewayRequestError: missing scope: operator.read".
-//
-// Fix: set trustedProxies: ["0.0.0.0/0"] (safe because auth is token-based)
-// and return the current gateway token for the frontend to use.
+// DashboardTokenHandler reads the current gateway token from the VPS.
+// This is a read-only operation — it does NOT modify openclaw.json.
+// trustedProxies and other config fixes are handled by the heartbeat
+// drift guard (every 5 min) and the provisioner at initial setup.
 func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := middleware.UserFromContext(r.Context())
@@ -58,43 +52,25 @@ func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 		// 1. Running container's process env (most reliable — what OpenClaw actually uses)
 		// 2. .env file (set at provisioning, may be stale after restart)
 		// 3. openclaw.json gateway.auth.token (only if set via config commands)
-		// Also ensure trustedProxies is set so operator scopes work through Cloudflare.
+		// This script is READ-ONLY — no modifications to openclaw.json.
+		// Config fixes (trustedProxies, auth mode, etc.) are handled by the
+		// heartbeat drift guard and provisioner.
 		script := `#!/bin/bash
-set -e
+# No set -e: we want to try all fallbacks even if earlier commands fail
 OC_CFG="/opt/openclaw/data/openclaw/openclaw.json"
 # 1. Read from running container's process environment (most reliable)
 GW_TOKEN=$(docker exec openclaw-gateway printenv OPENCLAW_GATEWAY_TOKEN 2>/dev/null || true)
 # 2. Fallback: .env file
 if [ -z "$GW_TOKEN" ]; then
-    GW_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
+    GW_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2- || true)
 fi
 # 3. Fallback: openclaw.json
 if [ -z "$GW_TOKEN" ]; then
-    GW_TOKEN=$(cat "$OC_CFG" 2>/dev/null | jq -r '.gateway.auth.token // empty')
+    GW_TOKEN=$(cat "$OC_CFG" 2>/dev/null | jq -r '.gateway.auth.token // empty' 2>/dev/null || true)
 fi
 if [ -z "$GW_TOKEN" ]; then
-    echo '{"error":"no gateway token"}' && exit 0
-fi
-# Ensure trustedProxies is set (Cloudflare adds X-Forwarded-For)
-TRUSTED=$(cat "$OC_CFG" 2>/dev/null | jq -r '.gateway.trustedProxies // empty')
-if [ -z "$TRUSTED" ] || [ "$TRUSTED" = "null" ]; then
-    python3 -c "
-import json, datetime
-with open('$OC_CFG') as f:
-    cfg = json.load(f)
-cfg['gateway']['trustedProxies'] = ['0.0.0.0/0']
-cfg.setdefault('meta', {})['lastTouchedAt'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
-with open('$OC_CFG', 'w') as f:
-    json.dump(cfg, f, indent=2)
-" 2>/dev/null
-    # Wait a moment for OpenClaw to detect config change via lastTouchedAt
-    sleep 2
-fi
-# Sync .env so it stays current for next time
-ENV_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
-if [ "$GW_TOKEN" != "$ENV_TOKEN" ]; then
-    sed -i '/^OPENCLAW_GATEWAY_TOKEN=/d' /opt/openclaw/.env
-    echo "OPENCLAW_GATEWAY_TOKEN=$GW_TOKEN" >> /opt/openclaw/.env
+    echo '{"error":"no gateway token"}'
+    exit 0
 fi
 echo "{\"token\":\"$GW_TOKEN\"}"
 `
