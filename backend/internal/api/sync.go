@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -136,20 +138,10 @@ if [ "$HEALTHY" = true ]; then
             FULL_MODEL="${NEW_MODEL}"
         fi
         docker exec openclaw-gateway openclaw models set "$FULL_MODEL" 2>/dev/null
-        docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "$FULL_MODEL"
-        # config set requires a container restart to take effect.
-        # If we already recreated the container (ENV_CHANGED), skip — it'll
-        # pick up the config on next restart anyway. Otherwise restart now.
-        if [ "$ENV_CHANGED" = false ]; then
-            cd /opt/openclaw && docker compose restart openclaw-gateway
-            # Wait for healthy after restart
-            for i in $(seq 1 12); do
-                sleep 5
-                if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
-                    break
-                fi
-            done
-        fi
+        # Persist primary model to config file for durability across restarts.
+        # The live switch is handled by config.patch RPC from the backend — no
+        # container restart needed here.
+        docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "$FULL_MODEL" 2>/dev/null
         echo "model set to $FULL_MODEL"
     fi
 
@@ -182,6 +174,40 @@ else
     exit 1
 fi
 `
+}
+
+// patchModelConfig uses OpenClaw's config.patch RPC to set the primary model
+// live — no container restart needed. The bash sync script also persists the
+// model via CLI "config set" for durability across restarts, but that alone
+// requires a restart to take effect. This RPC applies the change immediately,
+// just like the OC dashboard dropdown does.
+func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model string) error {
+	fullModel := model
+	if provider == "openrouter" {
+		fullModel = "openrouter/" + model
+	}
+
+	getResult, err := openclawRPC(ctx, ipv4, authToken, "config.get", map[string]any{})
+	if err != nil {
+		return fmt.Errorf("config.get: %w", err)
+	}
+
+	var configResp struct {
+		Hash string `json:"hash"`
+	}
+	if err := json.Unmarshal(getResult, &configResp); err != nil || configResp.Hash == "" {
+		return fmt.Errorf("config.get: missing hash")
+	}
+
+	patchJSON := fmt.Sprintf(`{"agents":{"defaults":{"model":{"primary":"%s"}}}}`, fullModel)
+	_, err = openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
+		"raw":  patchJSON,
+		"hash": configResp.Hash,
+	})
+	if err != nil {
+		return fmt.Errorf("config.patch: %w", err)
+	}
+	return nil
 }
 
 // SyncConfigHandler triggers an immediate config sync on the VPS by
@@ -263,6 +289,26 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 		}
 
 		slog.Info("sync config: script launched", "instance_id", instanceID)
+
+		// Patch the model via WebSocket RPC so it applies live — no restart
+		// needed. The bash script also persists it via CLI for durability,
+		// but CLI "config set" alone requires a restart to take effect.
+		if inst.OpenClawAuthToken != nil && *inst.OpenClawAuthToken != "" {
+			agentCfg, cfgErr := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
+			if cfgErr == nil && agentCfg != nil {
+				model, _ := agentCfg.Config["model"].(string)
+				provider, _ := agentCfg.Config["provider"].(string)
+				if model != "" {
+					if err := patchModelConfig(r.Context(), *inst.IPv4, *inst.OpenClawAuthToken, provider, model); err != nil {
+						slog.Warn("sync config: model RPC patch failed (will apply on restart)",
+							"error", err, "instance_id", instanceID)
+					} else {
+						slog.Info("sync config: model patched via RPC", "model", model, "instance_id", instanceID)
+					}
+				}
+			}
+		}
+
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"synced": true,
 		})
