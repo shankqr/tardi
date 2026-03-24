@@ -156,6 +156,7 @@
 
 			await updateAgentConfig(token, instanceId, config);
 			keyDirty = false;
+			hasExistingKey = true;
 
 			// Trigger instant sync (runs in background on VPS, ~60-90s)
 			syncPhase = 'syncing';
