@@ -14,11 +14,15 @@
 │                        Hetzner Cloud                                │
 │                                                                     │
 │  ┌──────────────── UFW Firewall ──────────────────────────────┐     │
-│  │  ALLOW: 22/tcp (SSH), 80/tcp (HTTP), 18789/tcp (OpenClaw)  │     │
+│  │  ALLOW: 80/tcp (HTTP, any source)                          │     │
+│  │  ALLOW: 18789 from Cloudflare IPs + backend egress CIDRs   │     │
+│  │  ALLOW: 22/tcp from backend egress CIDRs (or any if unset) │     │
 │  │  DENY:  everything else                                    │     │
 │  │                                                            │     │
-│  │  Note: 18789 needed because iptables PREROUTING rewrites   │     │
-│  │  dest port before UFW's INPUT chain sees the packet.       │     │
+│  │  Port 18789: iptables PREROUTING rewrites dest port before │     │
+│  │  UFW INPUT chain — must allow 18789 for NAT'd :80 traffic. │     │
+│  │  Restricted to Cloudflare IPs to block direct-IP bypass.   │     │
+│  │  Cloudflare IPs refreshed daily by heartbeat.              │     │
 │  └────────────────────────────────────────────────────────────┘     │
 │                                                                     │
 │  ┌────────────── Docker: --network=host (no bridge) ──────────┐     │
@@ -96,7 +100,9 @@
                    ▼
           ┌────────────────────────┐
           │  UFW Firewall          │
-          │  allow 80, 22          │
+          │  allow 80 (any)        │
+          │  allow 18789 (CF+BE)   │
+          │  allow 22 (BE CIDRs)   │
           └────────┬───────────────┘
                    │
         ┌──────────┴──────────┐
@@ -358,6 +364,9 @@ systemd timer fires
               ├── Model: re-apply if missing
               ├── Auth: auth.mode=token
               ├── iptables: port 80 → 18789 NAT rule exists
+              ├── UFW hardening: replace blanket 18789 with CF CIDRs
+              ├── Cloudflare IPs: refresh daily from cloudflare.com
+              ├── Backend egress CIDRs: apply to 18789 + 22 if set
               └── Control UI: dangerouslyDisableDeviceAuth=true
 
 Removed drift guards (no longer needed):
