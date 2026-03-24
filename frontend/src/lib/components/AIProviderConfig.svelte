@@ -27,6 +27,7 @@
 	let customModel = $state<{ id: string; name: string } | null>(null);
 	let modelsError = $state(false);
 
+	let hasExistingKey = $state(false); // true when API key was loaded from backend (already saved)
 	const selectedModelInfo = $derived(models.find((m) => m.id === selectedModel));
 
 	function formatPrice(perToken: string | undefined): string {
@@ -114,6 +115,7 @@
 				const cfg = configResult.config;
 				if (cfg.openrouter_api_key && typeof cfg.openrouter_api_key === 'string') {
 					openrouterKey = cfg.openrouter_api_key;
+					hasExistingKey = true;
 				}
 				if (cfg.provider && typeof cfg.provider === 'string') {
 					currentProvider = cfg.provider;
@@ -353,7 +355,7 @@
 						id="model-select"
 						bind:value={selectedModel}
 						onchange={() => { if (models.some((m) => m.id === selectedModel)) customModel = null; }}
-						disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
+						disabled={disabled || !hasExistingKey || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
 						class="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
 					>
 						{#each models as model (model.id)}
@@ -365,6 +367,9 @@
 							<option value={customModel.id}>{customModel.name}</option>
 						{/if}
 					</select>
+				{/if}
+				{#if !hasExistingKey}
+					<p class="mt-1.5 text-xs text-gray-400">Save your OpenRouter API key first to change the model.</p>
 				{/if}
 			</div>
 
@@ -417,7 +422,7 @@
 				<button
 					type="button"
 					onclick={handleSave}
-					disabled={disabled || modelsError || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
+					disabled={disabled || modelsError || (!hasExistingKey && !keyDirty) || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
 					class="rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
 				>
 					{syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing' ? 'Applying...' : 'Save'}
