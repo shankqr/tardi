@@ -240,6 +240,9 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 				"platform": "linux",
 				"mode":     "webchat",
 			},
+			"auth": map[string]any{
+				"token": authToken,
+			},
 			"role":   "operator",
 			"scopes": []string{"operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.pairing"},
 			"caps":   []string{"tool-events"},
