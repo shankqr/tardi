@@ -60,6 +60,19 @@ func TelegramConnectHandler(deps Dependencies) http.HandlerFunc {
 		}
 		config["telegram_bot_token"] = body.BotToken
 
+		// Ensure model/provider are always present so the sync script sets the
+		// correct default model after container recreation. Without these, the
+		// sync script registers all catalog models but never sets an explicit
+		// default — causing the last model in sort order to become active.
+		if _, ok := config["provider"].(string); !ok || config["provider"] == "" {
+			config["provider"] = "openrouter"
+		}
+		if _, ok := config["model"].(string); !ok || config["model"] == "" {
+			if m, err := db.GetDefaultModel(r.Context(), deps.Pool); err == nil && m != nil {
+				config["model"] = m.ID
+			}
+		}
+
 		ac := &models.AgentConfig{
 			ID:            uuid.New(),
 			VpsInstanceID: inst.ID,
