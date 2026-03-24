@@ -117,6 +117,34 @@
 		}
 	});
 
+	// Post-activation cooling-off: suppress health status for 5 minutes
+	// after provisioning completes, so users don't see transient "Unhealthy".
+	let activationCooloff = $state(false);
+	let activationCooloffTimer: ReturnType<typeof setTimeout> | null = null;
+
+	$effect(() => {
+		if (isProvisioning) {
+			// Still provisioning — ensure cooloff is armed for when it finishes
+			activationCooloff = true;
+			if (activationCooloffTimer) clearTimeout(activationCooloffTimer);
+			activationCooloffTimer = null;
+		} else if (activationCooloff && instance?.agent_status === 'running') {
+			// Healthy heartbeat arrived — end cooloff early
+			activationCooloff = false;
+			if (activationCooloffTimer) clearTimeout(activationCooloffTimer);
+			activationCooloffTimer = null;
+		} else if (activationCooloff && !activationCooloffTimer && !isProvisioning) {
+			// Just transitioned out of provisioning — start 5-min timer
+			activationCooloffTimer = setTimeout(() => {
+				activationCooloff = false;
+				activationCooloffTimer = null;
+			}, 5 * 60 * 1000);
+		}
+		return () => {
+			if (activationCooloffTimer) clearTimeout(activationCooloffTimer);
+		};
+	});
+
 	// Doctor state
 	let doctorRunning = $state(false);
 	let doctorChecks = $state<HealthCheck[] | null>(null);
@@ -546,7 +574,15 @@
 						<div class="flex justify-between">
 							<dt class="text-gray-500">OpenClaw</dt>
 							<dd>
-								{#if isConfigSyncing}
+								{#if isProvisioning || activationCooloff}
+									<span class="inline-flex items-center gap-1.5 text-gray-500">
+										<svg class="h-3.5 w-3.5 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
+											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+											<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+										</svg>
+										Setting up…
+									</span>
+								{:else if isConfigSyncing}
 									<span class="inline-flex items-center gap-1.5 text-blue-700">
 										<svg class="h-3.5 w-3.5 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
 											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -923,7 +959,7 @@
 						</div>
 					{/if}
 
-					{#if !isConfigSyncing && (instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found')}
+					{#if !isConfigSyncing && !isProvisioning && !activationCooloff && (instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found')}
 						<div class="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800 flex items-center justify-between">
 							{#if instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
 								<span>Your agent appears stopped. Restart to bring it back online.</span>
