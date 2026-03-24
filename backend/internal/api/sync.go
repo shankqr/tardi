@@ -108,42 +108,10 @@ if [ "$HEALTHY" = true ]; then
         echo "telegram config patched"
     fi
 
-    # Register all available models in OpenClaw so the OC dashboard dropdown
-    # shows the full Tardi model catalog. OpenClaw only shows models that have
-    # been explicitly added via "openclaw models set".
-    # Register non-active models first, then set the user's selected model last
-    # so it becomes the active/default model.
-    # OpenRouter model IDs contain a slash (e.g. "anthropic/claude-sonnet-4.6")
-    # which OpenClaw interprets as a provider prefix. Prepend "openrouter/" so
-    # OpenClaw routes through OpenRouter instead of the native provider.
-    if [ -n "$ALL_MODEL_IDS" ]; then
-        for MID in $ALL_MODEL_IDS; do
-            [ "$MID" = "$NEW_MODEL" ] && continue
-            if [ "$NEW_PROVIDER" = "openrouter" ]; then
-                docker exec openclaw-gateway openclaw models set "openrouter/${MID}" 2>/dev/null
-            else
-                docker exec openclaw-gateway openclaw models set "${MID}" 2>/dev/null
-            fi
-        done
-        echo "registered $(echo "$ALL_MODEL_IDS" | wc -w | tr -d ' ') models in OpenClaw"
-    fi
-
-    # Set the user's selected model as the active primary model.
-    # "openclaw models set" only REGISTERS a model in the dropdown — it does
-    # NOT change the primary. We must also "config set" the primary explicitly.
-    if [ -n "$NEW_MODEL" ]; then
-        if [ "$NEW_PROVIDER" = "openrouter" ]; then
-            FULL_MODEL="openrouter/${NEW_MODEL}"
-        else
-            FULL_MODEL="${NEW_MODEL}"
-        fi
-        docker exec openclaw-gateway openclaw models set "$FULL_MODEL" 2>/dev/null
-        # Persist primary model to config file for durability across restarts.
-        # The live switch is handled by config.patch RPC from the backend — no
-        # container restart needed here.
-        docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "$FULL_MODEL" 2>/dev/null
-        echo "model set to $FULL_MODEL"
-    fi
+    # Model registration + primary model are handled by config.patch RPC
+    # from the backend (atomic, live, no restart). The CLI "openclaw models set"
+    # loop was removed because it changes the primary as a side effect of each
+    # registration, racing with the RPC and causing model flip-flop.
 
     # Write Google OAuth credential files for gog CLI
     GOG_DIR="/opt/openclaw/data/openclaw/.config/gogcli"
@@ -176,12 +144,12 @@ fi
 `
 }
 
-// patchModelConfig uses OpenClaw's config.patch RPC to set the primary model
-// live — no container restart needed. The bash sync script also persists the
-// model via CLI "config set" for durability across restarts, but that alone
-// requires a restart to take effect. This RPC applies the change immediately,
-// just like the OC dashboard dropdown does.
-func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model string) error {
+// patchModelConfig uses OpenClaw's config.patch RPC to atomically set the
+// primary model AND register all catalog models in one call. This avoids
+// the CLI "openclaw models set" loop which changes the primary as a side
+// effect of each registration, causing race conditions with the RPC.
+// config.patch applies live (no restart) and persists to the JSON file.
+func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model string, allModelIDs []string) error {
 	fullModel := model
 	if provider == "openrouter" {
 		fullModel = "openrouter/" + model
@@ -199,9 +167,31 @@ func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model stri
 		return fmt.Errorf("config.get: missing hash")
 	}
 
-	patchJSON := fmt.Sprintf(`{"agents":{"defaults":{"model":{"primary":"%s"}}}}`, fullModel)
+	// Build the models map for registration in OC dashboard dropdown
+	modelsMap := map[string]any{}
+	for _, mid := range allModelIDs {
+		fmid := mid
+		if provider == "openrouter" {
+			fmid = "openrouter/" + mid
+		}
+		modelsMap[fmid] = map[string]any{}
+	}
+
+	// Single atomic patch: set primary + register all models
+	patch := map[string]any{
+		"agents": map[string]any{
+			"defaults": map[string]any{
+				"model": map[string]any{
+					"primary": fullModel,
+				},
+				"models": modelsMap,
+			},
+		},
+	}
+	patchJSON, _ := json.Marshal(patch)
+
 	_, err = openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
-		"raw":  patchJSON,
+		"raw":  string(patchJSON),
 		"hash": configResp.Hash,
 	})
 	if err != nil {
@@ -290,20 +280,27 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 
 		slog.Info("sync config: script launched", "instance_id", instanceID)
 
-		// Patch the model via WebSocket RPC so it applies live — no restart
-		// needed. The bash script also persists it via CLI for durability,
-		// but CLI "config set" alone requires a restart to take effect.
+		// Patch the model + register all catalog models via a single atomic
+		// config.patch RPC. This applies live (no restart) and avoids the
+		// "openclaw models set" CLI loop which changes the primary as a side
+		// effect of each registration.
 		if inst.OpenClawAuthToken != nil && *inst.OpenClawAuthToken != "" {
 			agentCfg, cfgErr := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
 			if cfgErr == nil && agentCfg != nil {
 				model, _ := agentCfg.Config["model"].(string)
 				provider, _ := agentCfg.Config["provider"].(string)
 				if model != "" {
-					if err := patchModelConfig(r.Context(), *inst.IPv4, *inst.OpenClawAuthToken, provider, model); err != nil {
-						slog.Warn("sync config: model RPC patch failed (will apply on restart)",
+					var modelIDs []string
+					if allModels, mErr := db.ListEnabledModels(r.Context(), deps.Pool); mErr == nil {
+						for _, m := range allModels {
+							modelIDs = append(modelIDs, m.ID)
+						}
+					}
+					if err := patchModelConfig(r.Context(), *inst.IPv4, *inst.OpenClawAuthToken, provider, model, modelIDs); err != nil {
+						slog.Warn("sync config: model RPC patch failed (script will handle it)",
 							"error", err, "instance_id", instanceID)
 					} else {
-						slog.Info("sync config: model patched via RPC", "model", model, "instance_id", instanceID)
+						slog.Info("sync config: model+catalog patched via RPC", "model", model, "instance_id", instanceID)
 					}
 				}
 			}
