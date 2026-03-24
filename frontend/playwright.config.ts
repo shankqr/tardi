@@ -24,6 +24,11 @@ export default defineConfig({
 			timeout: 30_000,
 		},
 		{
+			name: 'auth',
+			testDir: './e2e/tests/auth',
+			timeout: 60_000,
+		},
+		{
 			name: 'journey',
 			testDir: './e2e/tests/journey',
 		},
