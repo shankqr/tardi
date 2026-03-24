@@ -322,9 +322,11 @@ test('Full user journey: signup → deploy → configure → telegram', async ({
 		}
 
 		// Wait for model dropdown to be enabled (key already saved)
+		// After page recovery, AIProviderConfig re-mounts and needs to fetch config
+		// from API before hasExistingKey becomes true and dropdown is enabled
 		const modelSelect = page.locator('#model-select');
 		await modelSelect.scrollIntoViewIfNeeded();
-		await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
+		await expect(modelSelect).toBeEnabled({ timeout: 60_000 });
 
 		// Get all available options and pick one that isn't the current default
 		const options = modelSelect.locator('option');

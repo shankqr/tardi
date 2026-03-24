@@ -29,6 +29,11 @@ export default defineConfig({
 			timeout: 60_000,
 		},
 		{
+			name: 'dashboard',
+			testDir: './e2e/tests/dashboard',
+			timeout: 300_000, // 5 min — snapshots + health checks can be slow
+		},
+		{
 			name: 'journey',
 			testDir: './e2e/tests/journey',
 		},
