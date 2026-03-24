@@ -196,10 +196,13 @@ with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     fi
 fi
 
-# Ensure OPENCLAW_GATEWAY_TOKEN is in .env (needed for token auth mode)
-if ! grep -q '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null; then
-    OPENCLAW_TOKEN=$(grep '^OPENCLAW_AUTH_TOKEN=' /opt/openclaw/.env | cut -d= -f2-)
-    [ -n "$OPENCLAW_TOKEN" ] && echo "OPENCLAW_GATEWAY_TOKEN=$OPENCLAW_TOKEN" >> /opt/openclaw/.env
+# Sync OPENCLAW_GATEWAY_TOKEN in .env with the actual token from openclaw.json.
+# OpenClaw may regenerate the token on startup, so .env can become stale.
+ACTUAL_GW_TOKEN=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.token // empty' 2>/dev/null)
+ENV_GW_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
+if [ -n "$ACTUAL_GW_TOKEN" ] && [ "$ACTUAL_GW_TOKEN" != "$ENV_GW_TOKEN" ]; then
+    sed -i '/^OPENCLAW_GATEWAY_TOKEN=/d' /opt/openclaw/.env
+    echo "OPENCLAW_GATEWAY_TOKEN=$ACTUAL_GW_TOKEN" >> /opt/openclaw/.env
 fi
 
 # --- Ensure dangerouslyDisableDeviceAuth is set for Control UI ---
