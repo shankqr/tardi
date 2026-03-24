@@ -60,7 +60,7 @@
 
 	// API key gate
 	let hasApiKey = $state(false);
-	let dashboardLoading = $state(false);
+	let dashboardBtnLoading = $state(false);
 
 	// Telegram state
 	let telegramToken = $state('');
@@ -126,6 +126,24 @@
 		instance.agent_status !== 'running' &&
 		(Date.now() - new Date(instance.created_at).getTime()) < 5 * 60 * 1000
 	);
+
+	// Gate: show a dedicated "Setting Up" view until the VPS is healthy
+	const isSettingUp = $derived(
+		isProvisioning ||
+		activationCooloff ||
+		(instance?.status === 'error' && !instance?.agent_status)
+	);
+
+	// Elapsed timer for the setup view
+	let setupElapsed = $state(0);
+
+	$effect(() => {
+		if (isSettingUp && instance?.created_at) {
+			setupElapsed = Math.floor((Date.now() - new Date(instance.created_at).getTime()) / 1000);
+			const timer = setInterval(() => { setupElapsed += 1; }, 1000);
+			return () => clearInterval(timer);
+		}
+	});
 
 	// Config-sync grace: if agent is unhealthy but had a heartbeat within
 	// the last 90s, it's likely mid-restart from a config change. Derived
@@ -554,6 +572,65 @@
 			</div>
 		{/if}
 
+		{#if isSettingUp}
+			<div class="mt-12 flex justify-center">
+				<div class="w-full max-w-md">
+					<div class="rounded-xl border border-gray-200 p-8 text-center">
+						{#if instance.status === 'error'}
+							<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+								<svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+								</svg>
+							</div>
+							<h3 class="text-lg font-semibold text-gray-900">Setup Failed</h3>
+							<p class="mt-2 text-sm text-gray-500">Something went wrong while setting up your agent. Our team has been notified and is looking into it.</p>
+						{:else}
+							<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+								<svg class="h-6 w-6 animate-spin text-gray-600" viewBox="0 0 24 24" fill="none">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+								</svg>
+							</div>
+							<h3 class="text-lg font-semibold text-gray-900">Setting up your agent</h3>
+							<p class="mt-2 text-sm text-gray-500">This usually takes 2–3 minutes</p>
+
+							<div class="mt-6 text-left">
+								{#if isProvisioning}
+									<ProvisioningProgress currentStep={instance.step} />
+								{:else if activationCooloff}
+									<!-- All provisioning steps completed, waiting for OpenClaw health -->
+									<div class="space-y-3">
+										{#each ['Selecting provider', 'Creating server', 'Waiting for server', 'Bootstrapping OS', 'Installing agent', 'Activating'] as label}
+											<div class="flex items-center gap-3">
+												<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-500">
+													<svg class="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+														<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+													</svg>
+												</div>
+												<span class="text-sm text-gray-500">{label}</span>
+											</div>
+										{/each}
+										<div class="flex items-center gap-3">
+											<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-yellow-500 bg-yellow-50">
+												<svg class="h-3.5 w-3.5 animate-spin text-yellow-600" viewBox="0 0 24 24" fill="none">
+													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+												</svg>
+											</div>
+											<span class="text-sm font-medium text-gray-900">Starting OpenClaw</span>
+										</div>
+									</div>
+								{/if}
+							</div>
+
+							<p class="mt-6 text-xs text-gray-400">
+								{Math.floor(setupElapsed / 60)}:{String(setupElapsed % 60).padStart(2, '0')} elapsed
+							</p>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{:else}
 		<div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
 			<!-- Left column -->
 			<div class="space-y-6">
@@ -617,7 +694,7 @@
 						{#if hasApiKey}
 							<button
 								onclick={async () => {
-									dashboardLoading = true;
+									dashboardBtnLoading = true;
 									try {
 										const [, result] = await Promise.all([
 											new Promise(r => setTimeout(r, 2000)),
@@ -634,13 +711,13 @@
 									} catch {
 										alert('Failed to generate dashboard token. Please try again.');
 									} finally {
-										dashboardLoading = false;
+										dashboardBtnLoading = false;
 									}
 								}}
-								disabled={dashboardLoading}
+								disabled={dashboardBtnLoading}
 								class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-70"
 							>
-								{#if dashboardLoading}
+								{#if dashboardBtnLoading}
 									<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
@@ -1194,5 +1271,6 @@
 				{/if}
 			</div>
 		</div>
+		{/if}
 	</div>
 {/if}
