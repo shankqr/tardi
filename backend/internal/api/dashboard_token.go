@@ -55,6 +55,17 @@ func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 		// This script is READ-ONLY — no modifications to openclaw.json.
 		// Config fixes (trustedProxies, auth mode, etc.) are handled by the
 		// heartbeat drift guard and provisioner.
+		// Try DB-cached token first — avoids SSH entirely when available.
+		// This is the fast path; SSH is only needed when the DB token is empty
+		// (e.g. first boot before heartbeat syncs the token).
+		if inst.OpenClawAuthToken != nil && *inst.OpenClawAuthToken != "" {
+			WriteJSON(w, http.StatusOK, map[string]string{
+				"token": *inst.OpenClawAuthToken,
+			})
+			return
+		}
+
+		// Fallback: read token from VPS via SSH
 		script := `#!/bin/bash
 # No set -e: we want to try all fallbacks even if earlier commands fail
 OC_CFG="/opt/openclaw/data/openclaw/openclaw.json"
