@@ -61,6 +61,7 @@ type CloudInitData struct {
 	PreviewDomain      string // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
 	HeartbeatScript    string // Latest heartbeat bash script (from scripts.HeartbeatScript)
 	BackendEgressCIDRs string // Comma-separated CIDRs for backend egress IPs (restricts UFW SSH + OpenClaw access)
+	AllModelIDs        []string // All enabled model IDs from Tardi catalog (for OC dashboard dropdown)
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
@@ -343,10 +344,20 @@ for i in $(seq 1 30); do
 done
 
 if [ "$HEALTHY" = true ]; then
+    # Register all Tardi catalog models so OC dashboard dropdown matches frontend.
+    # For OpenRouter, prepend "openrouter/" so OpenClaw routes through OpenRouter
+    # instead of the model's native provider.
+    # Register non-active models first, then set active model last.
+{{- range .AllModelIDs}}
+{{- if ne . $.Model}}
+{{- if eq $.Provider "openrouter"}}
+    docker exec openclaw-gateway openclaw models set "openrouter/{{.}}" 2>/dev/null
+{{- else}}
+    docker exec openclaw-gateway openclaw models set "{{.}}" 2>/dev/null
+{{- end}}
+{{- end}}
+{{- end}}
 {{- if .Model}}
-    # Set default model. For OpenRouter, prepend "openrouter/" so OpenClaw
-    # routes through OpenRouter instead of the model's native provider
-    # (e.g. "anthropic/claude-sonnet-4.6" → "openrouter/anthropic/claude-sonnet-4.6")
 {{- if eq .Provider "openrouter"}}
     docker exec openclaw-gateway openclaw models set "openrouter/{{.Model}}" 2>/dev/null
 {{- else}}
@@ -621,6 +632,13 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 			ciData.Model = v
 		}
 		ciData.ConfigVersion = agentCfg.Version
+	}
+
+	// Fetch all enabled model IDs for OC dashboard dropdown
+	if allModels, err := db.ListEnabledModels(ctx, p.pool); err == nil {
+		for _, m := range allModels {
+			ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
+		}
 	}
 
 	// Render cloud-init user data

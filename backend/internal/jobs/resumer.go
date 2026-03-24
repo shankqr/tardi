@@ -153,6 +153,13 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		}
 	}
 
+	// Fetch all enabled model IDs for OC dashboard dropdown
+	if allModels, err := db.ListEnabledModels(ctx, r.pool); err == nil {
+		for _, m := range allModels {
+			ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
+		}
+	}
+
 	// Render cloud-init
 	userData, err := RenderCloudInit(ciData)
 	if err != nil {

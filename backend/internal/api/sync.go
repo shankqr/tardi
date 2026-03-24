@@ -49,6 +49,7 @@ NEW_GOOGLE_CLIENT=$(echo "$CONFIG" | jq -r '.config.google_client_b64 // empty')
 NEW_GOOGLE_TOKEN=$(echo "$CONFIG" | jq -r '.config.google_token_b64 // empty')
 NEW_GOOGLE_EMAIL=$(echo "$CONFIG" | jq -r '.config.google_email // empty')
 REMOTE_VERSION=$(echo "$CONFIG" | jq -r '.version // 0')
+ALL_MODEL_IDS=$(echo "$CONFIG" | jq -r '.model_ids // [] | .[]' 2>/dev/null)
 
 # Rebuild .env preserving non-key/token vars
 grep -v -E '_API_KEY=|TELEGRAM_BOT_TOKEN=' /opt/openclaw/.env > /opt/openclaw/.env.tmp
@@ -90,14 +91,27 @@ if [ "$HEALTHY" = true ]; then
         echo "telegram config patched"
     fi
 
-    # Update default model if set.
+    # Register all available models in OpenClaw so the OC dashboard dropdown
+    # shows the full Tardi model catalog. OpenClaw only shows models that have
+    # been explicitly added via "openclaw models set".
+    # Register non-active models first, then set the user's selected model last
+    # so it becomes the active/default model.
     # OpenRouter model IDs contain a slash (e.g. "anthropic/claude-sonnet-4.6")
-    # which OpenClaw interprets as a provider prefix. Without "openrouter/" in
-    # front, OpenClaw thinks the provider is "anthropic" and looks for
-    # ANTHROPIC_API_KEY. Prepend "openrouter/" for OpenRouter so OpenClaw gets
-    # the 3-segment form: openrouter/anthropic/claude-sonnet-4.6
-    # For direct providers (anthropic, openai) the model IDs have no slash
-    # (e.g. "claude-sonnet-4-6-20250610") so no prefix is needed.
+    # which OpenClaw interprets as a provider prefix. Prepend "openrouter/" so
+    # OpenClaw routes through OpenRouter instead of the native provider.
+    if [ -n "$ALL_MODEL_IDS" ]; then
+        for MID in $ALL_MODEL_IDS; do
+            [ "$MID" = "$NEW_MODEL" ] && continue
+            if [ "$NEW_PROVIDER" = "openrouter" ]; then
+                docker exec openclaw-gateway openclaw models set "openrouter/${MID}" 2>/dev/null
+            else
+                docker exec openclaw-gateway openclaw models set "${MID}" 2>/dev/null
+            fi
+        done
+        echo "registered $(echo "$ALL_MODEL_IDS" | wc -w | tr -d ' ') models in OpenClaw"
+    fi
+
+    # Set the user's selected model last so it becomes the active default
     if [ -n "$NEW_MODEL" ]; then
         if [ "$NEW_PROVIDER" = "openrouter" ]; then
             docker exec openclaw-gateway openclaw models set "openrouter/${NEW_MODEL}"

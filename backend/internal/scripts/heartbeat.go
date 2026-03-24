@@ -130,16 +130,30 @@ fi
 
 # --- Model drift guard (runs every heartbeat) ---
 # OpenClaw loses the model setting on container restart (Docker auto-restarts
-# from crashes/OOM). Re-apply the model from saved config if it's missing.
+# from crashes/OOM). Re-apply models from saved config if missing.
+# Also registers all Tardi catalog models so the OC dashboard dropdown matches.
 if [ "$STATUS" = "running" ]; then
     MODEL_OUT=$(docker exec openclaw-gateway openclaw models list 2>&1 || echo "")
     MODEL_LINES=$(echo "$MODEL_OUT" | wc -l | tr -d ' ')
     if [ "$MODEL_LINES" -le 1 ]; then
-        # No model set — fetch from API and re-apply
+        # No model set — fetch from API and re-apply all models
         SAVED_CFG=$(curl -sf "${API_URL}/api/agent/config" \
             -H "Authorization: Bearer ${AGENT_TOKEN}" 2>/dev/null)
         SAVED_MODEL=$(echo "$SAVED_CFG" | jq -r '.config.model // empty' 2>/dev/null)
         SAVED_PROVIDER=$(echo "$SAVED_CFG" | jq -r '.config.provider // empty' 2>/dev/null)
+        ALL_MIDS=$(echo "$SAVED_CFG" | jq -r '.model_ids // [] | .[]' 2>/dev/null)
+        # Register non-active models first
+        if [ -n "$ALL_MIDS" ]; then
+            for MID in $ALL_MIDS; do
+                [ "$MID" = "$SAVED_MODEL" ] && continue
+                if [ "$SAVED_PROVIDER" = "openrouter" ]; then
+                    docker exec openclaw-gateway openclaw models set "openrouter/${MID}" 2>/dev/null
+                else
+                    docker exec openclaw-gateway openclaw models set "${MID}" 2>/dev/null
+                fi
+            done
+        fi
+        # Set active model last so it becomes the default
         if [ -n "$SAVED_MODEL" ]; then
             if [ "$SAVED_PROVIDER" = "openrouter" ]; then
                 docker exec openclaw-gateway openclaw models set "openrouter/${SAVED_MODEL}" 2>/dev/null
@@ -287,6 +301,7 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         NEW_GOOGLE_CLIENT=$(echo "$CONFIG" | jq -r '.config.google_client_b64 // empty')
         NEW_GOOGLE_TOKEN=$(echo "$CONFIG" | jq -r '.config.google_token_b64 // empty')
         NEW_GOOGLE_EMAIL=$(echo "$CONFIG" | jq -r '.config.google_email // empty')
+        ALL_MODEL_IDS=$(echo "$CONFIG" | jq -r '.model_ids // [] | .[]' 2>/dev/null)
 
         # Rebuild .env preserving non-key/token vars
         grep -v -E '_API_KEY=|TELEGRAM_BOT_TOKEN=' /opt/openclaw/.env > /opt/openclaw/.env.tmp
@@ -325,10 +340,21 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
                 docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
             fi
 
-            # Update default model. OpenRouter model IDs contain a slash
-            # (e.g. "anthropic/claude-sonnet-4.6") which OpenClaw interprets
-            # as a provider prefix. Prepend "openrouter/" so OpenClaw routes
-            # through OpenRouter instead of trying the native provider directly.
+            # Register all Tardi catalog models so OC dashboard dropdown matches.
+            # OpenRouter model IDs contain a slash (e.g. "anthropic/claude-sonnet-4.6")
+            # which OpenClaw interprets as a provider prefix. Prepend "openrouter/" so
+            # OpenClaw routes through OpenRouter instead of the native provider.
+            # Register non-active models first, then set active model last.
+            if [ -n "$ALL_MODEL_IDS" ]; then
+                for MID in $ALL_MODEL_IDS; do
+                    [ "$MID" = "$NEW_MODEL" ] && continue
+                    if [ "$NEW_PROVIDER" = "openrouter" ]; then
+                        docker exec openclaw-gateway openclaw models set "openrouter/${MID}" 2>/dev/null
+                    else
+                        docker exec openclaw-gateway openclaw models set "${MID}" 2>/dev/null
+                    fi
+                done
+            fi
             if [ -n "$NEW_MODEL" ]; then
                 if [ "$NEW_PROVIDER" = "openrouter" ]; then
                     docker exec openclaw-gateway openclaw models set "openrouter/${NEW_MODEL}"

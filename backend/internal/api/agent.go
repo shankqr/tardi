@@ -58,9 +58,20 @@ func AgentConfigHandler(deps Dependencies) http.HandlerFunc {
 			}
 		}
 
+		// Include the full model catalog so sync scripts can register all
+		// models in OpenClaw (the OC dashboard dropdown only shows models
+		// that have been explicitly added via `openclaw models set`).
+		var modelIDs []string
+		if allModels, err := db.ListEnabledModels(r.Context(), deps.Pool); err == nil {
+			for _, m := range allModels {
+				modelIDs = append(modelIDs, m.ID)
+			}
+		}
+
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"config":  respConfig,
-			"version": config.Version,
+			"config":    respConfig,
+			"version":   config.Version,
+			"model_ids": modelIDs,
 		})
 	}
 }

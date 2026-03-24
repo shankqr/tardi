@@ -206,6 +206,13 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		}
 	}
 
+	// Fetch all enabled model IDs for OC dashboard dropdown
+	if allModels, err := db.ListEnabledModels(ctx, u.pool); err == nil {
+		for _, m := range allModels {
+			ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
+		}
+	}
+
 	userData, err := RenderCloudInit(ciData)
 	if err != nil {
 		u.logger.Error("upgrader: render cloud-init", "error", err)
