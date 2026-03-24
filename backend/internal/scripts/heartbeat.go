@@ -303,6 +303,9 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         NEW_GOOGLE_EMAIL=$(echo "$CONFIG" | jq -r '.config.google_email // empty')
         ALL_MODEL_IDS=$(echo "$CONFIG" | jq -r '.model_ids // [] | .[]' 2>/dev/null)
 
+        # Snapshot current .env so we can detect whether env actually changed
+        cp /opt/openclaw/.env /opt/openclaw/.env.bak
+
         # Rebuild .env preserving non-key/token vars
         grep -v -E '_API_KEY=|TELEGRAM_BOT_TOKEN=' /opt/openclaw/.env > /opt/openclaw/.env.tmp
         [ -n "$NEW_OR_KEY" ] && echo "OPENROUTER_API_KEY=$NEW_OR_KEY" >> /opt/openclaw/.env.tmp
@@ -312,20 +315,32 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
         mv /opt/openclaw/.env.tmp /opt/openclaw/.env
         chmod 600 /opt/openclaw/.env
 
-        # Recreate container to pick up new env (restart does not reload env_file)
-        # NOTE: Do NOT edit openclaw.json — OpenClaw owns that file and overwrites
-        # it on startup. Config changes must go through openclaw CLI after healthy.
-        cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
+        # Only recreate container if env vars actually changed. Google OAuth
+        # credentials are files on the host volume — no restart needed.
+        ENV_CHANGED=false
+        if ! diff -q /opt/openclaw/.env /opt/openclaw/.env.bak >/dev/null 2>&1; then
+            ENV_CHANGED=true
+        fi
+        rm -f /opt/openclaw/.env.bak
 
-        # Wait for healthy, then apply post-startup config
-        HEALTHY=false
-        for i in $(seq 1 12); do
-            sleep 5
-            if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
-                HEALTHY=true
-                break
-            fi
-        done
+        if [ "$ENV_CHANGED" = true ]; then
+            # Recreate container to pick up new env (restart does not reload env_file)
+            # NOTE: Do NOT edit openclaw.json — OpenClaw owns that file and overwrites
+            # it on startup. Config changes must go through openclaw CLI after healthy.
+            cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
+
+            # Wait for healthy, then apply post-startup config
+            HEALTHY=false
+            for i in $(seq 1 12); do
+                sleep 5
+                if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+                    HEALTHY=true
+                    break
+                fi
+            done
+        else
+            HEALTHY=true
+        fi
 
         if [ "$HEALTHY" = true ]; then
             # Fix Telegram config if bot token is set:
@@ -367,8 +382,8 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
             GOG_DIR="/opt/openclaw/data/openclaw/.config/gogcli"
             if [ -n "$NEW_GOOGLE_TOKEN" ] && [ -n "$NEW_GOOGLE_EMAIL" ]; then
                 mkdir -p "$GOG_DIR/tokens"
-                [ -n "$NEW_GOOGLE_CLIENT" ] && echo "$NEW_GOOGLE_CLIENT" | base64 -d > "$GOG_DIR/credentials.json"
-                echo "$NEW_GOOGLE_TOKEN" | base64 -d > "$GOG_DIR/tokens/${NEW_GOOGLE_EMAIL}.json"
+                [ -n "$NEW_GOOGLE_CLIENT" ] && printf '%s' "$NEW_GOOGLE_CLIENT" | base64 -d > "$GOG_DIR/credentials.json"
+                printf '%s' "$NEW_GOOGLE_TOKEN" | base64 -d > "$GOG_DIR/tokens/${NEW_GOOGLE_EMAIL}.json"
                 chmod -R 600 "$GOG_DIR"
                 chmod 700 "$GOG_DIR" "$GOG_DIR/tokens"
             else
