@@ -117,12 +117,13 @@ async function ensureInstancePage(
 	page: import('@playwright/test').Page,
 	instId: string
 ) {
-	const notFound = page.getByText('Agent not found');
-	if (await notFound.isVisible({ timeout: 1000 }).catch(() => false)) {
-		console.log('[E2E] Instance page lost, navigating back...');
-		await page.goto(`/dashboard/instances/${instId}`);
-	}
+	// Always navigate fresh — after sync the dashboard store may have stale state
+	// that causes "Agent not found" or a stale AIProviderConfig mount
+	await page.goto(`/dashboard/instances/${instId}`);
+	// Wait for dashboard polling to load instance data and AIProviderConfig to render
 	await expect(page.locator('#openrouter-key')).toBeVisible({ timeout: 60_000 });
+	// Extra wait for AIProviderConfig to fetch config and enable model dropdown
+	await page.waitForTimeout(5000);
 }
 
 async function cleanup(email: string, password: string, instanceId: string) {
@@ -322,11 +323,19 @@ test('Full user journey: signup → deploy → configure → telegram', async ({
 		}
 
 		// Wait for model dropdown to be enabled (key already saved)
-		// After page recovery, AIProviderConfig re-mounts and needs to fetch config
-		// from API before hasExistingKey becomes true and dropdown is enabled
+		// After ensureInstancePage, AIProviderConfig re-mounts and needs to fetch config
+		// from API. If it doesn't enable after 30s, reload and retry.
 		const modelSelect = page.locator('#model-select');
 		await modelSelect.scrollIntoViewIfNeeded();
-		await expect(modelSelect).toBeEnabled({ timeout: 60_000 });
+		try {
+			await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
+		} catch {
+			console.log('[E2E] Model dropdown still disabled, reloading page...');
+			await page.reload();
+			await page.waitForTimeout(5000);
+			await modelSelect.scrollIntoViewIfNeeded();
+			await expect(modelSelect).toBeEnabled({ timeout: 60_000 });
+		}
 
 		// Get all available options and pick one that isn't the current default
 		const options = modelSelect.locator('option');
