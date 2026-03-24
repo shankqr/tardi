@@ -435,41 +435,22 @@
 	}
 
 	// Check Telegram status on load (token exists in config = connected)
+	// Uses a plain flag (not $state) to avoid re-triggering the effect.
+	let configChecked = false;
 	$effect(() => {
-		if (instance?.status === 'active') {
+		if (instance?.status === 'active' && !configChecked) {
+			configChecked = true;
 			(async () => {
 				try {
 					const token = await getIdToken();
-					if (!token) return;
+					if (!token) { configChecked = false; return; }
 					const cfg = await getAgentConfig(token, instance.id);
 					telegramConnected = !!(cfg.config.telegram_bot_token && typeof cfg.config.telegram_bot_token === 'string' && cfg.config.telegram_bot_token.length > 0);
 					if (telegramConnected) telegramCurrentToken = cfg.config.telegram_bot_token as string;
 					const hasKey = (k: string): boolean => !!(cfg.config[k] && typeof cfg.config[k] === 'string' && (cfg.config[k] as string).length > 0);
 					hasApiKey = hasKey('openrouter_api_key') || hasKey('anthropic_api_key') || hasKey('openai_api_key');
-
-					// Resume sync UI if a config sync is still running on the VPS
-					if (telegramSyncPhase === 'idle') {
-						try {
-							const syncResult = await getSyncStatus(token, instance.id);
-							if (syncResult.status === 'running') {
-								telegramSyncPhase = 'syncing';
-								startTelegramSyncTimer();
-								stopTelegramPollTimer();
-								telegramPollTimer = setInterval(() => {
-									if (telegramSyncElapsed > 300) {
-										stopTelegramSyncTimer();
-										stopTelegramPollTimer();
-										telegramError = 'Sync is taking longer than expected';
-										telegramSyncPhase = 'failed';
-										return;
-									}
-									pollTelegramSyncStatus();
-								}, 5000);
-							}
-						} catch { /* ignore */ }
-					}
 				} catch {
-					// ignore
+					configChecked = false; // allow retry on error
 				}
 			})();
 		}
