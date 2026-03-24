@@ -53,6 +53,8 @@ MIGRATEEOF
         iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
         netfilter-persistent save 2>/dev/null || true
     fi
+    # UFW must allow 18789 — iptables PREROUTING rewrites dest port before INPUT chain
+    ufw allow 18789/tcp 2>/dev/null || true
     # Remove trustedProxies from openclaw.json (no longer behind reverse proxy)
     python3 -c "
 import json
@@ -156,6 +158,8 @@ if ! iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
     iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
     netfilter-persistent save 2>/dev/null || true
 fi
+# UFW must allow 18789 — iptables PREROUTING rewrites dest port before UFW's INPUT chain
+ufw allow 18789/tcp 2>/dev/null || true
 
 # --- Gateway auth drift guard (runs every heartbeat) ---
 # OpenClaw may overwrite openclaw.json on startup and revert auth mode.

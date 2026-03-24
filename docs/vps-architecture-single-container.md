@@ -14,11 +14,11 @@
 │                        Hetzner Cloud                                │
 │                                                                     │
 │  ┌──────────────── UFW Firewall ──────────────────────────────┐     │
-│  │  ALLOW: 22/tcp (SSH), 80/tcp (HTTP)                        │     │
+│  │  ALLOW: 22/tcp (SSH), 80/tcp (HTTP), 18789/tcp (OpenClaw)  │     │
 │  │  DENY:  everything else                                    │     │
 │  │                                                            │     │
-│  │  Note: No 443 needed — Cloudflare terminates TLS at edge.  │     │
-│  │  Origin traffic arrives as plain HTTP on port 80.           │     │
+│  │  Note: 18789 needed because iptables PREROUTING rewrites   │     │
+│  │  dest port before UFW's INPUT chain sees the packet.       │     │
 │  └────────────────────────────────────────────────────────────┘     │
 │                                                                     │
 │  ┌────────────── Docker: --network=host (no bridge) ──────────┐     │
