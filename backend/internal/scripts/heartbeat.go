@@ -381,6 +381,17 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
                     docker exec openclaw-gateway openclaw models set "${NEW_MODEL}" 2>/dev/null
                     docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "${NEW_MODEL}"
                 fi
+                # config set requires restart to take effect. If container was
+                # already recreated (ENV_CHANGED), it'll pick up on next restart.
+                if [ "$ENV_CHANGED" = false ]; then
+                    cd /opt/openclaw && docker compose restart openclaw-gateway
+                    for i in $(seq 1 12); do
+                        sleep 5
+                        if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+                            break
+                        fi
+                    done
+                fi
             fi
 
             # Write Google OAuth credential files for gog CLI

@@ -137,6 +137,19 @@ if [ "$HEALTHY" = true ]; then
         fi
         docker exec openclaw-gateway openclaw models set "$FULL_MODEL" 2>/dev/null
         docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "$FULL_MODEL"
+        # config set requires a container restart to take effect.
+        # If we already recreated the container (ENV_CHANGED), skip — it'll
+        # pick up the config on next restart anyway. Otherwise restart now.
+        if [ "$ENV_CHANGED" = false ]; then
+            cd /opt/openclaw && docker compose restart openclaw-gateway
+            # Wait for healthy after restart
+            for i in $(seq 1 12); do
+                sleep 5
+                if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+                    break
+                fi
+            done
+        fi
         echo "model set to $FULL_MODEL"
     fi
 
