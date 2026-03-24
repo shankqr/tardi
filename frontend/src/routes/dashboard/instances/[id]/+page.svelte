@@ -851,28 +851,6 @@
 
 							{#if powerUserOpen}
 								<div class="space-y-4 border-t border-gray-200 p-5">
-									{#if instance.ipv4}
-										<div class="rounded-lg border border-gray-200 p-4">
-											<h4 class="text-sm font-medium text-gray-900">Server Info</h4>
-											<p class="mt-1 text-xs text-gray-400">Your agent's server details</p>
-											<dl class="mt-3 space-y-3 text-sm">
-												<div>
-													<dt class="text-gray-500">IP Address</dt>
-													<dd class="mt-1 flex items-center gap-2">
-														<code class="flex-1 rounded-md bg-gray-100 px-3 py-2 font-mono text-xs text-gray-900">{instance.ipv4}</code>
-														<button
-															onclick={() => navigator.clipboard.writeText(instance.ipv4 ?? '')}
-															class="rounded-md border border-gray-300 px-2.5 py-2 text-xs text-gray-600 hover:bg-gray-50"
-														>
-															Copy
-														</button>
-													</dd>
-												</div>
-											</dl>
-											<p class="mt-3 text-xs text-gray-400">SSH access is disabled for security. The platform manages your agent automatically.</p>
-										</div>
-									{/if}
-
 									<div class="flex gap-3">
 										<button
 											onclick={handleRestart}
