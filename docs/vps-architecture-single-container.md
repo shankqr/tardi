@@ -1,6 +1,6 @@
 # VPS Architecture (Single Container) — Diagrams, Flows & Connections
 
-> **Status: PROPOSED** — Not yet implemented. See [Prerequisites](#prerequisites) at the bottom.
+> **Status: IMPLEMENTED** — Deployed to dev and prod. Existing instances are migrated automatically via heartbeat.
 >
 > This document mirrors [vps-architecture.md](vps-architecture.md) but describes the
 > target single-container setup: OpenClaw on Docker host networking, Cloudflare Proxy
