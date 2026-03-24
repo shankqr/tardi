@@ -446,6 +446,28 @@
 					if (telegramConnected) telegramCurrentToken = cfg.config.telegram_bot_token as string;
 					const hasKey = (k: string): boolean => !!(cfg.config[k] && typeof cfg.config[k] === 'string' && (cfg.config[k] as string).length > 0);
 					hasApiKey = hasKey('openrouter_api_key') || hasKey('anthropic_api_key') || hasKey('openai_api_key');
+
+					// Resume sync UI if a config sync is still running on the VPS
+					if (telegramSyncPhase === 'idle') {
+						try {
+							const syncResult = await getSyncStatus(token, instance.id);
+							if (syncResult.status === 'running') {
+								telegramSyncPhase = 'syncing';
+								startTelegramSyncTimer();
+								stopTelegramPollTimer();
+								telegramPollTimer = setInterval(() => {
+									if (telegramSyncElapsed > 300) {
+										stopTelegramSyncTimer();
+										stopTelegramPollTimer();
+										telegramError = 'Sync is taking longer than expected';
+										telegramSyncPhase = 'failed';
+										return;
+									}
+									pollTelegramSyncStatus();
+								}, 5000);
+							}
+						} catch { /* ignore */ }
+					}
 				} catch {
 					// ignore
 				}
