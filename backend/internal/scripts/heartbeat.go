@@ -54,12 +54,13 @@ MIGRATEEOF
         netfilter-persistent save 2>/dev/null || true
     fi
     # UFW 18789 rules will be set by the hardening section below (per-CIDR, not blanket allow)
-    # Remove trustedProxies from openclaw.json (no longer behind reverse proxy)
+    # Ensure trustedProxies is set (Cloudflare adds proxy headers; without this
+    # OpenClaw treats connections as untrusted and won't grant operator scopes)
     python3 -c "
 import json
 with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
     cfg = json.load(f)
-cfg.get('gateway', {}).pop('trustedProxies', None)
+cfg.setdefault('gateway', {})['trustedProxies'] = ['0.0.0.0/0']
 with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     json.dump(cfg, f, indent=2)
 " 2>/dev/null || true
@@ -219,8 +220,11 @@ fi
 # fix the file while the container is stopped so the next restart succeeds.
 GW_AUTH_MODE=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.mode // "unknown"' 2>/dev/null)
 GW_INSECURE_AUTH=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.controlUi.allowInsecureAuth // false' 2>/dev/null)
-if [ "$GW_AUTH_MODE" != "token" ] || [ "$GW_INSECURE_AUTH" != "true" ]; then
-    # Write the auth block and controlUi settings via python.
+GW_TRUSTED_PROXIES=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.trustedProxies // empty' 2>/dev/null)
+if [ "$GW_AUTH_MODE" != "token" ] || [ "$GW_INSECURE_AUTH" != "true" ] || [ -z "$GW_TRUSTED_PROXIES" ]; then
+    # Write the auth block, controlUi settings, and trustedProxies via python.
+    # trustedProxies: Cloudflare adds X-Forwarded-For; without this OpenClaw sees
+    #   "untrusted proxy" and won't grant operator scopes (operator.read error).
     # allowInsecureAuth: required for shared token auth to grant operator scopes (OC 2026.3.22+).
     # Update meta.lastTouchedAt so OpenClaw detects the change and self-reloads.
     python3 -c "
@@ -228,6 +232,7 @@ import json, datetime
 with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
     cfg = json.load(f)
 cfg.setdefault('gateway', {})['auth'] = {'mode': 'token'}
+cfg['gateway']['trustedProxies'] = ['0.0.0.0/0']
 cui = cfg['gateway'].setdefault('controlUi', {})
 cui['dangerouslyDisableDeviceAuth'] = True
 cui['allowInsecureAuth'] = True

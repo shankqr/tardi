@@ -164,11 +164,15 @@ chown -R 1000:1000 /opt/openclaw/data
 # bind=lan: listen on 0.0.0.0 (host network exposes directly)
 # auth=token: OpenClaw reads OPENCLAW_GATEWAY_TOKEN from env.
 #   Internal tool calls authenticate automatically (OpenClaw knows its own token).
-# No trustedProxies — host networking, no reverse proxy in the path.
+# trustedProxies: Cloudflare terminates TLS and adds X-Forwarded-For headers.
+#   Without this, OpenClaw sees proxy headers from an untrusted address and refuses
+#   to grant operator scopes, causing "missing scope: operator.read" errors.
+#   Using 0.0.0.0/0 is safe because auth is still enforced via token mode.
 cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
 {
   "gateway": {
     "bind": "lan",
+    "trustedProxies": ["0.0.0.0/0"],
     "controlUi": {
       "allowedOrigins": ["*"{{if .Domain}}, "https://{{.Domain}}"{{end}}],
       "dangerouslyDisableDeviceAuth": true,

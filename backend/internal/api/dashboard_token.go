@@ -15,17 +15,16 @@ import (
 	"github.com/shanq/tardi/internal/sshexec"
 )
 
-// DashboardTokenHandler generates a scoped gateway token for the OpenClaw
-// Control UI. OpenClaw v2026.2.14+ requires explicit operator scopes on
-// tokens. The plain gateway token doesn't carry scopes, causing
+// DashboardTokenHandler reads the current gateway token from the VPS and
+// ensures trustedProxies is configured so operator scopes work.
+//
+// Background: Cloudflare adds X-Forwarded-For headers. Without
+// gateway.trustedProxies, OpenClaw treats the connection as coming from an
+// untrusted proxy and won't grant operator scopes — causing
 // "GatewayRequestError: missing scope: operator.read".
 //
-// Fix: rotate a device token with all operator scopes, then set it as the
-// gateway auth token. The token now serves dual purpose — gateway auth AND
-// operator scope authorization.
-//
-// We use `openclaw gateway restart` (internal process restart) to apply the
-// new token, which preserves the config unlike `docker compose restart`.
+// Fix: set trustedProxies: ["0.0.0.0/0"] (safe because auth is token-based)
+// and return the current gateway token for the frontend to use.
 func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := middleware.UserFromContext(r.Context())
@@ -55,46 +54,34 @@ func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// 1. Read current gateway token from openclaw.json
-		// 2. Rotate paired device token with all operator scopes
-		// 3. Set rotated token as gateway auth token
-		// 4. Internal gateway restart to apply (preserves config, unlike container restart)
-		// 5. Wait for healthy, then return the scoped token
+		// Read the gateway token from openclaw.json (source of truth — may differ
+		// from DB if OpenClaw regenerated it on restart). Also ensure trustedProxies
+		// is set so operator scopes are granted through Cloudflare's proxy.
 		script := `#!/bin/bash
 set -e
-GW_TOKEN=$(cat /opt/openclaw/data/openclaw/openclaw.json | jq -r '.gateway.auth.token // empty')
+OC_CFG="/opt/openclaw/data/openclaw/openclaw.json"
+GW_TOKEN=$(cat "$OC_CFG" | jq -r '.gateway.auth.token // empty')
 if [ -z "$GW_TOKEN" ]; then
     echo '{"error":"no gateway token"}' && exit 0
 fi
-DEVICE_ID=$(docker exec openclaw-gateway openclaw devices list --token "$GW_TOKEN" --json 2>/dev/null | jq -r '.paired[0].deviceId // empty')
-if [ -z "$DEVICE_ID" ]; then
-    echo '{"error":"no paired device"}' && exit 0
+# Ensure trustedProxies is set (Cloudflare adds X-Forwarded-For)
+TRUSTED=$(cat "$OC_CFG" | jq -r '.gateway.trustedProxies // empty')
+if [ -z "$TRUSTED" ] || [ "$TRUSTED" = "null" ]; then
+    python3 -c "
+import json, datetime
+with open('$OC_CFG') as f:
+    cfg = json.load(f)
+cfg['gateway']['trustedProxies'] = ['0.0.0.0/0']
+cfg.setdefault('meta', {})['lastTouchedAt'] = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.000Z')
+with open('$OC_CFG', 'w') as f:
+    json.dump(cfg, f, indent=2)
+" 2>/dev/null
+    # Wait a moment for OpenClaw to detect config change via lastTouchedAt
+    sleep 2
 fi
-RESULT=$(docker exec openclaw-gateway openclaw devices rotate \
-    --token "$GW_TOKEN" \
-    --device "$DEVICE_ID" \
-    --role operator \
-    --scope operator.read \
-    --scope operator.write \
-    --scope operator.admin \
-    --scope operator.approvals \
-    --scope operator.pairing \
-    --json 2>/dev/null)
-NEW_TOKEN=$(echo "$RESULT" | jq -r '.token // empty')
-if [ -z "$NEW_TOKEN" ]; then
-    echo '{"error":"rotate failed"}' && exit 0
-fi
-# Set rotated device token as gateway token and restart to apply
-docker exec openclaw-gateway openclaw config set gateway.auth.token "$NEW_TOKEN" >/dev/null 2>&1
-docker exec openclaw-gateway openclaw gateway restart >/dev/null 2>&1 || true
-# Wait for gateway to come back healthy
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    sleep 3
-    if curl -sf http://localhost:18789/health >/dev/null 2>&1; then break; fi
-done
-echo "$RESULT"
+echo "{\"token\":\"$GW_TOKEN\"}"
 `
-		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, script, 60*time.Second)
+		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, script, 30*time.Second)
 		if err != nil {
 			slog.Error("dashboard-token: ssh failed", "error", err, "instance_id", instanceID)
 			WriteError(w, http.StatusBadGateway, "gateway_error", "failed to generate dashboard token")
@@ -102,9 +89,8 @@ echo "$RESULT"
 		}
 
 		var result struct {
-			Token  string   `json:"token"`
-			Error  string   `json:"error"`
-			Scopes []string `json:"scopes"`
+			Token string `json:"token"`
+			Error string `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &result); err != nil {
 			slog.Error("dashboard-token: invalid response", "error", err, "raw", out, "instance_id", instanceID)
