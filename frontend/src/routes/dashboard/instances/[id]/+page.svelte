@@ -63,7 +63,9 @@
 	let dashboardBtnLoading = $state(false);
 
 	// Telegram state
-	function maskToken(t: string): string { return t.length > 7 ? t.slice(0, 3) + '...' + t.slice(-4) : t; }
+	function maskToken(t: string): string {
+		return t.length > 7 ? t.slice(0, 3) + '...' + t.slice(-4) : t;
+	}
 	let telegramToken = $state('');
 	let telegramLoading = $state(false);
 	let telegramError = $state<string | null>(null);
@@ -85,7 +87,8 @@
 
 	const isAnySyncing = $derived(
 		aiConfigSyncing ||
-		telegramSyncPhase === 'syncing' || telegramSyncPhase === 'finishing'
+			telegramSyncPhase === 'syncing' ||
+			telegramSyncPhase === 'finishing'
 	);
 	const isConfigSyncing = $derived(isAnySyncing || syncGraceActive);
 
@@ -124,15 +127,15 @@
 	// Derived from server data so it survives page navigation.
 	const activationCooloff = $derived(
 		instance?.status === 'active' &&
-		instance.agent_status !== 'running' &&
-		(Date.now() - new Date(instance.created_at).getTime()) < 5 * 60 * 1000
+			instance.agent_status !== 'running' &&
+			Date.now() - new Date(instance.created_at).getTime() < 5 * 60 * 1000
 	);
 
 	// Gate: show a dedicated "Setting Up" view until the VPS is healthy
 	const isSettingUp = $derived(
 		isProvisioning ||
-		activationCooloff ||
-		(instance?.status === 'error' && !instance?.agent_status)
+			activationCooloff ||
+			(instance?.status === 'error' && !instance?.agent_status)
 	);
 
 	// Elapsed timer for the setup view
@@ -140,8 +143,12 @@
 
 	$effect(() => {
 		if (isSettingUp && instance?.created_at) {
-			setupElapsed = Math.floor((Date.now() - new Date(instance.created_at).getTime()) / 1000);
-			const timer = setInterval(() => { setupElapsed += 1; }, 1000);
+			setupElapsed = Math.floor(
+				(Date.now() - new Date(instance.created_at).getTime()) / 1000
+			);
+			const timer = setInterval(() => {
+				setupElapsed += 1;
+			}, 1000);
 			return () => clearInterval(timer);
 		}
 	});
@@ -151,10 +158,10 @@
 	// from server data so it survives page navigation.
 	const recentlyRestarted = $derived(
 		instance?.status === 'active' &&
-		instance.agent_status !== 'running' &&
-		instance.agent_status !== null &&
-		instance.last_heartbeat_at !== null &&
-		(Date.now() - new Date(instance.last_heartbeat_at).getTime()) < 90_000
+			instance.agent_status !== 'running' &&
+			instance.agent_status !== null &&
+			instance.last_heartbeat_at !== null &&
+			Date.now() - new Date(instance.last_heartbeat_at).getTime() < 90_000
 	);
 
 	// Doctor state
@@ -165,13 +172,21 @@
 
 	function startTelegramSyncTimer() {
 		telegramSyncElapsed = 0;
-		telegramSyncTimer = setInterval(() => { telegramSyncElapsed += 1; }, 1000);
+		telegramSyncTimer = setInterval(() => {
+			telegramSyncElapsed += 1;
+		}, 1000);
 	}
 	function stopTelegramSyncTimer() {
-		if (telegramSyncTimer) { clearInterval(telegramSyncTimer); telegramSyncTimer = null; }
+		if (telegramSyncTimer) {
+			clearInterval(telegramSyncTimer);
+			telegramSyncTimer = null;
+		}
 	}
 	function stopTelegramPollTimer() {
-		if (telegramPollTimer) { clearInterval(telegramPollTimer); telegramPollTimer = null; }
+		if (telegramPollTimer) {
+			clearInterval(telegramPollTimer);
+			telegramPollTimer = null;
+		}
 	}
 
 	async function pollTelegramSyncStatus() {
@@ -187,11 +202,15 @@
 				// duplicate handlers (internal config + env var auto-detection = double replies)
 				try {
 					await cleanupTelegramConfig(token, instance.id);
-				} catch { /* non-critical, env var handler still works */ }
+				} catch {
+					/* non-critical, env var handler still works */
+				}
 				telegramSyncPhase = 'finishing';
 				setTimeout(() => {
 					telegramSyncPhase = 'success';
-					setTimeout(() => { if (telegramSyncPhase === 'success') telegramSyncPhase = 'idle'; }, 8000);
+					setTimeout(() => {
+						if (telegramSyncPhase === 'success') telegramSyncPhase = 'idle';
+					}, 8000);
 				}, 15000);
 			} else if (result.status === 'failed') {
 				stopTelegramSyncTimer();
@@ -220,7 +239,8 @@
 		const current = instance.status;
 		if (previousStatus === 'restoring' && current === 'active') restoreResult = 'success';
 		if (previousStatus === 'restoring' && current === 'error') restoreResult = 'failed';
-		if (previousStatus === 'snapshotting' && current === 'active') snapshotResult = 'success';
+		if (previousStatus === 'snapshotting' && current === 'active')
+			snapshotResult = 'success';
 		if (previousStatus === 'snapshotting' && current === 'error') snapshotResult = 'failed';
 		previousStatus = current;
 	});
@@ -357,7 +377,8 @@
 					if (telegramSyncElapsed > 300) {
 						stopTelegramSyncTimer();
 						stopTelegramPollTimer();
-						telegramError = 'Sync is taking longer than expected — it will apply automatically within a few minutes';
+						telegramError =
+							'Sync is taking longer than expected — it will apply automatically within a few minutes';
 						telegramSyncPhase = 'failed';
 						return;
 					}
@@ -370,7 +391,8 @@
 			}
 		} catch {
 			stopTelegramSyncTimer();
-			telegramError = 'Could not reach your agent — changes will apply within 5 minutes';
+			telegramError =
+				'Could not reach your agent — changes will apply within 5 minutes';
 			telegramSyncPhase = 'failed';
 		}
 	}
@@ -390,7 +412,8 @@
 			telegramLoading = false;
 			await triggerTelegramSync();
 		} catch (err) {
-			telegramError = err instanceof Error ? err.message : 'Failed to connect Telegram';
+			telegramError =
+				err instanceof Error ? err.message : 'Failed to connect Telegram';
 			telegramLoading = false;
 		}
 	}
@@ -407,7 +430,8 @@
 			telegramLoading = false;
 			await triggerTelegramSync();
 		} catch (err) {
-			telegramError = err instanceof Error ? err.message : 'Failed to disconnect Telegram';
+			telegramError =
+				err instanceof Error ? err.message : 'Failed to disconnect Telegram';
 			telegramLoading = false;
 		}
 	}
@@ -445,12 +469,28 @@
 			(async () => {
 				try {
 					const token = await getIdToken();
-					if (!token) { configChecked = false; return; }
+					if (!token) {
+						configChecked = false;
+						return;
+					}
 					const cfg = await getAgentConfig(token, instance.id);
-					telegramConnected = !!(cfg.config.telegram_bot_token && typeof cfg.config.telegram_bot_token === 'string' && cfg.config.telegram_bot_token.length > 0);
-					if (telegramConnected) telegramCurrentToken = cfg.config.telegram_bot_token as string;
-					const hasKey = (k: string): boolean => !!(cfg.config[k] && typeof cfg.config[k] === 'string' && (cfg.config[k] as string).length > 0);
-					hasApiKey = hasKey('openrouter_api_key') || hasKey('anthropic_api_key') || hasKey('openai_api_key');
+					telegramConnected = !!(
+						cfg.config.telegram_bot_token &&
+						typeof cfg.config.telegram_bot_token === 'string' &&
+						cfg.config.telegram_bot_token.length > 0
+					);
+					if (telegramConnected)
+						telegramCurrentToken = cfg.config.telegram_bot_token as string;
+					const hasKey = (k: string): boolean =>
+						!!(
+							cfg.config[k] &&
+							typeof cfg.config[k] === 'string' &&
+							(cfg.config[k] as string).length > 0
+						);
+					hasApiKey =
+						hasKey('openrouter_api_key') ||
+						hasKey('anthropic_api_key') ||
+						hasKey('openai_api_key');
 				} catch {
 					configChecked = false; // allow retry on error
 				}
@@ -464,8 +504,16 @@
 			const token = await getIdToken();
 			if (!token) return;
 			const cfg = await getAgentConfig(token, instance.id);
-			const hasKey = (k: string): boolean => !!(cfg.config[k] && typeof cfg.config[k] === 'string' && (cfg.config[k] as string).length > 0);
-			hasApiKey = hasKey('openrouter_api_key') || hasKey('anthropic_api_key') || hasKey('openai_api_key');
+			const hasKey = (k: string): boolean =>
+				!!(
+					cfg.config[k] &&
+					typeof cfg.config[k] === 'string' &&
+					(cfg.config[k] as string).length > 0
+				);
+			hasApiKey =
+				hasKey('openrouter_api_key') ||
+				hasKey('anthropic_api_key') ||
+				hasKey('openai_api_key');
 		} catch {
 			// ignore
 		}
@@ -492,7 +540,7 @@
 	</div>
 {:else}
 	<div>
-		<a href="/dashboard" class="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">&larr; Back to dashboard</a>
+		<a href="/dashboard" class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">&larr; Back to dashboard</a>
 
 		<div class="mt-4 flex items-start justify-between">
 			<div>
@@ -501,7 +549,7 @@
 						<input
 							type="text"
 							bind:value={editName}
-							class="rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xl font-bold text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
+							class="rounded-md border border-gray-300 dark:border-gray-600 px-2 py-1 text-xl font-bold text-gray-900 dark:text-white dark:bg-gray-800 focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
 							autofocus
 							onkeydown={(e) => { if (e.key === 'Escape') editing = false; }}
 						/>
@@ -525,7 +573,7 @@
 						<h2 class="text-xl font-bold text-gray-900 dark:text-white">{instance.name}</h2>
 						<button
 							onclick={startEditing}
-							class="rounded-md p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+							class="rounded-md p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 							title="Rename agent"
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4">
@@ -556,24 +604,24 @@
 		{#if restoreResult === 'success'}
 			<div class="mt-4 flex items-center justify-between rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-3 text-sm text-green-700 dark:text-green-400">
 				<span>Snapshot restored successfully. A new root password has been generated.</span>
-				<button onclick={() => (restoreResult = null)} class="ml-3 text-green-500 hover:text-green-700">&times;</button>
+				<button onclick={() => (restoreResult = null)} class="ml-3 text-green-500 hover:text-green-700 dark:hover:text-green-400">&times;</button>
 			</div>
 		{:else if restoreResult === 'failed'}
 			<div class="mt-4 flex items-center justify-between rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400">
 				<span>Snapshot restore failed. Your agent may need attention.</span>
-				<button onclick={() => (restoreResult = null)} class="ml-3 text-red-500 hover:text-red-700">&times;</button>
+				<button onclick={() => (restoreResult = null)} class="ml-3 text-red-500 hover:text-red-700 dark:hover:text-red-400">&times;</button>
 			</div>
 		{/if}
 
 		{#if snapshotResult === 'success'}
 			<div class="mt-4 flex items-center justify-between rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-3 text-sm text-green-700 dark:text-green-400">
 				<span>Snapshot created successfully.</span>
-				<button onclick={() => (snapshotResult = null)} class="ml-3 text-green-500 hover:text-green-700">&times;</button>
+				<button onclick={() => (snapshotResult = null)} class="ml-3 text-green-500 hover:text-green-700 dark:hover:text-green-400">&times;</button>
 			</div>
 		{:else if snapshotResult === 'failed'}
 			<div class="mt-4 flex items-center justify-between rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-700 dark:text-red-400">
 				<span>Snapshot creation failed.</span>
-				<button onclick={() => (snapshotResult = null)} class="ml-3 text-red-500 hover:text-red-700">&times;</button>
+				<button onclick={() => (snapshotResult = null)} class="ml-3 text-red-500 hover:text-red-700 dark:hover:text-red-400">&times;</button>
 			</div>
 		{/if}
 
@@ -583,7 +631,7 @@
 					<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center">
 						{#if instance.status === 'error'}
 							<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-								<svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+								<svg class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
 								</svg>
 							</div>
@@ -591,7 +639,7 @@
 							<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Something went wrong while setting up your agent. Our team has been notified and is looking into it.</p>
 						{:else}
 							<div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-								<svg class="h-6 w-6 animate-spin text-gray-600" viewBox="0 0 24 24" fill="none">
+								<svg class="h-6 w-6 animate-spin text-gray-600 dark:text-gray-400" viewBox="0 0 24 24" fill="none">
 									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 								</svg>
@@ -612,12 +660,12 @@
 														<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
 													</svg>
 												</div>
-												<span class="text-sm text-gray-500">{label}</span>
+												<span class="text-sm text-gray-500 dark:text-gray-400">{label}</span>
 											</div>
 										{/each}
 										<div class="flex items-center gap-3">
-											<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-yellow-500 bg-yellow-50">
-												<svg class="h-3.5 w-3.5 animate-spin text-yellow-600" viewBox="0 0 24 24" fill="none">
+											<div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20">
+												<svg class="h-3.5 w-3.5 animate-spin text-yellow-600 dark:text-yellow-400" viewBox="0 0 24 24" fill="none">
 													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 												</svg>
@@ -650,38 +698,38 @@
 							<dt class="text-gray-500 dark:text-gray-400">OpenClaw</dt>
 							<dd>
 								{#if isProvisioning || activationCooloff}
-									<span class="inline-flex items-center gap-1.5 text-gray-500">
-										<svg class="h-3.5 w-3.5 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
+									<span class="inline-flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+										<svg class="h-3.5 w-3.5 animate-spin text-gray-400 dark:text-gray-500" viewBox="0 0 24 24" fill="none">
 											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 											<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 										</svg>
 										Setting up…
 									</span>
 								{:else if isConfigSyncing || recentlyRestarted}
-									<span class="inline-flex items-center gap-1.5 text-blue-700">
-										<svg class="h-3.5 w-3.5 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
+									<span class="inline-flex items-center gap-1.5 text-blue-700 dark:text-blue-400">
+										<svg class="h-3.5 w-3.5 animate-spin text-blue-500 dark:text-blue-400" viewBox="0 0 24 24" fill="none">
 											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 											<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 										</svg>
 										Applying Config
 									</span>
 								{:else if instance.agent_status === 'running'}
-									<span class="inline-flex items-center gap-1.5 text-green-700">
+									<span class="inline-flex items-center gap-1.5 text-green-700 dark:text-green-400">
 										<span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
 										Running
 									</span>
 								{:else if instance.agent_status === 'unhealthy'}
-									<span class="inline-flex items-center gap-1.5 text-yellow-700">
+									<span class="inline-flex items-center gap-1.5 text-yellow-700 dark:text-yellow-400">
 										<span class="h-1.5 w-1.5 rounded-full bg-yellow-500"></span>
 										Unhealthy
 									</span>
 								{:else if instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
-									<span class="inline-flex items-center gap-1.5 text-red-700">
+									<span class="inline-flex items-center gap-1.5 text-red-700 dark:text-red-400">
 										<span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
 										Stopped
 									</span>
 								{:else}
-									<span class="text-gray-400">—</span>
+									<span class="text-gray-400 dark:text-gray-500">—</span>
 								{/if}
 							</dd>
 						</div>
@@ -757,7 +805,7 @@
 								</div>
 							{:else if telegramConnected}
 								<div class="flex items-center justify-between">
-									<div class="flex items-center gap-2 text-sm {telegramSyncPhase === 'syncing' || telegramSyncPhase === 'finishing' ? 'text-amber-700' : 'text-green-700'}">
+									<div class="flex items-center gap-2 text-sm {telegramSyncPhase === 'syncing' || telegramSyncPhase === 'finishing' ? 'text-amber-700 dark:text-amber-400' : 'text-green-700 dark:text-green-400'}">
 										{#if telegramSyncPhase === 'syncing'}
 											<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -786,7 +834,7 @@
 											<button
 												onclick={handleTelegramDisconnect}
 												disabled={telegramLoading}
-												class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"
+												class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 disabled:opacity-50"
 											>
 												{telegramLoading ? 'Disconnecting...' : 'Disconnect'}
 											</button>
@@ -803,7 +851,7 @@
 											bind:value={telegramToken}
 											placeholder="Paste new bot token"
 											disabled={telegramLoading || instance.status !== 'active'}
-											class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-gray-500 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-500 dark:focus:ring-gray-400 disabled:opacity-50"
+											class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 focus:border-gray-500 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-500 dark:focus:ring-gray-400 disabled:opacity-50"
 										/>
 										<button
 											onclick={handleTelegramConnect}
@@ -818,7 +866,7 @@
 									<div class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
 										<div class="space-y-3">
 											<div class="flex items-center gap-3">
-												<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+												<svg class="h-4 w-4 animate-spin text-gray-600 dark:text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none">
 													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 												</svg>
@@ -834,7 +882,7 @@
 														{:else}
 															Waiting for health check
 														{/if}
-														<span class="ml-1 tabular-nums text-gray-400">{telegramSyncElapsed}s</span>
+														<span class="ml-1 tabular-nums text-gray-400 dark:text-gray-500">{telegramSyncElapsed}s</span>
 													</p>
 												</div>
 											</div>
@@ -851,7 +899,7 @@
 									<div class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
 										<div class="space-y-3">
 											<div class="flex items-center gap-3">
-												<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+												<svg class="h-4 w-4 animate-spin text-gray-600 dark:text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none">
 													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 												</svg>
@@ -872,7 +920,7 @@
 								{:else if telegramSyncPhase === 'success'}
 									<div class="mt-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
 										<div class="flex items-center gap-3">
-											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-green-600 shrink-0">
+											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-green-600 dark:text-green-400 shrink-0">
 												<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
 											</svg>
 											<div>
@@ -904,7 +952,7 @@
 									<ol class="mt-2 space-y-2.5">
 										<li>
 											<span class="font-semibold">1.</span> Open Telegram and search for
-											<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#2AABEE] underline hover:text-blue-700">@BotFather</a>
+											<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#2AABEE] underline hover:text-blue-700 dark:hover:text-blue-400">@BotFather</a>
 										</li>
 										<li>
 											<span class="font-semibold">2.</span> Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/newbot</code> to create a new bot
@@ -934,7 +982,7 @@
 								</div>
 
 								{#if telegramError}
-									<p class="mt-3 text-xs text-red-600">{telegramError}</p>
+									<p class="mt-3 text-xs text-red-600 dark:text-red-400">{telegramError}</p>
 								{/if}
 								<div class="mt-4 flex items-center gap-2">
 									<input
@@ -942,7 +990,7 @@
 										bind:value={telegramToken}
 										placeholder="Paste your bot token here"
 										disabled={telegramLoading || instance.status !== 'active'}
-										class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-gray-500 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-500 dark:focus:ring-gray-400 disabled:opacity-50"
+										class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 focus:border-gray-500 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-500 dark:focus:ring-gray-400 disabled:opacity-50"
 									/>
 									<button
 										onclick={handleTelegramConnect}
@@ -1009,7 +1057,7 @@
 												<h4 class="text-sm font-medium text-gray-900 dark:text-white">Health Check Results</h4>
 												<button
 													onclick={() => { doctorChecks = null; doctorRaw = null; doctorError = null; }}
-													class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+													class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
 												>Dismiss</button>
 											</div>
 											{#if doctorError}
@@ -1022,13 +1070,13 @@
 														<div class="flex items-start gap-2.5 rounded-lg px-3 py-2 {check.status === 'fail' ? 'bg-red-50 dark:bg-red-900/20' : check.status === 'warn' ? 'bg-yellow-50 dark:bg-yellow-900/20' : ''}">
 															<span class="mt-0.5 shrink-0 text-sm">
 																{#if check.status === 'pass'}
-																	<span class="text-green-600">&#10003;</span>
+																	<span class="text-green-600 dark:text-green-400">&#10003;</span>
 																{:else if check.status === 'fail'}
-																	<span class="text-red-600">&#10007;</span>
+																	<span class="text-red-600 dark:text-red-400">&#10007;</span>
 																{:else if check.status === 'warn'}
-																	<span class="text-yellow-600">&#9888;</span>
+																	<span class="text-yellow-600 dark:text-yellow-400">&#9888;</span>
 																{:else}
-																	<span class="text-gray-400">&#8226;</span>
+																	<span class="text-gray-400 dark:text-gray-500">&#8226;</span>
 																{/if}
 															</span>
 															<div class="min-w-0 flex-1">
@@ -1037,7 +1085,7 @@
 																	<span class="text-xs {check.status === 'fail' ? 'text-red-700 dark:text-red-400 font-medium' : check.status === 'warn' ? 'text-yellow-700 dark:text-yellow-400' : 'text-gray-700 dark:text-gray-300'}">{check.message}</span>
 																</div>
 																{#if check.detail}
-																	<p class="mt-0.5 text-xs text-gray-400 whitespace-pre-wrap break-words">{check.detail}</p>
+																	<p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500 whitespace-pre-wrap break-words">{check.detail}</p>
 																{/if}
 															</div>
 														</div>
@@ -1099,7 +1147,7 @@
 				{#if instance.status === 'restoring'}
 					<div class="rounded-xl border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-5">
 						<div class="flex items-center gap-3">
-							<svg class="h-5 w-5 animate-spin text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none">
+							<svg class="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none">
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 							</svg>
@@ -1114,7 +1162,7 @@
 				{#if instance.status === 'snapshotting'}
 					<div class="rounded-xl border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-5">
 						<div class="flex items-center gap-3">
-							<svg class="h-5 w-5 animate-spin text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none">
+							<svg class="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400 shrink-0" viewBox="0 0 24 24" fill="none">
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 							</svg>
@@ -1152,39 +1200,39 @@
 													&middot; {snap.size_gb.toFixed(1)} GB
 												{/if}
 												{#if snap.status === 'creating'}
-													<span class="ml-1 text-blue-600">Creating...</span>
+													<span class="ml-1 text-blue-600 dark:text-blue-400">Creating...</span>
 												{:else if snap.status === 'deleting'}
-													<span class="ml-1 text-gray-500">Deleting...</span>
+													<span class="ml-1 text-gray-500 dark:text-gray-400">Deleting...</span>
 												{:else if snap.status === 'error'}
-													<span class="ml-1 text-red-600">Error</span>
+													<span class="ml-1 text-red-600 dark:text-red-400">Error</span>
 												{/if}
 											</p>
 										</div>
 										{#if snap.status === 'ready'}
 											<div class="flex items-center gap-1.5 ml-3">
 												{#if confirmRestoreId === snap.id}
-													<span class="text-xs text-gray-500 mr-1">Are you sure?</span>
+													<span class="text-xs text-gray-500 dark:text-gray-400 mr-1">Are you sure?</span>
 													<button
 														onclick={() => handleRestoreSnapshot(snap.id)}
 														disabled={restoringSnapshotId === snap.id}
-														class="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+														class="rounded-md bg-gray-900 dark:bg-white px-2.5 py-1 text-xs font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 													>
 														Confirm
 													</button>
 													<button
 														onclick={() => (confirmRestoreId = null)}
-														class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+														class="rounded-md border border-gray-300 dark:border-gray-600 px-2.5 py-1 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
 													>
 														Cancel
 													</button>
 												{:else if confirmDeleteId === snap.id}
 													<div class="flex flex-col items-end gap-1.5">
-														<span class="text-xs text-gray-500">Type <strong>{snap.name}</strong> to confirm</span>
+														<span class="text-xs text-gray-500 dark:text-gray-400">Type <strong>{snap.name}</strong> to confirm</span>
 														<input
 															type="text"
 															bind:value={confirmDeleteInput}
 															placeholder={snap.name}
-															class="w-40 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-xs text-gray-900 dark:text-white focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+															class="w-40 rounded-md border border-gray-300 dark:border-gray-600 px-2 py-1 text-xs text-gray-900 dark:text-white dark:bg-gray-800 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
 														/>
 														<div class="flex items-center gap-1.5">
 															<button
@@ -1196,7 +1244,7 @@
 															</button>
 															<button
 																onclick={cancelDeleteSnapshot}
-																class="rounded-md border border-gray-300 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50"
+																class="rounded-md border border-gray-300 dark:border-gray-600 px-2.5 py-1 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
 															>
 																Cancel
 															</button>
@@ -1223,7 +1271,7 @@
 											</div>
 										{:else if snap.status === 'creating' || snap.status === 'deleting'}
 											<div class="ml-3">
-												<svg class="h-4 w-4 animate-spin text-gray-400" viewBox="0 0 24 24" fill="none">
+												<svg class="h-4 w-4 animate-spin text-gray-400 dark:text-gray-500" viewBox="0 0 24 24" fill="none">
 													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 												</svg>
@@ -1233,7 +1281,7 @@
 								{/each}
 							</div>
 						{:else}
-							<p class="mt-4 text-xs text-gray-400">No snapshots yet</p>
+							<p class="mt-4 text-xs text-gray-400 dark:text-gray-500">No snapshots yet</p>
 						{/if}
 
 						<div class="mt-4 border-t border-gray-100 dark:border-gray-800 pt-3">
@@ -1243,7 +1291,7 @@
 										type="text"
 										bind:value={snapshotName}
 										placeholder="Snapshot name"
-										class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2.5 py-1.5 text-sm text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
+										class="flex-1 rounded-md border border-gray-300 dark:border-gray-600 px-2.5 py-1.5 text-sm text-gray-900 dark:text-white dark:bg-gray-800 focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
 										autofocus
 										onkeydown={(e) => { if (e.key === 'Escape') { showSnapshotForm = false; snapshotName = ''; } }}
 									/>
@@ -1257,7 +1305,7 @@
 									<button
 										type="button"
 										onclick={() => { showSnapshotForm = false; snapshotName = ''; }}
-										class="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+										class="rounded-md border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
 									>
 										Cancel
 									</button>
