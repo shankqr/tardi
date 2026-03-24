@@ -255,38 +255,18 @@ with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     fi
 fi
 
-# Sync OPENCLAW_GATEWAY_TOKEN in .env with the actual token from openclaw.json.
-# OpenClaw may regenerate the token on startup, so .env can become stale.
-ACTUAL_GW_TOKEN=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.token // empty' 2>/dev/null)
+# Sync OPENCLAW_GATEWAY_TOKEN in .env with the actual token OpenClaw is using.
+# Read from the running container's env (authoritative source), falling back to
+# openclaw.json if the container isn't running.
+ACTUAL_GW_TOKEN=$(docker exec openclaw-gateway printenv OPENCLAW_GATEWAY_TOKEN 2>/dev/null || true)
+[ -z "$ACTUAL_GW_TOKEN" ] && ACTUAL_GW_TOKEN=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.gateway.auth.token // empty' 2>/dev/null)
 ENV_GW_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
 if [ -n "$ACTUAL_GW_TOKEN" ] && [ "$ACTUAL_GW_TOKEN" != "$ENV_GW_TOKEN" ]; then
     sed -i '/^OPENCLAW_GATEWAY_TOKEN=/d' /opt/openclaw/.env
     echo "OPENCLAW_GATEWAY_TOKEN=$ACTUAL_GW_TOKEN" >> /opt/openclaw/.env
-fi
-
-# --- Ensure dangerouslyDisableDeviceAuth is set for Control UI ---
-# Without this, the Control UI requires device pairing for every new browser,
-# which blocks the dashboard from working when opened from the Tardi frontend.
-OC_CONFIG="/opt/openclaw/data/openclaw/openclaw.json"
-if [ -f "$OC_CONFIG" ]; then
-    DISABLE_DEVICE_AUTH=$(python3 -c "
-import json
-with open('$OC_CONFIG') as f:
-    cfg = json.load(f)
-print(cfg.get('gateway',{}).get('controlUi',{}).get('dangerouslyDisableDeviceAuth', False))
-" 2>/dev/null || echo "False")
-    if [ "$DISABLE_DEVICE_AUTH" != "True" ]; then
-        python3 -c "
-import json
-with open('$OC_CONFIG') as f:
-    cfg = json.load(f)
-cfg.setdefault('gateway', {}).setdefault('controlUi', {})['dangerouslyDisableDeviceAuth'] = True
-with open('$OC_CONFIG', 'w') as f:
-    json.dump(cfg, f, indent=2)
-" 2>/dev/null
-        # Restart gateway to apply config change
-        cd /opt/openclaw && docker compose restart openclaw-gateway 2>/dev/null || true
-    fi
+    # Keep OPENCLAW_AUTH_TOKEN in sync (same value, used by nothing on VPS but avoids confusion)
+    sed -i '/^OPENCLAW_AUTH_TOKEN=/d' /opt/openclaw/.env
+    echo "OPENCLAW_AUTH_TOKEN=$ACTUAL_GW_TOKEN" >> /opt/openclaw/.env
 fi
 
 # Check for config changes
