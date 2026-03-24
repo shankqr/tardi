@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getIdToken } from '$lib/stores/auth';
-	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus, getModels } from '$lib/api/client';
+	import { getAgentConfig, updateAgentConfig, syncConfig, getModels } from '$lib/api/client';
 	import type { ModelInfo } from '$lib/types';
 
 	interface Props {
@@ -38,54 +38,14 @@
 	}
 
 	// Sync progress state
-	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'finishing' | 'success' | 'failed';
+	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'success' | 'failed';
 	let syncPhase = $state<SyncPhase>('idle');
 	let syncError = $state<string | null>(null);
-	let syncElapsed = $state(0);
-	let syncTimer: ReturnType<typeof setInterval> | null = null;
-	let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-	function startSyncTimer() {
-		syncElapsed = 0;
-		syncTimer = setInterval(() => { syncElapsed += 1; }, 1000);
-	}
-	function stopSyncTimer() {
-		if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
-	}
-	function stopPollTimer() {
-		if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-	}
 
 	$effect(() => {
-		const isSyncing = syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing';
+		const isSyncing = syncPhase === 'saving' || syncPhase === 'syncing';
 		onsyncchange?.(isSyncing);
 	});
-
-	async function pollSyncStatus() {
-		try {
-			const token = await getIdToken();
-			if (!token) return;
-			const result = await getSyncStatus(token, instanceId);
-			if (result.status === 'completed') {
-				stopSyncTimer();
-				stopPollTimer();
-				syncPhase = 'finishing';
-				setTimeout(() => {
-					syncPhase = 'success';
-					onsaved?.();
-					setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 8000);
-				}, 15000);
-			} else if (result.status === 'failed') {
-				stopSyncTimer();
-				stopPollTimer();
-				syncError = result.message || 'Config sync failed on your agent';
-				syncPhase = 'failed';
-			}
-			// status === 'running' or 'unknown' → keep polling
-		} catch {
-			// Ignore poll errors, keep trying
-		}
-	}
 
 	async function loadConfig() {
 		loading = true;
@@ -141,7 +101,6 @@
 	async function handleSave() {
 		syncPhase = 'saving';
 		syncError = null;
-		stopSyncTimer();
 		try {
 			const token = await getIdToken();
 			if (!token) throw new Error('Not authenticated');
@@ -158,36 +117,25 @@
 			keyDirty = false;
 			hasExistingKey = true;
 
-			// Trigger instant sync (runs in background on VPS, ~60-90s)
+			// Trigger sync — the backend applies the model via RPC immediately
+			// (live, no restart) and launches a background script for the rest
+			// (model catalog registration, env updates, Telegram config).
 			syncPhase = 'syncing';
-			startSyncTimer();
 			try {
 				const result = await syncConfig(token, instanceId);
 				if (result.synced) {
-					// Sync triggered — now poll for completion every 5s, timeout at 120s
-					stopPollTimer();
-					pollTimer = setInterval(() => {
-						if (syncElapsed > 300) {
-							stopSyncTimer();
-							stopPollTimer();
-							syncError = 'Sync is taking longer than expected — it will apply automatically within a few minutes';
-							syncPhase = 'failed';
-							return;
-						}
-						pollSyncStatus();
-					}, 5000);
+					syncPhase = 'success';
+					onsaved?.();
+					setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 5000);
 				} else {
-					stopSyncTimer();
 					syncError = result.error || 'Failed to apply configuration';
 					syncPhase = 'failed';
 				}
 			} catch {
-				stopSyncTimer();
 				syncError = 'Could not reach your agent — changes will apply within 5 minutes';
 				syncPhase = 'failed';
 			}
 		} catch (err) {
-			stopSyncTimer();
 			syncError = err instanceof Error ? err.message : 'Failed to save';
 			syncPhase = 'failed';
 		}
@@ -196,8 +144,6 @@
 	function dismissSync() {
 		syncPhase = 'idle';
 		syncError = null;
-		stopSyncTimer();
-		stopPollTimer();
 	}
 
 	onMount(() => {
@@ -218,66 +164,15 @@
 			<!-- Sync progress overlay -->
 			{#if syncPhase !== 'idle'}
 				<div class="rounded-lg border p-4 {syncPhase === 'success' ? 'border-green-200 bg-green-50' : syncPhase === 'failed' ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}">
-					{#if syncPhase === 'saving'}
+					{#if syncPhase === 'saving' || syncPhase === 'syncing'}
 						<div class="flex items-center gap-3">
 							<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 							</svg>
 							<div>
-								<p class="text-sm font-medium text-gray-900">Saving configuration...</p>
+								<p class="text-sm font-medium text-gray-900">Applying to your agent...</p>
 							</div>
-						</div>
-					{:else if syncPhase === 'syncing'}
-						<div class="space-y-3">
-							<div class="flex items-center gap-3">
-								<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
-									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-								</svg>
-								<div class="flex-1">
-									<p class="text-sm font-medium text-gray-900">Applying to your agent...</p>
-									<p class="text-xs text-gray-500">
-										{#if syncElapsed < 10}
-											Connecting to your agent
-										{:else if syncElapsed < 30}
-											Updating configuration
-										{:else if syncElapsed < 60}
-											Restarting with new settings
-										{:else}
-											Waiting for health check
-										{/if}
-										<span class="ml-1 tabular-nums text-gray-400">{syncElapsed}s</span>
-									</p>
-								</div>
-							</div>
-							<div class="h-1 overflow-hidden rounded-full bg-gray-200">
-								<div
-									class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
-									style="width: {Math.min(syncElapsed / 200 * 100, 95)}%"
-								></div>
-							</div>
-							<p class="text-xs text-gray-400">This usually takes about a minute. Please don't close this page.</p>
-						</div>
-					{:else if syncPhase === 'finishing'}
-						<div class="space-y-3">
-							<div class="flex items-center gap-3">
-								<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
-									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-								</svg>
-								<div class="flex-1">
-									<p class="text-sm font-medium text-gray-900">Finalizing configuration...</p>
-									<p class="text-xs text-gray-500">Almost ready</p>
-								</div>
-							</div>
-							<div class="h-1 overflow-hidden rounded-full bg-gray-200">
-								<div
-									class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
-									style="width: 95%"
-								></div>
-							</div>
-							<p class="text-xs text-gray-400">Please don't close this page.</p>
 						</div>
 					{:else if syncPhase === 'success'}
 						<div class="flex items-center justify-between">
@@ -329,7 +224,7 @@
 							value={openrouterKey}
 							oninput={(e) => { openrouterKey = e.currentTarget.value; keyDirty = true; }}
 							placeholder="sk-or-v1-..."
-							disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
+							disabled={disabled || syncPhase === 'saving' || syncPhase === 'syncing'}
 							class="block w-full rounded-lg border border-gray-300 px-3 py-2 pr-16 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
 						/>
 						<button
@@ -356,7 +251,7 @@
 						id="model-select"
 						bind:value={selectedModel}
 						onchange={() => { if (models.some((m) => m.id === selectedModel)) customModel = null; }}
-						disabled={disabled || !hasExistingKey || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
+						disabled={disabled || !hasExistingKey || syncPhase === 'saving' || syncPhase === 'syncing'}
 						class="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:opacity-50"
 					>
 						{#each models as model (model.id)}
@@ -423,10 +318,10 @@
 				<button
 					type="button"
 					onclick={handleSave}
-					disabled={disabled || modelsError || (!hasExistingKey && !keyDirty) || syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing'}
+					disabled={disabled || modelsError || (!hasExistingKey && !keyDirty) || syncPhase === 'saving' || syncPhase === 'syncing'}
 					class="rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
 				>
-					{syncPhase === 'saving' || syncPhase === 'syncing' || syncPhase === 'finishing' ? 'Applying...' : 'Save'}
+					{syncPhase === 'saving' || syncPhase === 'syncing' ? 'Applying...' : 'Save'}
 				</button>
 				<a
 					href="https://openrouter.ai/keys"
