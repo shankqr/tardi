@@ -621,21 +621,25 @@
 					</dl>
 
 					{#if instance.status === 'active' && instance.agent_status === 'running' && instance.dashboard_url}
-						<button
-							onclick={async () => {
-								try {
-									const token = await getIdToken();
-									if (!token) return;
-									const { token: scopedToken } = await getDashboardToken(instance!.id, token);
-									window.open(`${instance!.dashboard_url!}/#token=${scopedToken}`, '_blank');
-								} catch {
-									alert('Failed to generate dashboard token. Please try again.');
-								}
-							}}
-							class="mt-4 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800"
-						>
-							Open Agent Dashboard
-						</button>
+						{#if hasApiKey}
+							<button
+								onclick={async () => {
+									try {
+										const token = await getIdToken();
+										if (!token) return;
+										const { token: scopedToken } = await getDashboardToken(instance!.id, token);
+										window.open(`${instance!.dashboard_url!}/#token=${scopedToken}`, '_blank');
+									} catch {
+										alert('Failed to generate dashboard token. Please try again.');
+									}
+								}}
+								class="mt-4 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800"
+							>
+								Open Agent Dashboard
+							</button>
+						{:else}
+							<p class="mt-4 text-xs text-gray-400">Set up your OpenRouter API key below to access the dashboard.</p>
+						{/if}
 					{/if}
 				</div>
 
