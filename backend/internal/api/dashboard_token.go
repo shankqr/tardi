@@ -54,14 +54,21 @@ func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Read the gateway token from .env (OpenClaw reads OPENCLAW_GATEWAY_TOKEN
-		// from the env var — it does NOT store it in openclaw.json). Also ensure
-		// trustedProxies is set so operator scopes work through Cloudflare's proxy.
+		// Read the actual gateway token OpenClaw is using. Three possible sources:
+		// 1. Running container's process env (most reliable — what OpenClaw actually uses)
+		// 2. .env file (set at provisioning, may be stale after restart)
+		// 3. openclaw.json gateway.auth.token (only if set via config commands)
+		// Also ensure trustedProxies is set so operator scopes work through Cloudflare.
 		script := `#!/bin/bash
 set -e
 OC_CFG="/opt/openclaw/data/openclaw/openclaw.json"
-# Token sources: .env (set at provisioning), then openclaw.json (set by config commands)
-GW_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
+# 1. Read from running container's process environment (most reliable)
+GW_TOKEN=$(docker exec openclaw-gateway printenv OPENCLAW_GATEWAY_TOKEN 2>/dev/null || true)
+# 2. Fallback: .env file
+if [ -z "$GW_TOKEN" ]; then
+    GW_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
+fi
+# 3. Fallback: openclaw.json
 if [ -z "$GW_TOKEN" ]; then
     GW_TOKEN=$(cat "$OC_CFG" 2>/dev/null | jq -r '.gateway.auth.token // empty')
 fi
@@ -82,6 +89,12 @@ with open('$OC_CFG', 'w') as f:
 " 2>/dev/null
     # Wait a moment for OpenClaw to detect config change via lastTouchedAt
     sleep 2
+fi
+# Sync .env so it stays current for next time
+ENV_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
+if [ "$GW_TOKEN" != "$ENV_TOKEN" ]; then
+    sed -i '/^OPENCLAW_GATEWAY_TOKEN=/d' /opt/openclaw/.env
+    echo "OPENCLAW_GATEWAY_TOKEN=$GW_TOKEN" >> /opt/openclaw/.env
 fi
 echo "{\"token\":\"$GW_TOKEN\"}"
 `
