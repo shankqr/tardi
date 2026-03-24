@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -155,18 +154,6 @@ func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model stri
 		fullModel = "openrouter/" + model
 	}
 
-	getResult, err := openclawRPC(ctx, ipv4, authToken, "config.get", map[string]any{})
-	if err != nil {
-		return fmt.Errorf("config.get: %w", err)
-	}
-
-	var configResp struct {
-		Hash string `json:"hash"`
-	}
-	if err := json.Unmarshal(getResult, &configResp); err != nil || configResp.Hash == "" {
-		return fmt.Errorf("config.get: missing hash")
-	}
-
 	// Build the models map for registration in OC dashboard dropdown
 	modelsMap := map[string]any{}
 	for _, mid := range allModelIDs {
@@ -177,7 +164,8 @@ func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model stri
 		modelsMap[fmid] = map[string]any{}
 	}
 
-	// Single atomic patch: set primary + register all models
+	// Single atomic patch: set primary + register all models.
+	// Send the config JSON directly as params (no wrapper with "raw"/"hash").
 	patch := map[string]any{
 		"agents": map[string]any{
 			"defaults": map[string]any{
@@ -188,12 +176,8 @@ func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model stri
 			},
 		},
 	}
-	patchJSON, _ := json.Marshal(patch)
 
-	_, err = openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
-		"raw":  string(patchJSON),
-		"hash": configResp.Hash,
-	})
+	_, err := openclawRPC(ctx, ipv4, authToken, "config.patch", patch)
 	if err != nil {
 		return fmt.Errorf("config.patch: %w", err)
 	}
