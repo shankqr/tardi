@@ -46,21 +46,22 @@ test.describe('Navigation and routing', () => {
 		page,
 	}) => {
 		await page.goto('/dashboard');
-		await expect(page).toHaveURL(/\/login/);
+		// Auth guard shows "Loading..." while Firebase initializes, then redirects
+		await expect(page).toHaveURL(/\/login/, { timeout: 20_000 });
 	});
 
 	test('auth guard: /dashboard/billing redirects to /login without auth', async ({
 		page,
 	}) => {
 		await page.goto('/dashboard/billing');
-		await expect(page).toHaveURL(/\/login/);
+		await expect(page).toHaveURL(/\/login/, { timeout: 20_000 });
 	});
 
 	test('auth guard: /dashboard/settings redirects to /login without auth', async ({
 		page,
 	}) => {
 		await page.goto('/dashboard/settings');
-		await expect(page).toHaveURL(/\/login/);
+		await expect(page).toHaveURL(/\/login/, { timeout: 20_000 });
 	});
 
 	test('404: /nonexistent-route shows error page', async ({ page }) => {
