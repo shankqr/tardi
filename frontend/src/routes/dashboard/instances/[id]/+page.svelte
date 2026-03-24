@@ -63,6 +63,7 @@
 	let dashboardBtnLoading = $state(false);
 
 	// Telegram state
+	function maskToken(t: string): string { return t.length > 7 ? t.slice(0, 3) + '...' + t.slice(-4) : t; }
 	let telegramToken = $state('');
 	let telegramLoading = $state(false);
 	let telegramError = $state<string | null>(null);
@@ -382,6 +383,7 @@
 			const token = await getIdToken();
 			if (!token) throw new Error('Not authenticated');
 			await connectTelegram(token, instance.id, telegramToken.trim());
+			telegramCurrentToken = maskToken(telegramToken.trim());
 			telegramConnected = true;
 			telegramToken = '';
 			showUpdateToken = false;
