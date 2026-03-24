@@ -28,6 +28,11 @@ type Config struct {
 	GoogleOAuthClientSecret string
 	TokenEncryptionKey      string // 32-byte hex for AES-256-GCM token encryption
 
+	// Firewall: comma-separated CIDRs for backend egress IPs (e.g. Cloud NAT static IPs).
+	// When set, VPS UFW rules restrict SSH (22) and OpenClaw (18789) to these CIDRs
+	// plus Cloudflare IP ranges. When empty, SSH remains open to all (less secure).
+	BackendEgressCIDRs string
+
 	// Mock provider delays (dev only)
 	MockInitDelay      time.Duration
 	MockHeartbeatDelay time.Duration
@@ -57,6 +62,8 @@ func Load() *Config {
 		GoogleOAuthClientID:     os.Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		GoogleOAuthClientSecret: secretOrEmpty("GOOGLE_OAUTH_CLIENT_SECRET"),
 		TokenEncryptionKey:      secretOrEmpty("TOKEN_ENCRYPTION_KEY"),
+
+		BackendEgressCIDRs: os.Getenv("BACKEND_EGRESS_CIDRS"),
 
 		MockInitDelay:      parseDuration("MOCK_INIT_DELAY", 12*time.Second),
 		MockHeartbeatDelay: parseDuration("MOCK_HEARTBEAT_DELAY", 18*time.Second),

@@ -23,22 +23,24 @@ const (
 
 // Upgrader handles plan upgrades (snapshot-based server migration) and downgrades (fresh provisioning).
 type Upgrader struct {
-	pool             *pgxpool.Pool
-	registry         *provider.Registry
-	logger           *slog.Logger
-	apiURL           string
-	openClawImageTag string
-	dnsClient        *dns.Client
+	pool               *pgxpool.Pool
+	registry           *provider.Registry
+	logger             *slog.Logger
+	apiURL             string
+	openClawImageTag   string
+	dnsClient          *dns.Client
+	backendEgressCIDRs string
 }
 
-func NewUpgrader(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag string, dnsClient *dns.Client) *Upgrader {
+func NewUpgrader(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag, backendEgressCIDRs string, dnsClient *dns.Client) *Upgrader {
 	return &Upgrader{
-		pool:             pool,
-		registry:         registry,
-		logger:           logger,
-		apiURL:           apiURL,
-		openClawImageTag: openClawImageTag,
-		dnsClient:        dnsClient,
+		pool:               pool,
+		registry:           registry,
+		logger:             logger,
+		apiURL:             apiURL,
+		openClawImageTag:   openClawImageTag,
+		dnsClient:          dnsClient,
+		backendEgressCIDRs: backendEgressCIDRs,
 	}
 }
 
@@ -158,13 +160,14 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	_ = db.UpdateInstanceRootPassword(ctx, u.pool, inst.ID, rootPassword)
 
 	ciData := CloudInitData{
-		AgentToken:        agentToken,
-		APIURL:            u.apiURL,
-		InstanceID:        inst.ID.String(),
-		OpenClawAuthToken: openClawAuthToken,
-		OpenClawImageTag:  resolveImageTag(ctx, u.pool, u.openClawImageTag),
-		RootPassword:      rootPassword,
-		HeartbeatScript:   scripts.HeartbeatScript,
+		AgentToken:         agentToken,
+		APIURL:             u.apiURL,
+		InstanceID:         inst.ID.String(),
+		OpenClawAuthToken:  openClawAuthToken,
+		OpenClawImageTag:   resolveImageTag(ctx, u.pool, u.openClawImageTag),
+		RootPassword:       rootPassword,
+		HeartbeatScript:    scripts.HeartbeatScript,
+		BackendEgressCIDRs: u.backendEgressCIDRs,
 	}
 
 	// Preserve domain for Let's Encrypt TLS

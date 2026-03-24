@@ -53,8 +53,7 @@ MIGRATEEOF
         iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
         netfilter-persistent save 2>/dev/null || true
     fi
-    # UFW must allow 18789 — iptables PREROUTING rewrites dest port before INPUT chain
-    ufw allow 18789/tcp 2>/dev/null || true
+    # UFW 18789 rules will be set by the hardening section below (per-CIDR, not blanket allow)
     # Remove trustedProxies from openclaw.json (no longer behind reverse proxy)
     python3 -c "
 import json
@@ -158,8 +157,58 @@ if ! iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
     iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
     netfilter-persistent save 2>/dev/null || true
 fi
-# UFW must allow 18789 — iptables PREROUTING rewrites dest port before UFW's INPUT chain
-ufw allow 18789/tcp 2>/dev/null || true
+
+# --- UFW security hardening for port 18789 and SSH ---
+# Port 18789 must be allowed (iptables PREROUTING rewrites dest port before UFW
+# INPUT chain), but we restrict it to Cloudflare IPs + backend egress CIDRs
+# instead of allowing from all sources. This prevents direct access to OpenClaw
+# from arbitrary IPs that would bypass Cloudflare proxy/WAF/DDoS protection.
+#
+# Migration: if blanket "18789/tcp ALLOW Anywhere" exists, replace it with
+# per-CIDR rules. Cloudflare IPs are refreshed daily via a marker file.
+BACKEND_CIDRS=$(grep '^BACKEND_EGRESS_CIDRS=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
+
+# Check if blanket 18789 allow still exists (pre-hardening or drift)
+if ufw status | grep "18789/tcp" | grep -q "Anywhere" 2>/dev/null; then
+    UFW_NEEDS_HARDENING=true
+elif ! ufw status | grep -q "18789" 2>/dev/null; then
+    # No 18789 rules at all — need to add them
+    UFW_NEEDS_HARDENING=true
+else
+    UFW_NEEDS_HARDENING=false
+fi
+
+# Refresh Cloudflare IP allowlist daily (or on first run / after hardening)
+CF_MARKER="/opt/openclaw/.cf_ufw_updated"
+CF_STALE=false
+if [ ! -f "$CF_MARKER" ]; then
+    CF_STALE=true
+elif [ -n "$(find "$CF_MARKER" -mmin +1440 2>/dev/null)" ]; then
+    CF_STALE=true
+fi
+
+if [ "$UFW_NEEDS_HARDENING" = true ] || [ "$CF_STALE" = true ]; then
+    # Remove blanket allow rules (safe to run even if they don't exist)
+    ufw delete allow 18789/tcp 2>/dev/null || true
+
+    # Add Cloudflare IP ranges for port 18789
+    CF_IPS=$(curl -sf https://www.cloudflare.com/ips-v4 2>/dev/null || echo "")
+    if [ -n "$CF_IPS" ]; then
+        for cidr in $CF_IPS; do
+            ufw allow from $cidr to any port 18789 2>/dev/null || true
+        done
+        date > "$CF_MARKER"
+    fi
+
+    # Add backend egress CIDRs for port 18789 + SSH
+    if [ -n "$BACKEND_CIDRS" ]; then
+        ufw delete allow 22/tcp 2>/dev/null || true
+        for cidr in $(echo "$BACKEND_CIDRS" | tr ',' ' '); do
+            ufw allow from $cidr to any port 18789 2>/dev/null || true
+            ufw allow from $cidr to any port 22 2>/dev/null || true
+        done
+    fi
+fi
 
 # --- Gateway auth drift guard (runs every heartbeat) ---
 # OpenClaw may overwrite openclaw.json on startup and revert auth mode.

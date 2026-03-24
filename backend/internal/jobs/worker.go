@@ -20,19 +20,20 @@ type Worker struct {
 	provisioner *Provisioner
 }
 
-func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag string, dnsClient *dns.Client) *Worker {
+func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag, backendEgressCIDRs string, dnsClient *dns.Client) *Worker {
 	return &Worker{
 		pool:     pool,
 		registry: registry,
 		logger:   logger,
 		interval: 2 * time.Second,
 		provisioner: &Provisioner{
-			pool:             pool,
-			registry:         registry,
-			logger:           logger,
-			apiURL:           apiURL,
-			openClawImageTag: openClawImageTag,
-			dnsClient:        dnsClient,
+			pool:               pool,
+			registry:           registry,
+			logger:             logger,
+			apiURL:             apiURL,
+			openClawImageTag:   openClawImageTag,
+			dnsClient:          dnsClient,
+			backendEgressCIDRs: backendEgressCIDRs,
 		},
 	}
 }

@@ -21,20 +21,22 @@ const (
 
 // Resumer handles re-provisioning suspended instances from their system snapshots.
 type Resumer struct {
-	pool             *pgxpool.Pool
-	registry         *provider.Registry
-	logger           *slog.Logger
-	apiURL           string
-	openClawImageTag string
+	pool               *pgxpool.Pool
+	registry           *provider.Registry
+	logger             *slog.Logger
+	apiURL             string
+	openClawImageTag   string
+	backendEgressCIDRs string
 }
 
-func NewResumer(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag string) *Resumer {
+func NewResumer(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag, backendEgressCIDRs string) *Resumer {
 	return &Resumer{
-		pool:             pool,
-		registry:         registry,
-		logger:           logger,
-		apiURL:           apiURL,
-		openClawImageTag: openClawImageTag,
+		pool:               pool,
+		registry:           registry,
+		logger:             logger,
+		apiURL:             apiURL,
+		openClawImageTag:   openClawImageTag,
+		backendEgressCIDRs: backendEgressCIDRs,
 	}
 }
 
@@ -119,12 +121,13 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 
 	// Build cloud-init data with API keys from agent config
 	ciData := CloudInitData{
-		AgentToken:        agentToken,
-		APIURL:            r.apiURL,
-		InstanceID:        inst.ID.String(),
-		OpenClawAuthToken: openClawAuthToken,
-		OpenClawImageTag:  resolveImageTag(ctx, r.pool, r.openClawImageTag),
-		HeartbeatScript:   scripts.HeartbeatScript,
+		AgentToken:         agentToken,
+		APIURL:             r.apiURL,
+		InstanceID:         inst.ID.String(),
+		OpenClawAuthToken:  openClawAuthToken,
+		OpenClawImageTag:   resolveImageTag(ctx, r.pool, r.openClawImageTag),
+		HeartbeatScript:    scripts.HeartbeatScript,
+		BackendEgressCIDRs: r.backendEgressCIDRs,
 	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, r.pool, inst.ID)
 	if err != nil {

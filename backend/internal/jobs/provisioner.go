@@ -55,10 +55,11 @@ type CloudInitData struct {
 	Model             string // Model ID for the provider
 	ConfigVersion     int    // Initial config version to prevent redundant first sync
 	RootPassword      string // Explicitly set root password (overrides Hetzner's auto-generated one)
-	TelegramBotToken  string // Optional Telegram bot token
-	Domain            string // Optional domain for Cloudflare Proxy (e.g. "abc12345.tardi.ai"); empty = IP-only access
-	PreviewDomain     string // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
-	HeartbeatScript   string // Latest heartbeat bash script (from scripts.HeartbeatScript)
+	TelegramBotToken   string // Optional Telegram bot token
+	Domain             string // Optional domain for Cloudflare Proxy (e.g. "abc12345.tardi.ai"); empty = IP-only access
+	PreviewDomain      string // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
+	HeartbeatScript    string // Latest heartbeat bash script (from scripts.HeartbeatScript)
+	BackendEgressCIDRs string // Comma-separated CIDRs for backend egress IPs (restricts UFW SSH + OpenClaw access)
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
@@ -95,9 +96,24 @@ apt-get install -y -qq ca-certificates curl jq ufw
 # --- Firewall ---
 ufw default deny incoming
 ufw default allow outgoing
-ufw allow 22/tcp
 ufw allow 80/tcp
-ufw allow 18789/tcp
+# Port 18789: only allow from Cloudflare IPs (for NAT'd port-80 traffic) and
+# backend egress IPs (for direct WebSocket RPC). Without this, anyone who
+# scans the VPS IP can connect directly to OpenClaw bypassing Cloudflare.
+CF_IPS=$(curl -sf https://www.cloudflare.com/ips-v4 2>/dev/null || echo "")
+for cidr in $CF_IPS; do
+    ufw allow from $cidr to any port 18789 2>/dev/null || true
+done
+{{- if .BackendEgressCIDRs}}
+for cidr in $(echo "{{.BackendEgressCIDRs}}" | tr ',' ' '); do
+    ufw allow from $cidr to any port 18789
+    ufw allow from $cidr to any port 22
+done
+{{- else}}
+# No BACKEND_EGRESS_CIDRS configured — SSH open to all as fallback.
+# Set BACKEND_EGRESS_CIDRS env var on the backend to restrict SSH access.
+ufw allow 22/tcp
+{{- end}}
 ufw --force enable
 log_status "FIREWALL_CONFIGURED"
 
@@ -184,6 +200,9 @@ OPENCLAW_AUTH_TOKEN={{.OpenClawAuthToken}}
 OPENCLAW_GATEWAY_TOKEN={{.OpenClawAuthToken}}
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
 NODE_ENV=production
+{{- if .BackendEgressCIDRs}}
+BACKEND_EGRESS_CIDRS={{.BackendEgressCIDRs}}
+{{- end}}
 ENVEOF
 {{- if .AnthropicAPIKey}}
 echo "ANTHROPIC_API_KEY={{.AnthropicAPIKey}}" >> /opt/openclaw/.env
@@ -341,12 +360,13 @@ log_status "COMPLETED"
 `))
 
 type Provisioner struct {
-	pool             *pgxpool.Pool
-	registry         *provider.Registry
-	logger           *slog.Logger
-	apiURL           string
-	openClawImageTag string
-	dnsClient        *dns.Client // nil if Cloudflare DNS not configured
+	pool               *pgxpool.Pool
+	registry           *provider.Registry
+	logger             *slog.Logger
+	apiURL             string
+	openClawImageTag   string
+	dnsClient          *dns.Client // nil if Cloudflare DNS not configured
+	backendEgressCIDRs string      // comma-separated CIDRs for UFW restriction
 }
 
 // Execute runs through the provisioning steps for a job.
@@ -550,17 +570,18 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 
 	// Fetch API keys from agent config (with defaults for provider/model)
 	ciData := CloudInitData{
-		AgentToken:        agentToken,
-		APIURL:            p.apiURL,
-		InstanceID:        inst.ID.String(),
-		OpenClawAuthToken: openClawAuthToken,
-		OpenClawImageTag:  resolveImageTag(ctx, p.pool, p.openClawImageTag),
-		Provider:          "openrouter",
-		Model:             defaultModel,
-		RootPassword:      rootPassword,
-		Domain:            domain,
-		PreviewDomain:     previewDomain,
-		HeartbeatScript:   scripts.HeartbeatScript,
+		AgentToken:         agentToken,
+		APIURL:             p.apiURL,
+		InstanceID:         inst.ID.String(),
+		OpenClawAuthToken:  openClawAuthToken,
+		OpenClawImageTag:   resolveImageTag(ctx, p.pool, p.openClawImageTag),
+		Provider:           "openrouter",
+		Model:              defaultModel,
+		RootPassword:       rootPassword,
+		Domain:             domain,
+		PreviewDomain:      previewDomain,
+		HeartbeatScript:    scripts.HeartbeatScript,
+		BackendEgressCIDRs: p.backendEgressCIDRs,
 	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, p.pool, inst.ID)
 	if err != nil {
