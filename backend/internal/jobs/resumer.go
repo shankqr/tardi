@@ -27,9 +27,10 @@ type Resumer struct {
 	apiURL             string
 	openClawImageTag   string
 	backendEgressCIDRs string
+	sshPublicKey       string
 }
 
-func NewResumer(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag, backendEgressCIDRs string) *Resumer {
+func NewResumer(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag, backendEgressCIDRs, sshPublicKey string) *Resumer {
 	return &Resumer{
 		pool:               pool,
 		registry:           registry,
@@ -37,6 +38,7 @@ func NewResumer(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Lo
 		apiURL:             apiURL,
 		openClawImageTag:   openClawImageTag,
 		backendEgressCIDRs: backendEgressCIDRs,
+		sshPublicKey:       sshPublicKey,
 	}
 }
 
@@ -126,6 +128,7 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		InstanceID:         inst.ID.String(),
 		OpenClawAuthToken:  openClawAuthToken,
 		OpenClawImageTag:   resolveImageTag(ctx, r.pool, r.openClawImageTag),
+		SSHPublicKey:       r.sshPublicKey,
 		HeartbeatScript:    scripts.HeartbeatScript,
 		BackendEgressCIDRs: r.backendEgressCIDRs,
 	}

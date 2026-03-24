@@ -113,6 +113,15 @@ resource "google_cloud_run_v2_service" "api" {
           }
         }
       }
+      env {
+        name = "SSH_PRIVATE_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.ssh_private_key.secret_id
+            version = "latest"
+          }
+        }
+      }
 
       resources {
         limits = {

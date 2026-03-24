@@ -127,6 +127,25 @@ resource "google_secret_manager_secret_version" "cloudflare_zone_id" {
   }
 }
 
+# SSH private key — Ed25519 key for backend SSH access to VPSes (base64-encoded PEM)
+resource "google_secret_manager_secret" "ssh_private_key" {
+  secret_id = "${var.environment}-ssh-private-key"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "ssh_private_key" {
+  secret      = google_secret_manager_secret.ssh_private_key.id
+  secret_data = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
 # Cloudflare base domain — subdomain pattern for agent instances
 resource "google_secret_manager_secret" "cloudflare_base_domain" {
   secret_id = "${var.environment}-cloudflare-base-domain"

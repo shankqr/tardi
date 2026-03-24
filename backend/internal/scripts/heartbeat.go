@@ -11,12 +11,17 @@ package scripts
 const HeartbeatScript = `#!/bin/bash
 source /opt/openclaw/.env
 
-# --- Fix SSH password auth (cloud-init's 50-cloud-init.conf disables it) ---
-# This is idempotent — only writes if the drop-in is missing or wrong
-if [ ! -f /etc/ssh/sshd_config.d/60-tardi.conf ] || ! grep -q "PasswordAuthentication yes" /etc/ssh/sshd_config.d/60-tardi.conf 2>/dev/null; then
-    mkdir -p /etc/ssh/sshd_config.d
-    echo "PasswordAuthentication yes" > /etc/ssh/sshd_config.d/60-tardi.conf
-    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
+# --- SSH key-based auth drift guard ---
+# Ensure password auth stays disabled and key auth is enforced.
+# The SSH public key is injected by cloud-init (new VPSes) or ScriptPusher (existing VPSes).
+if [ -f /etc/ssh/sshd_config.d/60-tardi.conf ] && grep -q "PasswordAuthentication yes" /etc/ssh/sshd_config.d/60-tardi.conf 2>/dev/null; then
+    # Old config detected — only flip if authorized_keys has a key (safety check)
+    if [ -s /root/.ssh/authorized_keys ]; then
+        printf 'PasswordAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/60-tardi.conf
+        sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+        sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+        systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
+    fi
 fi
 
 # --- Migrate from old 2-container Caddy setup to single container host networking ---

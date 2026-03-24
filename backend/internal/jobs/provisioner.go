@@ -55,6 +55,7 @@ type CloudInitData struct {
 	Model             string // Model ID for the provider
 	ConfigVersion     int    // Initial config version to prevent redundant first sync
 	RootPassword      string // Explicitly set root password (overrides Hetzner's auto-generated one)
+	SSHPublicKey       string // Ed25519 public key for key-based SSH auth (injected into authorized_keys)
 	TelegramBotToken   string // Optional Telegram bot token
 	Domain             string // Optional domain for Cloudflare Proxy (e.g. "abc12345.tardi.ai"); empty = IP-only access
 	PreviewDomain      string // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
@@ -117,18 +118,25 @@ ufw allow 22/tcp
 ufw --force enable
 log_status "FIREWALL_CONFIGURED"
 
-# --- Set root password explicitly (Hetzner's auto-generated pwd may be expired by cloud-init) ---
+# --- Set root password (kept as fallback, but SSH key auth is preferred) ---
 {{- if .RootPassword}}
 echo "root:{{.RootPassword}}" | chpasswd
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-# Override cloud-init's 50-cloud-init.conf drop-in which sets PasswordAuthentication=no
-# The 60- prefix ensures this loads after and overrides cloud-init's settings
-mkdir -p /etc/ssh/sshd_config.d
-echo "PasswordAuthentication yes" > /etc/ssh/sshd_config.d/60-tardi.conf
-systemctl restart sshd || systemctl restart ssh || true
-log_status "ROOT_PASSWORD_SET"
 {{- end}}
+
+# --- SSH key-based auth ---
+{{- if .SSHPublicKey}}
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+echo "{{.SSHPublicKey}}" >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+{{- end}}
+# Disable password auth, allow key-based root login only
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+mkdir -p /etc/ssh/sshd_config.d
+printf 'PasswordAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/60-tardi.conf
+systemctl restart sshd || systemctl restart ssh || true
+log_status "SSH_KEY_CONFIGURED"
 
 # --- Install Docker from official repository ---
 install -m 0755 -d /etc/apt/keyrings
@@ -371,6 +379,7 @@ type Provisioner struct {
 	openClawImageTag   string
 	dnsClient          *dns.Client // nil if Cloudflare DNS not configured
 	backendEgressCIDRs string      // comma-separated CIDRs for UFW restriction
+	sshPublicKey       string      // Ed25519 public key for authorized_keys injection
 }
 
 // Execute runs through the provisioning steps for a job.
@@ -582,6 +591,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		Provider:           "openrouter",
 		Model:              defaultModel,
 		RootPassword:       rootPassword,
+		SSHPublicKey:       p.sshPublicKey,
 		Domain:             domain,
 		PreviewDomain:      previewDomain,
 		HeartbeatScript:    scripts.HeartbeatScript,

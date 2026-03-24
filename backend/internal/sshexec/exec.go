@@ -3,6 +3,7 @@ package sshexec
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"net"
 	"time"
 
@@ -10,13 +11,32 @@ import (
 )
 
 // RunCommand connects to the host via SSH and executes the given command.
-// Returns combined stdout+stderr output and any error.
-func RunCommand(host, password, command string, timeout time.Duration) (string, error) {
+// It tries key-based auth first (if privateKey is non-nil), then falls back
+// to password auth (if password is non-empty). During the migration from
+// password to key-based auth, both may be provided.
+func RunCommand(host string, privateKey []byte, password, command string, timeout time.Duration) (string, error) {
+	var authMethods []ssh.AuthMethod
+
+	if len(privateKey) > 0 {
+		signer, err := ssh.ParsePrivateKey(privateKey)
+		if err != nil {
+			slog.Warn("sshexec: failed to parse private key, falling back to password", "error", err)
+		} else {
+			authMethods = append(authMethods, ssh.PublicKeys(signer))
+		}
+	}
+
+	if password != "" {
+		authMethods = append(authMethods, ssh.Password(password))
+	}
+
+	if len(authMethods) == 0 {
+		return "", fmt.Errorf("ssh: no auth methods available (no key or password)")
+	}
+
 	config := &ssh.ClientConfig{
-		User: "root",
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-		},
+		User:            "root",
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // VPS managed by us, no known_hosts
 		Timeout:         10 * time.Second,
 	}

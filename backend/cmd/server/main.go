@@ -111,7 +111,7 @@ func main() {
 	}
 
 	// Start background workers
-	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, dnsClient)
+	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey, dnsClient)
 	go worker.Start(ctx)
 
 	reconciler := jobs.NewReconciler(pool, registry, logger)
@@ -120,14 +120,14 @@ func main() {
 	enforcer := jobs.NewEnforcer(pool, registry, logger)
 	go enforcer.Start(ctx)
 
-	scriptPusher := jobs.NewScriptPusher(pool, logger)
+	scriptPusher := jobs.NewScriptPusher(pool, logger, cfg.SSHPrivateKey, cfg.SSHPublicKey)
 	go scriptPusher.Start(ctx)
 
 	tokenRefresher := jobs.NewTokenRefresher(pool, logger, cfg)
 	go tokenRefresher.Start(ctx)
 
-	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs)
-	upgrader := jobs.NewUpgrader(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, dnsClient)
+	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey)
+	upgrader := jobs.NewUpgrader(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey, dnsClient)
 
 	// WaitGroup for background goroutines (snapshot create/restore/delete, restart, etc.)
 	var bgTasks sync.WaitGroup

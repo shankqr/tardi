@@ -98,7 +98,7 @@ if [ "$GW_TOKEN" != "$ENV_TOKEN" ]; then
 fi
 echo "{\"token\":\"$GW_TOKEN\"}"
 `
-		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, script, 30*time.Second)
+		out, err := sshexec.RunCommand(*inst.IPv4, deps.Config.SSHPrivateKey, *inst.RootPassword, script, 30*time.Second)
 		if err != nil {
 			slog.Error("dashboard-token: ssh failed", "error", err, "instance_id", instanceID)
 			WriteError(w, http.StatusBadGateway, "gateway_error", "failed to generate dashboard token")

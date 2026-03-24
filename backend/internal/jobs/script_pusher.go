@@ -25,12 +25,14 @@ const scriptPusherLockID int64 = 0x7461726469_6862 // "tardi_hb"
 // compares against the last-deployed hash in platform_settings, and if changed,
 // SSHes into all active VPSes to overwrite /opt/openclaw/heartbeat.sh.
 type ScriptPusher struct {
-	pool   *pgxpool.Pool
-	logger *slog.Logger
+	pool          *pgxpool.Pool
+	logger        *slog.Logger
+	sshPrivateKey []byte // Ed25519 private key for SSH auth (nil = password-only)
+	sshPublicKey  string // "ssh-ed25519 AAAA..." for authorized_keys injection
 }
 
-func NewScriptPusher(pool *pgxpool.Pool, logger *slog.Logger) *ScriptPusher {
-	return &ScriptPusher{pool: pool, logger: logger}
+func NewScriptPusher(pool *pgxpool.Pool, logger *slog.Logger, sshPrivateKey []byte, sshPublicKey string) *ScriptPusher {
+	return &ScriptPusher{pool: pool, logger: logger, sshPrivateKey: sshPrivateKey, sshPublicKey: sshPublicKey}
 }
 
 // Start waits briefly for the HTTP server to be ready, then checks and pushes
@@ -115,6 +117,22 @@ func (sp *ScriptPusher) push(ctx context.Context) {
 func (sp *ScriptPusher) pushToInstances(ctx context.Context, instances []models.VpsInstance) {
 	cmd := "cat > /opt/openclaw/heartbeat.sh <<'HBEOF'\n" + scripts.HeartbeatScript + "\nHBEOF\nchmod +x /opt/openclaw/heartbeat.sh"
 
+	// If SSH public key is configured, also inject it into authorized_keys
+	// and disable password auth. This migrates existing VPSes to key-based auth.
+	if sp.sshPublicKey != "" {
+		cmd += fmt.Sprintf(`
+mkdir -p /root/.ssh && chmod 700 /root/.ssh
+grep -qF %q /root/.ssh/authorized_keys 2>/dev/null || echo %q >> /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+if ! grep -q 'PasswordAuthentication no' /etc/ssh/sshd_config.d/60-tardi.conf 2>/dev/null; then
+    mkdir -p /etc/ssh/sshd_config.d
+    printf 'PasswordAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/60-tardi.conf
+    sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+    sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
+fi`, sp.sshPublicKey, sp.sshPublicKey)
+	}
+
 	sem := make(chan struct{}, 5) // max 5 concurrent SSH connections
 	var wg sync.WaitGroup
 
@@ -130,7 +148,7 @@ func (sp *ScriptPusher) pushToInstances(ctx context.Context, instances []models.
 				return
 			}
 
-			_, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, cmd, 30*time.Second)
+			_, err := sshexec.RunCommand(*inst.IPv4, sp.sshPrivateKey, *inst.RootPassword, cmd, 30*time.Second)
 			if err != nil {
 				sp.logger.Warn("script-pusher: failed to push to instance",
 					"instance_id", inst.ID,

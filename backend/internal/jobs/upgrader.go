@@ -30,9 +30,10 @@ type Upgrader struct {
 	openClawImageTag   string
 	dnsClient          *dns.Client
 	backendEgressCIDRs string
+	sshPublicKey       string
 }
 
-func NewUpgrader(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag, backendEgressCIDRs string, dnsClient *dns.Client) *Upgrader {
+func NewUpgrader(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag, backendEgressCIDRs, sshPublicKey string, dnsClient *dns.Client) *Upgrader {
 	return &Upgrader{
 		pool:               pool,
 		registry:           registry,
@@ -41,6 +42,7 @@ func NewUpgrader(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.L
 		openClawImageTag:   openClawImageTag,
 		dnsClient:          dnsClient,
 		backendEgressCIDRs: backendEgressCIDRs,
+		sshPublicKey:       sshPublicKey,
 	}
 }
 
@@ -166,6 +168,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		OpenClawAuthToken:  openClawAuthToken,
 		OpenClawImageTag:   resolveImageTag(ctx, u.pool, u.openClawImageTag),
 		RootPassword:       rootPassword,
+		SSHPublicKey:       u.sshPublicKey,
 		HeartbeatScript:    scripts.HeartbeatScript,
 		BackendEgressCIDRs: u.backendEgressCIDRs,
 	}

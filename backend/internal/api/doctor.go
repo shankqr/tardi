@@ -261,7 +261,7 @@ func DoctorHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, healthCheckScript, 45*time.Second)
+		out, err := sshexec.RunCommand(*inst.IPv4, deps.Config.SSHPrivateKey, *inst.RootPassword, healthCheckScript, 45*time.Second)
 		if err != nil {
 			slog.Error("doctor: ssh failed", "error", err, "instance_id", instanceID)
 			WriteJSON(w, http.StatusOK, map[string]any{

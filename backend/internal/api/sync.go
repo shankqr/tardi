@@ -190,6 +190,7 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 
 		ip := *inst.IPv4
 		pw := *inst.RootPassword
+		sshKey := deps.Config.SSHPrivateKey
 
 		// Deploy the script and launch it in the background via nohup.
 		// The script takes 60-90s (docker recreate + health wait) which
@@ -203,7 +204,7 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 			"echo %s | base64 -d > /tmp/config-sync.sh && chmod +x /tmp/config-sync.sh && systemctl stop tardi-config-sync 2>/dev/null; systemctl reset-failed tardi-config-sync 2>/dev/null; systemd-run --unit=tardi-config-sync --no-block --collect bash /tmp/config-sync.sh",
 			encoded,
 		)
-		_, err = sshexec.RunCommand(ip, pw, cmd, 30*time.Second)
+		_, err = sshexec.RunCommand(ip, sshKey, pw, cmd, 30*time.Second)
 		if err != nil {
 			slog.Error("sync config: failed to launch script",
 				"instance_id", instanceID,
@@ -259,7 +260,7 @@ func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
 
 		// Check systemd unit state + grab last 5 lines from journal
 		cmd := `STATE=$(systemctl show tardi-config-sync --property=ActiveState --value 2>/dev/null || echo "not-found"); RESULT=$(systemctl show tardi-config-sync --property=Result --value 2>/dev/null || echo ""); LOG=$(journalctl -u tardi-config-sync --no-pager -n 5 -o cat 2>/dev/null || echo ""); printf '{"state":"%s","result":"%s","log":"%s"}' "$STATE" "$RESULT" "$LOG"`
-		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, cmd, 10*time.Second)
+		out, err := sshexec.RunCommand(*inst.IPv4, deps.Config.SSHPrivateKey, *inst.RootPassword, cmd, 10*time.Second)
 		if err != nil {
 			WriteJSON(w, http.StatusOK, map[string]any{
 				"status": "unknown",

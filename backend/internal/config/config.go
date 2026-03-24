@@ -1,9 +1,13 @@
 package config
 
 import (
+	"encoding/base64"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type Config struct {
@@ -33,6 +37,12 @@ type Config struct {
 	// plus Cloudflare IP ranges. When empty, SSH remains open to all (less secure).
 	BackendEgressCIDRs string
 
+	// SSH key-based auth: base64-encoded Ed25519 private key for SSHing into VPSes.
+	// The public key is derived at startup and injected into VPSes via cloud-init
+	// and heartbeat script. When set, key auth is preferred over password auth.
+	SSHPrivateKey []byte  // decoded PEM bytes
+	SSHPublicKey  string  // "ssh-ed25519 AAAA..." format for authorized_keys
+
 	// Mock provider delays (dev only)
 	MockInitDelay      time.Duration
 	MockHeartbeatDelay time.Duration
@@ -42,7 +52,7 @@ type Config struct {
 }
 
 func Load() *Config {
-	return &Config{
+	cfg := &Config{
 		Port:               envOrDefault("PORT", "8080"),
 		DatabaseURL:        envOrDefault("DATABASE_URL", "postgres://tardi:tardi@localhost:5432/tardi?sslmode=disable"),
 		AllowedOrigins:     strings.Split(envOrDefault("ALLOWED_ORIGINS", "http://localhost:5173"), ","),
@@ -65,12 +75,28 @@ func Load() *Config {
 
 		BackendEgressCIDRs: os.Getenv("BACKEND_EGRESS_CIDRS"),
 
+		SSHPrivateKey: loadSSHPrivateKey(),
+
 		MockInitDelay:      parseDuration("MOCK_INIT_DELAY", 12*time.Second),
 		MockHeartbeatDelay: parseDuration("MOCK_HEARTBEAT_DELAY", 18*time.Second),
 		MockStopDelay:      parseDuration("MOCK_STOP_DELAY", 3*time.Second),
 		MockStartDelay:     parseDuration("MOCK_START_DELAY", 5*time.Second),
 		MockRestartDelay:   parseDuration("MOCK_RESTART_DELAY", 8*time.Second),
 	}
+
+	// Derive public key from private key for injection into VPS authorized_keys
+	if len(cfg.SSHPrivateKey) > 0 {
+		signer, err := ssh.ParsePrivateKey(cfg.SSHPrivateKey)
+		if err != nil {
+			slog.Error("config: failed to parse SSH private key", "error", err)
+		} else {
+			cfg.SSHPublicKey = string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
+			cfg.SSHPublicKey = strings.TrimSpace(cfg.SSHPublicKey)
+			slog.Info("config: SSH key loaded", "public_key_prefix", cfg.SSHPublicKey[:min(40, len(cfg.SSHPublicKey))]+"...")
+		}
+	}
+
+	return cfg
 }
 
 func (c *Config) IsDev() bool {
@@ -93,6 +119,21 @@ func secretOrEmpty(key string) string {
 		return ""
 	}
 	return v
+}
+
+// loadSSHPrivateKey reads SSH_PRIVATE_KEY env var (base64-encoded PEM) and
+// returns the decoded bytes. Returns nil if not set or invalid.
+func loadSSHPrivateKey() []byte {
+	v := secretOrEmpty("SSH_PRIVATE_KEY")
+	if v == "" {
+		return nil
+	}
+	key, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		slog.Error("config: SSH_PRIVATE_KEY is not valid base64", "error", err)
+		return nil
+	}
+	return key
 }
 
 func parseDuration(key string, fallback time.Duration) time.Duration {

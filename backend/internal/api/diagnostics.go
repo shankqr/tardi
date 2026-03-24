@@ -47,7 +47,7 @@ func DiagnosticsHandler(deps Dependencies) http.HandlerFunc {
 
 		cmd := `echo "=== CONTAINER STATE ===" && docker inspect openclaw-gateway --format='Status={{.State.Status}} Health={{.State.Health.Status}} Restarts={{.RestartCount}} StartedAt={{.State.StartedAt}}' 2>/dev/null || echo "container not found" && echo "" && echo "=== LAST 80 LOG LINES ===" && docker logs openclaw-gateway --tail 80 2>&1 && echo "" && echo "=== OPENCLAW.JSON ===" && cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null && echo "" && echo "=== ENV (masked) ===" && grep -v -E 'KEY=|TOKEN=|PASSWORD=' /opt/openclaw/.env 2>/dev/null && echo "" && echo "=== DISK ===" && df -h / 2>/dev/null && echo "" && echo "=== MEMORY ===" && free -m 2>/dev/null`
 
-		out, err := sshexec.RunCommand(*inst.IPv4, *inst.RootPassword, cmd, 30*time.Second)
+		out, err := sshexec.RunCommand(*inst.IPv4, deps.Config.SSHPrivateKey, *inst.RootPassword, cmd, 30*time.Second)
 		if err != nil {
 			slog.Error("diagnostics: ssh failed", "error", err, "instance_id", instanceID)
 			WriteJSON(w, http.StatusOK, map[string]any{

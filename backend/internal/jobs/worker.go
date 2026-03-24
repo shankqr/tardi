@@ -20,7 +20,7 @@ type Worker struct {
 	provisioner *Provisioner
 }
 
-func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag, backendEgressCIDRs string, dnsClient *dns.Client) *Worker {
+func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Logger, apiURL, openClawImageTag, backendEgressCIDRs, sshPublicKey string, dnsClient *dns.Client) *Worker {
 	return &Worker{
 		pool:     pool,
 		registry: registry,
@@ -34,6 +34,7 @@ func NewWorker(pool *pgxpool.Pool, registry *provider.Registry, logger *slog.Log
 			openClawImageTag:   openClawImageTag,
 			dnsClient:          dnsClient,
 			backendEgressCIDRs: backendEgressCIDRs,
+			sshPublicKey:       sshPublicKey,
 		},
 	}
 }
