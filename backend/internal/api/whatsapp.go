@@ -194,7 +194,12 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 		HandshakeTimeout: 10 * time.Second,
 	}
 
-	conn, _, err := dialer.DialContext(ctx, url, nil)
+	// Origin header is required for admin RPC methods (config.get, config.patch).
+	// OpenClaw checks it against gateway.controlUi.allowedOrigins which includes "*".
+	// We send the gateway's own address as origin to satisfy the check.
+	headers := http.Header{}
+	headers.Set("Origin", fmt.Sprintf("http://%s:18789", ipv4))
+	conn, _, err := dialer.DialContext(ctx, url, headers)
 	if err != nil {
 		return nil, fmt.Errorf("websocket dial: %w", err)
 	}
