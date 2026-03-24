@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getIdToken } from '$lib/stores/auth';
-	import { getAgentConfig, updateAgentConfig, syncConfig, getModels } from '$lib/api/client';
+	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus, getModels } from '$lib/api/client';
 	import type { ModelInfo } from '$lib/types';
 
 	interface Props {
@@ -41,11 +41,48 @@
 	type SyncPhase = 'idle' | 'saving' | 'syncing' | 'success' | 'failed';
 	let syncPhase = $state<SyncPhase>('idle');
 	let syncError = $state<string | null>(null);
+	let syncElapsed = $state(0);
+	let syncTimer: ReturnType<typeof setInterval> | null = null;
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	let envChanged = $state(false); // true when API key changed (needs container restart)
+
+	function startSyncTimer() {
+		syncElapsed = 0;
+		syncTimer = setInterval(() => { syncElapsed += 1; }, 1000);
+	}
+	function stopSyncTimer() {
+		if (syncTimer) { clearInterval(syncTimer); syncTimer = null; }
+	}
+	function stopPollTimer() {
+		if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+	}
 
 	$effect(() => {
 		const isSyncing = syncPhase === 'saving' || syncPhase === 'syncing';
 		onsyncchange?.(isSyncing);
 	});
+
+	async function pollSyncStatus() {
+		try {
+			const token = await getIdToken();
+			if (!token) return;
+			const result = await getSyncStatus(token, instanceId);
+			if (result.status === 'completed') {
+				stopSyncTimer();
+				stopPollTimer();
+				syncPhase = 'success';
+				onsaved?.();
+				setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 5000);
+			} else if (result.status === 'failed') {
+				stopSyncTimer();
+				stopPollTimer();
+				syncError = result.message || 'Config sync failed on your agent';
+				syncPhase = 'failed';
+			}
+		} catch {
+			// Ignore poll errors, keep trying
+		}
+	}
 
 	async function loadConfig() {
 		loading = true;
@@ -101,6 +138,9 @@
 	async function handleSave() {
 		syncPhase = 'saving';
 		syncError = null;
+		envChanged = keyDirty;
+		stopSyncTimer();
+		stopPollTimer();
 		try {
 			const token = await getIdToken();
 			if (!token) throw new Error('Not authenticated');
@@ -118,15 +158,30 @@
 			hasExistingKey = true;
 
 			// Trigger sync — the backend applies the model via RPC immediately
-			// (live, no restart) and launches a background script for the rest
-			// (model catalog registration, env updates, Telegram config).
+			// and launches a background script for env updates, model catalog, etc.
 			syncPhase = 'syncing';
 			try {
 				const result = await syncConfig(token, instanceId);
 				if (result.synced) {
-					syncPhase = 'success';
-					onsaved?.();
-					setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 5000);
+					if (envChanged) {
+						// API key changed → container will restart. Poll for completion.
+						startSyncTimer();
+						pollTimer = setInterval(() => {
+							if (syncElapsed > 300) {
+								stopSyncTimer();
+								stopPollTimer();
+								syncError = 'Sync is taking longer than expected — it will apply automatically within a few minutes';
+								syncPhase = 'failed';
+								return;
+							}
+							pollSyncStatus();
+						}, 5000);
+					} else {
+						// Model-only change → already applied via RPC, instant success.
+						syncPhase = 'success';
+						onsaved?.();
+						setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 5000);
+					}
 				} else {
 					syncError = result.error || 'Failed to apply configuration';
 					syncPhase = 'failed';
@@ -144,6 +199,8 @@
 	function dismissSync() {
 		syncPhase = 'idle';
 		syncError = null;
+		stopSyncTimer();
+		stopPollTimer();
 	}
 
 	onMount(() => {
@@ -164,7 +221,7 @@
 			<!-- Sync progress overlay -->
 			{#if syncPhase !== 'idle'}
 				<div class="rounded-lg border p-4 {syncPhase === 'success' ? 'border-green-200 bg-green-50' : syncPhase === 'failed' ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'}">
-					{#if syncPhase === 'saving' || syncPhase === 'syncing'}
+					{#if syncPhase === 'saving' || (syncPhase === 'syncing' && !envChanged)}
 						<div class="flex items-center gap-3">
 							<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -173,6 +230,37 @@
 							<div>
 								<p class="text-sm font-medium text-gray-900">Applying to your agent...</p>
 							</div>
+						</div>
+					{:else if syncPhase === 'syncing' && envChanged}
+						<div class="space-y-3">
+							<div class="flex items-center gap-3">
+								<svg class="h-4 w-4 animate-spin text-gray-600 shrink-0" viewBox="0 0 24 24" fill="none">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+								</svg>
+								<div class="flex-1">
+									<p class="text-sm font-medium text-gray-900">Applying to your agent...</p>
+									<p class="text-xs text-gray-500">
+										{#if syncElapsed < 10}
+											Connecting to your agent
+										{:else if syncElapsed < 30}
+											Updating configuration
+										{:else if syncElapsed < 60}
+											Restarting with new settings
+										{:else}
+											Waiting for health check
+										{/if}
+										<span class="ml-1 tabular-nums text-gray-400">{syncElapsed}s</span>
+									</p>
+								</div>
+							</div>
+							<div class="h-1 overflow-hidden rounded-full bg-gray-200">
+								<div
+									class="h-full rounded-full bg-gray-600 transition-all duration-1000 ease-linear"
+									style="width: {Math.min(syncElapsed / 120 * 100, 95)}%"
+								></div>
+							</div>
+							<p class="text-xs text-gray-400">Restarting your agent with the new API key. This usually takes about a minute.</p>
 						</div>
 					{:else if syncPhase === 'success'}
 						<div class="flex items-center justify-between">
