@@ -602,7 +602,7 @@
 						</div>
 					</dl>
 
-					{#if instance.status === 'active' && instance.agent_status === 'running' && instance.dashboard_url}
+					{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url}
 						{#if hasApiKey}
 							<button
 								onclick={async () => {
@@ -1023,7 +1023,7 @@
 					</div>
 				{/if}
 
-				{#if instance.status === 'active' && instance.agent_status === 'running' && instance.dashboard_url}
+				{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url}
 					<MagicMoment
 						previewUrl={instance.preview_url}
 					/>
