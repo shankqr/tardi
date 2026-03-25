@@ -46,6 +46,9 @@
 		}))
 	);
 
+	const googleInstruction =
+		'Use the pre-installed `gog` CLI tool for all Google Workspace operations. Google credentials are already configured at ~/.config/gogcli/ (credentials.json and tokens/ directory) — no authentication setup is needed. Run `gog <service> --help` to discover available commands (e.g., `gog docs --help`, `gog sheets --help`, `gog calendar --help`, `gog gmail --help`, `gog drive --help`).';
+
 	const googlePrompts = [
 		{
 			icon: '📅',
@@ -89,6 +92,13 @@
 		}
 	];
 
+	const googleWorkspacePrompts = $derived(
+		googlePrompts.map((p) => ({
+			...p,
+			prompt: `${p.prompt} ${googleInstruction}`
+		}))
+	);
+
 	function copyWebPrompt(index: number) {
 		navigator.clipboard.writeText(webPrompts[index].prompt);
 		copiedIndex = `web-${index}`;
@@ -100,7 +110,7 @@
 			onConnectGoogle();
 			return;
 		}
-		navigator.clipboard.writeText(googlePrompts[index].prompt);
+		navigator.clipboard.writeText(googleWorkspacePrompts[index].prompt);
 		copiedIndex = `google-${index}`;
 		setTimeout(() => { copiedIndex = null; }, 1500);
 	}
@@ -160,7 +170,7 @@
 		</div>
 	
 		<div class="mt-3 space-y-3">
-			{#each googlePrompts as item, index}
+			{#each googleWorkspacePrompts as item, index}
 				<div
 					class="group rounded-lg border border-gray-100 dark:border-gray-700 p-3 transition-all hover:border-gray-300 dark:hover:border-gray-600"
 				>
