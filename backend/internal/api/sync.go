@@ -255,37 +255,15 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 		pw := *inst.RootPassword
 		sshKey := deps.Config.SSHPrivateKey
 
-		// Deploy the script and launch it in the background via nohup.
-		// The script takes 60-90s (docker recreate + health wait) which
-		// exceeds Cloud Run's effective connection timeout (~60s), so we
-		// cannot wait for it synchronously. Instead we:
-		//   1. Upload the script (fast, <2s)
-		//   2. Launch it detached with nohup (returns immediately)
-		//   3. Return success to the frontend
-		encoded := base64.StdEncoding.EncodeToString([]byte(buildConfigSyncScript()))
-		cmd := fmt.Sprintf(
-			"echo %s | base64 -d > /tmp/config-sync.sh && chmod +x /tmp/config-sync.sh && systemctl stop tardi-config-sync 2>/dev/null; systemctl reset-failed tardi-config-sync 2>/dev/null; systemd-run --unit=tardi-config-sync --no-block --collect bash /tmp/config-sync.sh",
-			encoded,
-		)
-		_, err = sshexec.RunCommand(ip, sshKey, pw, cmd, 30*time.Second)
-		if err != nil {
-			slog.Error("sync config: failed to launch script",
-				"instance_id", instanceID,
-				"error", err,
-			)
-			WriteJSON(w, http.StatusOK, map[string]any{
-				"synced": false,
-				"error":  "Could not connect to your agent",
-			})
-			return
-		}
-
-		slog.Info("sync config: script launched", "instance_id", instanceID)
-
-		// Patch the model + register all catalog models via a single atomic
-		// config.patch RPC. This applies live (no restart) and avoids the
-		// "openclaw models set" CLI loop which changes the primary as a side
-		// effect of each registration.
+		// Patch the model + register all catalog models via config.patch RPC
+		// BEFORE launching the SSH script. This is critical for two reasons:
+		// 1. The SSH script may restart the container (if env vars changed),
+		//    which kills our RPC connection mid-flight.
+		// 2. The SSH script's Telegram `config set` CLI commands change the
+		//    config hash, causing baseHash mismatches if they run between
+		//    our config.get and config.patch.
+		// config.patch persists to openclaw.json, so even if the container
+		// restarts afterwards, OC reads the patched model on startup.
 		if inst.OpenClawAuthToken != nil && *inst.OpenClawAuthToken != "" {
 			agentCfg, cfgErr := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
 			if cfgErr == nil && agentCfg != nil {
@@ -307,6 +285,33 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 				}
 			}
 		}
+
+		// Deploy the script and launch it in the background.
+		// The script takes 60-90s (docker recreate + health wait) which
+		// exceeds Cloud Run's effective connection timeout (~60s), so we
+		// cannot wait for it synchronously. Instead we:
+		//   1. Upload the script (fast, <2s)
+		//   2. Launch it detached via systemd-run (returns immediately)
+		//   3. Return success to the frontend
+		encoded := base64.StdEncoding.EncodeToString([]byte(buildConfigSyncScript()))
+		cmd := fmt.Sprintf(
+			"echo %s | base64 -d > /tmp/config-sync.sh && chmod +x /tmp/config-sync.sh && systemctl stop tardi-config-sync 2>/dev/null; systemctl reset-failed tardi-config-sync 2>/dev/null; systemd-run --unit=tardi-config-sync --no-block --collect bash /tmp/config-sync.sh",
+			encoded,
+		)
+		_, err = sshexec.RunCommand(ip, sshKey, pw, cmd, 30*time.Second)
+		if err != nil {
+			slog.Error("sync config: failed to launch script",
+				"instance_id", instanceID,
+				"error", err,
+			)
+			WriteJSON(w, http.StatusOK, map[string]any{
+				"synced": false,
+				"error":  "Could not connect to your agent",
+			})
+			return
+		}
+
+		slog.Info("sync config: script launched", "instance_id", instanceID)
 
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"synced": true,
