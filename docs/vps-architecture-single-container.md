@@ -1,12 +1,11 @@
-# VPS Architecture (Single Container) — Diagrams, Flows & Connections
+# VPS Architecture (Single Container + Caddy) — Diagrams, Flows & Connections
 
 > **Status: IMPLEMENTED** — Deployed to dev and prod. Existing instances are migrated automatically via heartbeat.
 >
-> This document mirrors [vps-architecture.md](vps-architecture.md) but describes the
-> target single-container setup: OpenClaw on Docker host networking, Cloudflare Proxy
-> for TLS, no Caddy.
+> OpenClaw on Docker host networking, Cloudflare Proxy for TLS, Caddy for
+> hostname-based routing (dashboard vs. preview app).
 
-## 1. VPS Container Architecture
+## 1. VPS Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -19,10 +18,25 @@
 │  │  ALLOW: 22/tcp from backend egress CIDRs (or any if unset) │     │
 │  │  DENY:  everything else                                    │     │
 │  │                                                            │     │
-│  │  Port 18789: iptables PREROUTING rewrites dest port before │     │
-│  │  UFW INPUT chain — must allow 18789 for NAT'd :80 traffic. │     │
-│  │  Restricted to Cloudflare IPs to block direct-IP bypass.   │     │
+│  │  Port 18789: restricted to Cloudflare IPs + backend CIDRs  │     │
+│  │  to block direct-IP bypass of Cloudflare proxy/WAF.        │     │
 │  │  Cloudflare IPs refreshed daily by heartbeat.              │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                                                                     │
+│  ┌──────────── Caddy (systemd, host binary) ─────────────────┐     │
+│  │                                                            │     │
+│  │  /usr/local/bin/caddy — static binary, no Docker           │     │
+│  │  Listens: 0.0.0.0:80 (HTTP only, no TLS)                  │     │
+│  │  Config: /etc/caddy/Caddyfile                              │     │
+│  │                                                            │     │
+│  │  Routing (by Host header):                                 │     │
+│  │  ┌──────────────────────────────────────────────────┐      │     │
+│  │  │  http://<uuid>-b.tardi.ai → localhost:3000       │      │     │
+│  │  │  (preview domain → user-built apps)              │      │     │
+│  │  ├──────────────────────────────────────────────────┤      │     │
+│  │  │  http:// (catch-all) → localhost:18789           │      │     │
+│  │  │  (main domain → OpenClaw gateway)                │      │     │
+│  │  └──────────────────────────────────────────────────┘      │     │
 │  └────────────────────────────────────────────────────────────┘     │
 │                                                                     │
 │  ┌────────────── Docker: --network=host (no bridge) ──────────┐     │
@@ -46,32 +60,32 @@
 │  │  Container shares the host's network namespace directly.    │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 │                                                                     │
-│  ┌──────────── iptables NAT ──────────────────────────────────┐     │
-│  │  PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789  │     │
-│  │                                                             │     │
-│  │  Redirects port 80 → 18789 so Cloudflare can reach the     │     │
-│  │  origin. OpenClaw can't bind port 80 (runs as UID 1000).   │     │
-│  └─────────────────────────────────────────────────────────────┘     │
+│  ┌──────────── User App (spawned by agent) ──────────────────┐     │
+│  │  Port 3000 — web server started by the AI agent            │     │
+│  │  (e.g., Node.js, Python, etc.)                             │     │
+│  │  Accessible via preview domain through Caddy               │     │
+│  └────────────────────────────────────────────────────────────┘     │
 │                                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐    │
 │  │  Systemd Services                                           │    │
+│  │  ├── caddy.service (Caddy reverse proxy on :80)             │    │
 │  │  ├── openclaw-stack.service (docker compose up -d)          │    │
 │  │  ├── openclaw-heartbeat.timer (every 5 min)                 │    │
 │  │  └── openclaw-heartbeat.service (runs heartbeat.sh)         │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 │                                                                     │
 │  /opt/openclaw/                                                     │
-│  ├── .env                    # All tokens & API keys                │
+│  ├── .env                    # All tokens, API keys, PREVIEW_DOMAIN │
 │  ├── .config_version         # Last synced config version           │
 │  ├── docker-compose.yml      # Single service definition            │
 │  ├── heartbeat.sh            # Heartbeat script (from backend)      │
 │  └── data/openclaw/          # OpenClaw runtime data                │
 │      └── openclaw.json       # Runtime config (OpenClaw-owned)      │
 │                                                                     │
-│  Removed vs. current architecture:                                  │
-│  ✗ Caddyfile               (no longer needed)                       │
-│  ✗ certs/                  (no self-signed TLS — Cloudflare edge)   │
-│  ✗ caddy/{data,config}     (no Let's Encrypt cert persistence)      │
+│  /etc/caddy/                                                        │
+│  └── Caddyfile               # Hostname-based routing rules         │
+│                                                                     │
+│  /usr/local/bin/caddy        # Caddy static binary                  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -80,7 +94,12 @@
 ```
                     Internet (User's browser)
                        │
-                       │  https://<uuid>.tardi.ai
+          ┌────────────┴────────────┐
+          │                         │
+          │  https://<uuid>.tardi.ai         https://<uuid>-b.tardi.ai
+          │  (dashboard)                     (preview app)
+          │                         │
+          └────────────┬────────────┘
                        ▼
           ┌────────────────────────┐
           │  Cloudflare Proxy      │
@@ -89,8 +108,6 @@
           │  • TLS termination     │
           │  • DDoS protection     │
           │  • WebSocket support   │
-          │    (enabled by default │
-          │     on free plan)      │
           │  • SSL mode: Flexible  │
           │    (CF→origin is HTTP) │
           └────────┬───────────────┘
@@ -112,25 +129,39 @@
         │                     │
         ▼                     ▼
   ┌───────────┐         ┌─────────┐
-  │ iptables  │         │  sshd   │
-  │ NAT       │         │         │
-  │ :80→:18789│         │ root pw │
-  └─────┬─────┘         │  auth   │
-        │               └─────────┘
-        ▼
-  ┌────────────────┐
-  │ OpenClaw       │
-  │ Gateway        │
-  │ (host network) │
-  │                │
-  │ :18789         │
-  │ WebSocket +    │
-  │ HTTP + Control │
-  │ UI (Lit SPA)   │
-  └────────────────┘
+  │ Caddy     │         │  sshd   │
+  │ (systemd) │         │         │
+  │ :80       │         │ key auth│
+  └─────┬─────┘         └─────────┘
+        │
+        │  Routes by Host header:
+        │
+        ├── Host: <uuid>-b.tardi.ai
+        │         │
+        │         ▼
+        │   ┌────────────────┐
+        │   │ User App       │
+        │   │ localhost:3000  │
+        │   │ (portfolio,    │
+        │   │  todo app, etc)│
+        │   └────────────────┘
+        │
+        └── Host: <uuid>.tardi.ai (or anything else)
+                  │
+                  ▼
+            ┌────────────────┐
+            │ OpenClaw       │
+            │ Gateway        │
+            │ (host network) │
+            │                │
+            │ :18789         │
+            │ WebSocket +    │
+            │ HTTP + Control │
+            │ UI (Lit SPA)   │
+            └────────────────┘
 
-  Key difference: No Caddy container in the path.
-  Cloudflare handles TLS. iptables handles port mapping.
+  Caddy is a lightweight host-level reverse proxy (not Docker).
+  No TLS — Cloudflare handles that. Caddy only does HTTP routing.
 ```
 
 ## 3. Authentication Flows
@@ -144,10 +175,11 @@ Browser (User clicks "Open Agent Dashboard")
     │
     ▼
 ┌──────────────┐                ┌──────────────┐
-│  Cloudflare  │── HTTP :80 ──▶│  iptables    │
-│  Proxy       │                │  :80 → :18789│
-│  (TLS edge)  │                └──────┬───────┘
-└──────────────┘                       │
+│  Cloudflare  │── HTTP :80 ──▶│  Caddy       │
+│  Proxy       │                │  Host: <uuid>│
+│  (TLS edge)  │                │  → :18789    │
+└──────────────┘                └──────┬───────┘
+                                       │
                                        ▼
                                ┌──────────────┐
                                │ OpenClaw     │
@@ -169,7 +201,7 @@ Browser (User clicks "Open Agent Dashboard")
                                       │
                               (Cloudflare upgrades
                                to WS, forwards to
-                               origin :80 → :18789)
+                               Caddy → :18789)
                                       │
                                       ▼
                               OpenClaw validates
@@ -184,14 +216,42 @@ Browser (User clicks "Open Agent Dashboard")
                               ✅ Dashboard loads
 ```
 
-### 3b. Backend RPC (Tardi Backend → OpenClaw)
+### 3b. Preview App Access (Browser → User-Built App)
+
+```
+Browser (User visits preview URL)
+    │
+    │  https://<uuid>-b.tardi.ai
+    │
+    ▼
+┌──────────────┐                ┌──────────────┐
+│  Cloudflare  │── HTTP :80 ──▶│  Caddy       │
+│  Proxy       │                │  Host: *-b   │
+│  (TLS edge)  │                │  → :3000     │
+└──────────────┘                └──────┬───────┘
+                                       │
+                                       ▼
+                               ┌──────────────┐
+                               │ User App     │
+                               │ :3000        │
+                               │ (built by    │
+                               │  AI agent)   │
+                               └──────────────┘
+                                       │
+                                       ▼
+                              ✅ Portfolio / todo app / etc loads
+
+  If no app is running on port 3000, Caddy returns 502 Bad Gateway.
+```
+
+### 3c. Backend RPC (Tardi Backend → OpenClaw)
 
 ```
 Tardi Backend (Cloud Run)
     │
     │  ws://<IPv4>:18789/?token=<OPENCLAW_AUTH_TOKEN>
     │  (Plain WS — no TLS needed for server-to-server)
-    │  (Bypasses Cloudflare entirely — uses IP directly)
+    │  (Bypasses Cloudflare AND Caddy — uses IP:port directly)
     │
     ▼
 ┌──────────────┐
@@ -212,12 +272,11 @@ RPC methods:
 • web.login.start
 
 Note: Backend connects to VPS IP directly on port 18789,
-NOT through Cloudflare. No TLS, no iptables NAT involved.
-This is simpler than the Caddy setup where backend had to
-use wss:// with InsecureSkipVerify for self-signed certs.
+NOT through Cloudflare or Caddy. UFW allows port 18789
+from backend egress CIDRs.
 ```
 
-### 3c. Heartbeat (VPS → Backend)
+### 3d. Heartbeat (VPS → Backend)
 
 ```
 heartbeat.sh (systemd timer, every 5 min)
@@ -233,19 +292,20 @@ heartbeat.sh (systemd timer, every 5 min)
 │                  │
 │  Response:       │
 │  { config_version│
-│    target_ver }  │
+│    target_ver    │
+│    preview_domain│  ← used by heartbeat to configure Caddy
+│  }               │
 └──────────────────┘
-
-(Unchanged from current architecture)
 ```
 
-### 3d. Internal Tool Calls (Agent → Gateway)
+### 3e. Internal Tool Calls (Agent → Gateway)
 
 ```
 OpenClaw Agent (inside openclaw-gateway container)
     │
     │  ws://127.0.0.1:18789
     │  (host network — loopback goes directly to gateway)
+    │  (bypasses Caddy — Caddy only handles external :80)
     │
     ▼
 OpenClaw Gateway (same container, same network namespace)
@@ -257,9 +317,6 @@ Tool execution via Docker socket
     │
     ▼
 Sandbox container spawned & destroyed
-
-Note: Identical to current architecture. Host networking
-does not change internal loopback behavior.
 ```
 
 ## 4. Token Map
@@ -283,8 +340,6 @@ does not change internal loopback behavior.
 │ Root Password        │ Backend → VPS    │ SSH access for config sync │
 │ (24-char hex)        │ SSH password     │ and management             │
 └──────────────────────┴──────────────────┴────────────────────────────┘
-
-(Token map is identical — Caddy removal doesn't affect token semantics.)
 ```
 
 ## 5. Config Change Flow (End-to-End)
@@ -315,7 +370,7 @@ User changes config in Dashboard
 │  1. Fetch config: GET /api/agent/config                     │
 │  2. Rebuild .env with new keys/tokens                       │
 │  3. docker compose up -d --force-recreate openclaw-gateway  │
-│     (single container — no Caddy to worry about)            │
+│     (single container — Caddy is unaffected)                │
 │  4. Wait for health (up to 60s)                             │
 │  5. Apply post-startup config via CLI:                      │
 │     • openclaw config set channels.telegram.streaming off   │
@@ -334,8 +389,8 @@ User changes config in Dashboard
 │    → Backend sends config.patch via WebSocket RPC           │
 └─────────────────────────────────────────────────────────────┘
 
-Key difference: Step 3 only recreates one container (openclaw-gateway).
-No Caddy container to restart, no cert state to preserve.
+Key: Caddy is not restarted during config sync. Only the
+OpenClaw container is recreated. Caddy continues routing.
 ```
 
 ## 6. Heartbeat Loop (Every 5 Minutes)
@@ -349,7 +404,10 @@ systemd timer fires
          ├──▶ curl localhost:18789/health → STATUS
          │
          ├──▶ POST /api/agent/heartbeat
-         │    Response: { config_version, target_openclaw_version }
+         │    Response: { config_version, target_openclaw_version,
+         │               preview_domain }
+         │
+         ├──▶ Sync PREVIEW_DOMAIN from API → .env (if missing)
          │
          ├──▶ Config version mismatch?
          │    YES → Full config sync (fetch, rebuild .env,
@@ -362,16 +420,13 @@ systemd timer fires
          └──▶ Drift Guards (run every time):
               ├── Telegram: streaming=off, dmPolicy=open
               ├── Model: re-apply if missing
-              ├── Auth: auth.mode=token
-              ├── iptables: port 80 → 18789 NAT rule exists
-              ├── UFW hardening: replace blanket 18789 with CF CIDRs
+              ├── Auth: auth.mode=token, trustedProxies, allowInsecureAuth
+              ├── Caddy: binary installed, Caddyfile correct, service running
+              ├── iptables: REMOVE old NAT rule if still present
+              ├── UFW hardening: restrict 18789 to CF CIDRs + backend CIDRs
               ├── Cloudflare IPs: refresh daily from cloudflare.com
               ├── Backend egress CIDRs: apply to 18789 + 22 if set
               └── Control UI: dangerouslyDisableDeviceAuth=true
-
-Removed drift guards (no longer needed):
-  ✗ DNS stub listener fix (no Docker bridge = no container DNS issues)
-  ✗ Caddyfile rewrite guard (no Caddyfile)
 ```
 
 ## 7. Provisioning Pipeline
@@ -393,9 +448,8 @@ Backend creates provisioning job
 │   DNS: create A record (<uuid>.tardi.ai, proxied=true) │
 │   Preview DNS: <uuid>-b.tardi.ai (proxied=true)        │
 │                                                        │
-│   Note: DNS record created with Cloudflare Proxy ON    │
-│   (orange cloud) from the start — no cert provisioning │
-│   wait. Instant HTTPS via Cloudflare edge.             │
+│   Both DNS records point to the same VPS IP.           │
+│   Caddy routes by hostname on the VPS.                 │
 ├────────────────────────────────────────────────────────┤
 │ Step 3: WaitServerReady (5 min)                        │
 │   Poll Hetzner API until status = "running"            │
@@ -405,9 +459,8 @@ Backend creates provisioning job
 │   Verify SSH connectivity                              │
 │   cloud-init installs Docker, configures firewall,     │
 │   creates users, writes configs, pulls images,         │
-│   sets up iptables NAT (port 80 → 18789)              │
-│                                                        │
-│   No Caddy pull, no cert generation, no Caddyfile.     │
+│   downloads Caddy binary, writes Caddyfile,            │
+│   starts Caddy systemd service                         │
 ├────────────────────────────────────────────────────────┤
 │ Step 5: InstallAgent (10 min)                          │
 │   Wait for openclaw-gateway container to be healthy    │
@@ -417,9 +470,6 @@ Backend creates provisioning job
 │   Mark instance as "active" in DB                      │
 │   Start heartbeat timer                                │
 └────────────────────────────────────────────────────────┘
-
-Time saved: ~30-90s (no Caddy image pull, no Let's Encrypt
-ACME challenge, no cert issuance wait).
 ```
 
 ## 8. Backend ↔ VPS Communication Summary
@@ -434,20 +484,20 @@ ACME challenge, no cert issuance wait).
 │                  │    Bearer token    │                  │
 │                  │                    │                  │
 │                  │── SSH :22 ────────▶│ Config sync      │
-│                  │   root + password  │ Script push      │
+│                  │   root + key auth  │ Script push      │
 │                  │                    │ Status check     │
 │                  │                    │                  │
 │                  │── WS :18789 ──────▶│ RPC calls        │
 │                  │   ?token=xxx       │ (config.patch,   │
 │                  │   direct to IP     │  channels.status)│
-│                  │   (no Caddy/TLS!)  │                  │
+│                  │   (bypasses Caddy) │                  │
 │                  │                    │                  │
 │                  │── Hetzner API ─────│ Create/Delete    │
 │                  │   (not to VPS)     │ Snapshot/Rebuild │
 └──────────────────┘                    └──────────────────┘
 
-Key change: Backend RPC uses plain ws:// on port 18789,
-not wss:// through Caddy. No InsecureSkipVerify needed.
+Backend RPC uses plain ws:// on port 18789 directly to IP.
+Does not go through Cloudflare or Caddy.
 ```
 
 ## 9. Cloudflare Proxy Configuration
@@ -469,17 +519,41 @@ not wss:// through Caddy. No InsecureSkipVerify needed.
 │ │ <uuid>-b.tardi.ai │ A     │ <vps-ip>      │ Proxied  │    │
 │ └───────────────────┴───────┴───────────────┴──────────┘    │
 │                                                             │
-│ Domain scheme: FLAT (single level subdomain)                │
-│ Old: <uuid>.a.tardi.ai   (sub-subdomain, no free SSL)      │
-│ New: <uuid>.tardi.ai     (covered by Universal SSL *.tardi) │
+│ Both records point to the SAME VPS IP.                      │
+│ Caddy on the VPS routes by Host header:                     │
+│   <uuid>.tardi.ai   → OpenClaw (:18789)                    │
+│   <uuid>-b.tardi.ai → User app (:3000)                     │
 │                                                             │
-│ Preview domain:                                             │
-│ Old: <uuid>.b.tardi.ai                                      │
-│ New: <uuid>-b.tardi.ai   (hyphen, not dot)                  │
+│ Domain scheme: FLAT (single level subdomain)                │
+│   <uuid>.tardi.ai     (covered by Universal SSL *.tardi.ai) │
+│   <uuid>-b.tardi.ai   (also covered by *.tardi.ai)          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 10. docker-compose.yml (Single Container)
+## 10. Caddyfile (Hostname-Based Routing)
+
+```
+# /etc/caddy/Caddyfile
+# Installed by cloud-init, maintained by heartbeat drift guard.
+# No TLS — Cloudflare handles TLS at the edge (Flexible SSL mode).
+
+http://<uuid>-b.tardi.ai {
+    reverse_proxy localhost:3000
+}
+
+http:// {
+    reverse_proxy localhost:18789
+}
+```
+
+How it works:
+- Caddy listens on port 80 as a systemd service (runs as root)
+- The specific `http://<uuid>-b.tardi.ai` block matches the preview domain
+- The `http://` catch-all matches everything else (dashboard domain, direct IP, etc.)
+- Traffic to localhost:3000/18789 bypasses UFW (loopback is always allowed)
+- If no app is running on port 3000, Caddy returns 502 Bad Gateway
+
+## 11. docker-compose.yml (Single Container)
 
 ```yaml
 services:
@@ -503,17 +577,18 @@ services:
       retries: 3
       start_period: 60s
 
-# No 'caddy' service
+# No 'caddy' service (Caddy runs as a host systemd service, not Docker)
 # No 'networks' section
 # No port mappings (host network exposes directly)
 ```
 
-## 11. openclaw.json Changes
+## 12. openclaw.json
 
 ```json
 {
   "gateway": {
     "bind": "lan",
+    "trustedProxies": ["0.0.0.0/0"],
     "controlUi": {
       "allowedOrigins": ["*"],
       "dangerouslyDisableDeviceAuth": true,
@@ -526,109 +601,48 @@ services:
 }
 ```
 
-Changes from current config:
-- **Removed** `trustedProxies` — no reverse proxy in the path; Cloudflare
-  connects directly. OpenClaw sees the real client IP (or Cloudflare edge IP).
-  `CF-Connecting-IP` header carries the real client IP if needed.
-- Everything else stays the same.
+- `trustedProxies: ["0.0.0.0/0"]` — Caddy (and Cloudflare) add proxy headers;
+  without this OpenClaw treats connections as untrusted and won't grant operator scopes.
+- `allowInsecureAuth: true` — required for shared token auth to grant operator scopes.
 
-## 12. iptables NAT Rule
+## 13. .env File
 
 ```bash
-# Applied during cloud-init and verified by heartbeat drift guard.
-# Persisted via iptables-persistent (installed in cloud-init).
-#
-# Why: OpenClaw runs as UID 1000, cannot bind ports below 1024.
-# Cloudflare Proxy connects to origin on port 80 (Flexible SSL mode).
-# This rule redirects incoming port 80 to OpenClaw's port 18789.
+DOCKER_GID=<gid>
+AGENT_TOKEN=<64-char-hex>
+API_URL=https://api-dev.tardi.ai  # or api.tardi.ai for prod
+INSTANCE_ID=<uuid>
+OPENCLAW_AUTH_TOKEN=<64-char-hex>
+OPENCLAW_GATEWAY_TOKEN=<64-char-hex>  # same value as OPENCLAW_AUTH_TOKEN
+OPENROUTER_API_KEY=<key>
+NODE_ENV=production
+PREVIEW_DOMAIN=<uuid>-b.tardi.ai      # used by heartbeat to write Caddyfile
+BACKEND_EGRESS_CIDRS=<cidr1>,<cidr2>   # optional, restricts UFW SSH + 18789
 
-iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
-
-# Persist across reboots
-apt-get install -y -qq iptables-persistent
-netfilter-persistent save
+# Optional (set by user in dashboard):
+ANTHROPIC_API_KEY=<key>
+OPENAI_API_KEY=<key>
+TELEGRAM_BOT_TOKEN=<token>
 ```
 
-## What Changes vs. Current Architecture
+## 14. Architecture Evolution
 
-| Aspect | Current (2 containers) | Single container |
-|--------|----------------------|------------------|
-| Containers | openclaw-gateway + openclaw-caddy | openclaw-gateway only |
-| Docker networking | Bridge (openclaw-net) | Host (--network=host) |
-| TLS termination | Caddy (Let's Encrypt or self-signed) | Cloudflare Proxy (edge) |
-| Port 80/443 | Caddy container | iptables NAT → 18789 |
-| Domain scheme | `<uuid>.a.tardi.ai` (sub-subdomain) | `<uuid>.tardi.ai` (flat) |
-| Preview domain | `<uuid>.b.tardi.ai` | `<uuid>-b.tardi.ai` |
-| Backend RPC | `wss://<ip>` through Caddy (InsecureSkipVerify) | `ws://<ip>:18789` direct (plain) |
-| Cert management | Caddy auto-renewal + persistence volumes | None (Cloudflare handles it) |
-| DNS stub fix | Required (Docker bridge DNS issue) | Not needed (host network) |
-| Caddyfile drift guard | Required (heartbeat checks config) | Not needed |
-| Self-signed fallback | Yes (IP-based instances) | Not needed (Cloudflare edge cert) |
-| Container startup order | Caddy depends_on gateway healthy | Single container, no ordering |
-| DDoS protection | None (direct IP exposure) | Cloudflare (free tier) |
-| IP-only access (no domain) | Works via self-signed cert | Not supported (Cloudflare requires domain) |
+| Aspect | Phase 1 (2 containers) | Phase 2 (iptables NAT) | Phase 3 (Caddy routing) |
+|--------|----------------------|----------------------|------------------------|
+| Port 80 routing | Caddy Docker container | iptables NAT → 18789 | **Caddy host binary** |
+| Preview domain | Not functional | Routed to OpenClaw (broken) | **Routes to port 3000** |
+| Hostname routing | None | None | **By Host header** |
+| Docker networking | Bridge (openclaw-net) | Host (--network=host) | Host (--network=host) |
+| TLS termination | Caddy (Let's Encrypt) | Cloudflare Proxy (edge) | Cloudflare Proxy (edge) |
+| Caddy runs as | Docker container | Not present | **Systemd service (host)** |
+| Backend RPC | `wss://` through Caddy | `ws://:18789` direct | `ws://:18789` direct |
+| Cert management | Caddy auto-renewal | None (Cloudflare) | None (Cloudflare) |
+| DDoS protection | None | Cloudflare (free tier) | Cloudflare (free tier) |
 
-## What Gets Removed from Codebase
+## Key Source Files
 
-```
-Backend:
-  - Caddyfile template in provisioner.go
-  - Caddy service in docker-compose template
-  - Docker bridge network setup
-  - Caddy cert volume setup
-  - Self-signed cert generation (IP-based)
-  - DNS stub listener fix
-  - Caddyfile drift guard in heartbeat.sh
-  - InsecureSkipVerify on backend RPC WebSocket dial
-  - Caddy reload commands in sync scripts
-
-Frontend:
-  - (none — URL construction stays the same, just domain format changes)
-```
-
-## What Gets Added
-
-```
-Backend:
-  - iptables NAT rule in cloud-init
-  - iptables drift guard in heartbeat.sh
-  - iptables-persistent install in cloud-init
-  - Cloudflare DNS records created with proxied=true
-  - Flat domain scheme (<uuid>.tardi.ai)
-```
-
-## Prerequisites
-
-Before implementing this architecture, the following must be resolved:
-
-1. **Flatten domain scheme** — Change from `<uuid>.a.tardi.ai` to `<uuid>.tardi.ai`.
-   Cloudflare's free Universal SSL only covers `*.tardi.ai` and `tardi.ai`, NOT
-   `*.a.tardi.ai` (sub-subdomains). This requires updating:
-   - `CLOUDFLARE_BASE_DOMAIN` secret (from `a.tardi.ai` to `tardi.ai`)
-   - Preview domain derivation logic (from `b.tardi.ai` to `<uuid>-b.tardi.ai`)
-   - DNS record creation to set `proxied: true`
-   - Existing active instance DNS migration
-
-2. **Cloudflare SSL mode** — Set zone SSL mode to **Flexible** (CF→origin is HTTP).
-   Requires Cloudflare dashboard access or API token with SSL permissions (the current
-   DNS-scoped token cannot change this).
-
-3. **Cloudflare WebSocket** — Verify WebSocket connections work through Cloudflare Proxy
-   on the free plan (enabled by default, but must test with OpenClaw's specific
-   connect/challenge protocol and long-lived dashboard sessions).
-
-4. **Port 80 origin** — Confirm Cloudflare Proxy connects to origin port 80 with
-   Flexible SSL mode. This is standard behavior but should be validated.
-
-5. **No IP-only fallback** — Instances without a domain currently fall back to self-signed
-   certs via Caddy. The single-container setup requires a domain (Cloudflare Proxy
-   needs DNS). Decide: is IP-only access still needed? If yes, keep a Caddy fallback
-   path or use `allowInsecureAuth: true` with direct HTTP.
-
-## Key Source Files (to modify)
-- `backend/internal/jobs/provisioner.go` — Cloud-init template, docker-compose, remove Caddy
-- `backend/internal/scripts/heartbeat.go` — Remove Caddy guards, add iptables guard
-- `backend/internal/api/sync.go` — Config sync: remove Caddy restart, simplify
-- `backend/internal/api/whatsapp.go` — Change wss:// to ws://:18789 (no TLS)
-- `backend/internal/dns/cloudflare.go` — Create records with `proxied: true`
-- `backend/internal/config/config.go` — Update base domain handling
+- `backend/internal/jobs/provisioner.go` — Cloud-init template: installs Caddy, writes Caddyfile, starts systemd service
+- `backend/internal/scripts/heartbeat.go` — Caddy drift guard: ensures binary, Caddyfile, service are correct; removes old iptables NAT
+- `backend/internal/api/agent.go` — Heartbeat API: returns `preview_domain` so existing VPSes can configure Caddy
+- `backend/internal/api/sync.go` — Config sync script (Caddy unaffected by container restarts)
+- `backend/internal/dns/cloudflare.go` — Creates both DNS records with `proxied: true`
