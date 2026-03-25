@@ -110,21 +110,45 @@ func main() {
 		logger.Info("cloudflare DNS configured", "base_domain", cfg.CloudflareBaseDomain)
 	}
 
+	// WaitGroup for background workers (provisioner, reconciler, etc.)
+	// Shutdown must wait for these to drain before closing the DB pool.
+	var workerWg sync.WaitGroup
+
 	// Start background workers
 	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey, dnsClient)
-	go worker.Start(ctx)
+	workerWg.Add(1)
+	go func() {
+		defer workerWg.Done()
+		worker.Start(ctx)
+	}()
 
 	reconciler := jobs.NewReconciler(pool, registry, logger)
-	go reconciler.Start(ctx)
+	workerWg.Add(1)
+	go func() {
+		defer workerWg.Done()
+		reconciler.Start(ctx)
+	}()
 
 	enforcer := jobs.NewEnforcer(pool, registry, logger)
-	go enforcer.Start(ctx)
+	workerWg.Add(1)
+	go func() {
+		defer workerWg.Done()
+		enforcer.Start(ctx)
+	}()
 
 	scriptPusher := jobs.NewScriptPusher(pool, logger, cfg.SSHPrivateKey, cfg.SSHPublicKey)
-	go scriptPusher.Start(ctx)
+	workerWg.Add(1)
+	go func() {
+		defer workerWg.Done()
+		scriptPusher.Start(ctx)
+	}()
 
 	tokenRefresher := jobs.NewTokenRefresher(pool, logger, cfg)
-	go tokenRefresher.Start(ctx)
+	workerWg.Add(1)
+	go func() {
+		defer workerWg.Done()
+		tokenRefresher.Start(ctx)
+	}()
 
 	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey)
 	upgrader := jobs.NewUpgrader(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey, dnsClient)
@@ -154,18 +178,28 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Graceful shutdown — wait for background tasks (snapshots, restores) before exiting
+	// Graceful shutdown — wait for all workers and background tasks before
+	// main() returns and defer pool.Close() fires. Without this, the DB pool
+	// can close while the provisioner is still trying to schedule a retry,
+	// causing "closed pool" errors and orphaned jobs.
+	shutdownDone := make(chan struct{})
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
-		logger.Info("shutting down, waiting for background tasks...")
+		logger.Info("shutting down...")
 		cancel()
 
 		// Stop accepting new requests
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
 		srv.Shutdown(shutdownCtx)
+
+		// Wait for background workers (provisioner, reconciler, enforcer, etc.)
+		// to finish their in-flight operations — especially retry scheduling.
+		logger.Info("waiting for workers to drain...")
+		workerWg.Wait()
+		logger.Info("workers drained")
 
 		// Wait for in-flight background goroutines (snapshot/restore/delete/restart)
 		// with a hard deadline so we don't hang forever
@@ -180,6 +214,8 @@ func main() {
 		case <-time.After(14 * time.Minute):
 			logger.Warn("shutdown deadline reached, some background tasks may not have completed")
 		}
+
+		close(shutdownDone)
 	}()
 
 	logger.Info("server starting", "port", cfg.Port, "environment", cfg.Environment)
@@ -187,6 +223,10 @@ func main() {
 		logger.Error("server failed", "error", err)
 		os.Exit(1)
 	}
+
+	// Block until shutdown is fully complete — pool.Close() (deferred above)
+	// must not run until all workers have finished their DB writes.
+	<-shutdownDone
 }
 
 // seedDevData creates a mock user and subscription for local development.
