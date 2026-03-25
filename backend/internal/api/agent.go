@@ -199,10 +199,18 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			previewDomain = *inst.PreviewDomain
 		}
 
+		// Include custom_caddyfile so the heartbeat script uses it instead
+		// of the auto-generated Caddyfile (for users with custom web apps).
+		var customCaddyfile string
+		if inst.CustomCaddyfile != nil {
+			customCaddyfile = *inst.CustomCaddyfile
+		}
+
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"config_version":          configVersion,
 			"target_openclaw_version": targetVersion,
 			"preview_domain":          previewDomain,
+			"custom_caddyfile":        customCaddyfile,
 		})
 	}
 }

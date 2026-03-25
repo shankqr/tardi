@@ -136,6 +136,14 @@ if [ -n "$API_PREVIEW_DOMAIN" ] && ! grep -q "^PREVIEW_DOMAIN=" /opt/openclaw/.e
     source /opt/openclaw/.env
 fi
 
+# --- Sync CUSTOM_CADDYFILE from heartbeat response ---
+# If the backend provides a custom Caddyfile, the Caddy drift guard will use it
+# instead of the auto-generated one. Used for users running custom web apps.
+API_CUSTOM_CADDYFILE=$(echo "$RESPONSE" | jq -r '.custom_caddyfile // empty' 2>/dev/null)
+if [ -n "$API_CUSTOM_CADDYFILE" ]; then
+    CUSTOM_CADDYFILE="$API_CUSTOM_CADDYFILE"
+fi
+
 # --- Telegram config drift guard (runs every heartbeat) ---
 # OpenClaw resets Telegram config to bad defaults on every container restart
 # (Docker auto-restarts from crashes/OOM bypass all other config-sync paths).
@@ -262,8 +270,12 @@ if [ -x /usr/local/bin/caddy ]; then
     CADDY_NEEDS_UPDATE=false
     mkdir -p /etc/caddy
 
-    # Build expected Caddyfile content
-    if [ -n "$PREVIEW_DOMAIN_ENV" ]; then
+    # Build expected Caddyfile content.
+    # If a custom Caddyfile is set in the DB, use it verbatim (for users with
+    # custom web apps that need HTTPS, different ports, etc.).
+    if [ -n "${CUSTOM_CADDYFILE:-}" ]; then
+        EXPECTED_CADDY="$CUSTOM_CADDYFILE"
+    elif [ -n "$PREVIEW_DOMAIN_ENV" ]; then
         EXPECTED_CADDY="http://${PREVIEW_DOMAIN_ENV} {
     reverse_proxy localhost:3000
 }

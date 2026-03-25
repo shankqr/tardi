@@ -112,6 +112,7 @@ type VpsInstance struct {
 	DNSRecordID              *string
 	PreviewDomain            *string
 	PreviewDNSRecordID       *string
+	CustomCaddyfile          *string
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 }
