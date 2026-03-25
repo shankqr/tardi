@@ -15,7 +15,8 @@
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"test:e2e:cleanup": "tsx e2e/scripts/cleanup.ts",
-		"test:e2e:setup": "tsx e2e/scripts/setup-persistent.ts"
+		"test:e2e:setup": "tsx e2e/scripts/setup-persistent.ts",
+		"test:e2e:setup-telegram": "tsx e2e/scripts/setup-telegram-session.ts"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.58.2",
@@ -30,6 +31,7 @@
 		"svelte": "^5.51.0",
 		"svelte-check": "^4.3.6",
 		"tailwindcss": "^4.2.0",
+		"telegram": "^2.26.22",
 		"tsx": "^4.21.0",
 		"typescript": "^5.9.3",
 		"vite": "^7.3.1",
