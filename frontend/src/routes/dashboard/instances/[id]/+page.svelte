@@ -79,11 +79,12 @@
 	let telegramPollTimer: ReturnType<typeof setInterval> | null = null;
 
 	// Config sync tracking — when any component is actively syncing config
-	// Grace period: keep showing "Applying Config" for 90s after sync ends,
-	// because the container restart causes a brief unhealthy heartbeat window.
+	// Grace period: keep showing "Applying Config" after sync ends (90s max,
+	// 60s minimum) because config.patch causes OpenClaw to briefly restart.
 	let aiConfigSyncing = $state(false);
 	let syncGraceActive = $state(false);
 	let syncGraceTimer: ReturnType<typeof setTimeout> | null = null;
+	let syncGraceStartedAt = $state(0); // timestamp when grace started
 
 	const isAnySyncing = $derived(
 		aiConfigSyncing ||
@@ -92,33 +93,40 @@
 	);
 	const isConfigSyncing = $derived(isAnySyncing || syncGraceActive);
 
-	// Watch for sync ending → start grace period (max 30s).
-	// The sync script triggers an immediate heartbeat on success, so
-	// agent_status updates within seconds. We end the grace early once
-	// the status flips to "running" (see effect below).
+	// Watch for sync ending → start grace period (max 90s).
+	// The config.patch RPC causes OpenClaw to briefly restart, so the
+	// dashboard is unreachable for a few seconds. We keep the grace active
+	// for a minimum of 60s to avoid showing "Web server down" if the user
+	// clicks the dashboard button too early.
 	$effect(() => {
 		if (isAnySyncing) {
 			// Sync just started — cancel any existing grace timer
 			if (syncGraceTimer) clearTimeout(syncGraceTimer);
 			syncGraceActive = true;
+			syncGraceStartedAt = Date.now();
 		} else if (syncGraceActive) {
-			// Sync just ended — keep grace active for max 30s
+			// Sync just ended — keep grace active for max 90s
 			syncGraceTimer = setTimeout(() => {
 				syncGraceActive = false;
 				syncGraceTimer = null;
-			}, 30_000);
+			}, 90_000);
 		}
 		return () => {
 			if (syncGraceTimer) clearTimeout(syncGraceTimer);
 		};
 	});
 
-	// End grace period early once the heartbeat confirms healthy status
+	// End grace period early once the heartbeat confirms healthy status,
+	// but only after a minimum 60s cool-off to let OpenClaw fully restart.
 	$effect(() => {
 		if (syncGraceActive && !isAnySyncing && instance?.agent_status === 'running') {
-			if (syncGraceTimer) clearTimeout(syncGraceTimer);
-			syncGraceActive = false;
-			syncGraceTimer = null;
+			const elapsed = Date.now() - syncGraceStartedAt;
+			const MIN_COOLOFF = 60_000;
+			if (elapsed >= MIN_COOLOFF) {
+				if (syncGraceTimer) clearTimeout(syncGraceTimer);
+				syncGraceActive = false;
+				syncGraceTimer = null;
+			}
 		}
 	});
 
