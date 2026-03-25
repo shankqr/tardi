@@ -158,12 +158,7 @@
 			</svg>
 			<h4 class="text-xs font-semibold text-gray-700 dark:text-gray-300">Google Workspace</h4>
 		</div>
-		{#if !googleConnected}
-			<p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
-				Clicking a prompt below will connect your Google account first
-			</p>
-		{/if}
-
+	
 		<div class="mt-3 space-y-3">
 			{#each googlePrompts as item, index}
 				<div
@@ -183,8 +178,6 @@
 						>
 							{#if copiedIndex === `google-${index}`}
 								<span class="text-green-600 dark:text-green-400">Copied!</span>
-							{:else if !googleConnected}
-								Connect & Copy
 							{:else}
 								Copy
 							{/if}
