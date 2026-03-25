@@ -82,6 +82,8 @@
 	// Grace period: keep showing "Applying Config" after sync ends (90s max,
 	// 60s minimum) because config.patch causes OpenClaw to briefly restart.
 	let aiConfigSyncing = $state(false);
+	let googleConnected = $state(false);
+	let googleConnectRequests = $state(0);
 	let syncGraceActive = $state(false);
 	let syncGraceTimer: ReturnType<typeof setTimeout> | null = null;
 	let syncGraceStartedAt = $state(0); // timestamp when grace started
@@ -1074,6 +1076,8 @@
 						instanceStatus={instance.status}
 						onSyncStart={() => { aiConfigSyncing = true; }}
 						onSyncEnd={() => { aiConfigSyncing = false; }}
+						onStatusChange={(connected) => { googleConnected = connected; }}
+						connectRequestCount={googleConnectRequests}
 					/>
 
 					{#if instance.ipv4}
@@ -1254,7 +1258,8 @@
 
 				{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url}
 					<MagicMoment
-						previewUrl={instance.preview_url}
+						googleConnected={googleConnected}
+						onConnectGoogle={() => { googleConnectRequests++; }}
 					/>
 				{/if}
 

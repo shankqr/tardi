@@ -1,57 +1,62 @@
 <script lang="ts">
 	interface Props {
-		previewUrl?: string | null;
+		googleConnected?: boolean;
+		onConnectGoogle?: () => void;
 	}
 
-	let { previewUrl }: Props = $props();
+	let { googleConnected = false, onConnectGoogle = () => {} }: Props = $props();
 
 	let copiedIndex = $state<number | null>(null);
 
-	const basePrompts = [
+	const prompts = [
 		{
-			icon: '🌐',
-			title: 'Build a portfolio website',
-			description: 'Personal site with hero, projects, and contact form',
+			icon: '📅',
+			title: 'Plan my week',
+			description: 'Create a structured weekly schedule in Google Calendar',
 			prompt:
-				'Build a personal portfolio website with a hero section, about me, projects gallery, and contact form. Use a modern dark theme with gradient accents.'
+				'Create a productive weekly schedule in my Google Calendar for next week. Add focused work blocks (9am-12pm), lunch break (12-1pm), meetings placeholder (2-3pm), and a Friday wrap-up session. Color-code by category. When done, return the Google Calendar link so I can review it.'
 		},
 		{
-			icon: '🚀',
-			title: 'Create a startup landing page',
-			description: 'Landing page for "FreshBite" meal delivery service',
+			icon: '📧',
+			title: 'Draft a follow-up email',
+			description: 'Compose a professional follow-up and save it as a Gmail draft',
 			prompt:
-				'Create a landing page for a startup called "FreshBite" — a healthy meal delivery service. Include a hero with CTA, feature highlights, pricing cards, testimonials section, and footer. Modern design.'
+				"Create a Gmail draft for a polite follow-up email to a client named Alex about a project proposal I sent last week. Keep it professional but warm, mention I'm happy to jump on a call to discuss details. Save it as a draft in Gmail and return the link to the draft so I can review before sending."
 		},
 		{
-			icon: '✅',
-			title: 'Build a full-stack todo app',
-			description: 'Todo app with SQLite, categories, and due dates',
+			icon: '📝',
+			title: 'Write a meeting notes template',
+			description: 'Create a reusable meeting notes doc in Google Docs',
 			prompt:
-				'Build a full-stack todo app with a SQLite database. Features: add, complete, delete tasks, with categories and due dates. Clean minimal UI.'
+				'Create a Google Doc titled "Meeting Notes Template" with sections for: Date, Attendees, Agenda Items, Discussion Notes, Action Items (with owner and due date columns as a table), and Next Meeting. Format it cleanly with headers. Share the Google Doc URL with me so I can bookmark it.'
+		},
+		{
+			icon: '📊',
+			title: 'Build a budget tracker',
+			description: 'Set up a personal budget spreadsheet in Google Sheets',
+			prompt:
+				'Create a Google Sheets personal budget tracker for this month. Include columns for Date, Category (groceries, dining, transport, entertainment, bills), Description, and Amount. Add a summary section at the top with totals per category using SUMIF formulas, and a remaining budget calculation assuming a $3,000 monthly budget. Return the Google Sheets URL so I can start logging expenses.'
+		},
+		{
+			icon: '📁',
+			title: 'Organize my Drive',
+			description: 'Create a project folder structure in Google Drive',
+			prompt:
+				'Create an organized folder structure in my Google Drive for a project called "Q2 Launch". Create subfolders: "01 - Planning", "02 - Design Assets", "03 - Content Drafts", "04 - Reviews & Feedback", and "05 - Final Deliverables". In the Planning folder, create a Google Doc called "Project Brief" with placeholder sections for Objectives, Timeline, Team, and Budget. Return the link to the main project folder.'
 		}
 	];
 
-	const servingInstruction = $derived(
-		previewUrl
-			? `Serve it on port 3000. IMPORTANT: The finished result will be publicly accessible at ${previewUrl} — make sure the app works correctly when visited at that URL. Use relative paths for all assets and links so everything loads properly.`
-			: 'Serve it on port 3000.'
-	);
-
-	const prompts = $derived(
-		basePrompts.map((p) => ({
-			...p,
-			prompt: `${p.prompt} ${servingInstruction}`
-		}))
-	);
-
 	function copyPrompt(index: number) {
+		if (!googleConnected) {
+			onConnectGoogle();
+			return;
+		}
 		navigator.clipboard.writeText(prompts[index].prompt);
 		copiedIndex = index;
 		setTimeout(() => {
 			copiedIndex = null;
 		}, 1500);
 	}
-
 </script>
 
 <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
@@ -64,8 +69,13 @@
 			<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Try Your Agent</h3>
 		</div>
 		<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-			Copy a prompt, open your agent's dashboard, and watch it build something real.
+			Copy a prompt, paste it in your agent's dashboard, and watch it work with your Google apps.
 		</p>
+		{#if !googleConnected}
+			<p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+				Clicking a prompt will connect your Google account first
+			</p>
+		{/if}
 
 		<div class="mt-4 space-y-3">
 			{#each prompts as item, index}
@@ -86,6 +96,8 @@
 						>
 							{#if copiedIndex === index}
 								<span class="text-green-600 dark:text-green-400">Copied!</span>
+							{:else if !googleConnected}
+								Connect & Copy
 							{:else}
 								Copy
 							{/if}

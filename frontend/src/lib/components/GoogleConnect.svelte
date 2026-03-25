@@ -7,12 +7,16 @@
 		instanceId,
 		instanceStatus,
 		onSyncStart = () => {},
-		onSyncEnd = () => {}
+		onSyncEnd = () => {},
+		onStatusChange = (_connected: boolean) => {},
+		connectRequestCount = 0
 	}: {
 		instanceId: string;
 		instanceStatus: string;
 		onSyncStart?: () => void;
 		onSyncEnd?: () => void;
+		onStatusChange?: (connected: boolean) => void;
+		connectRequestCount?: number;
 	} = $props();
 
 	let status = $state<GoogleOAuthStatus>({ connected: false });
@@ -34,11 +38,21 @@
 		};
 	});
 
+	// External connect trigger — when parent increments connectRequestCount
+	let lastConnectRequest = 0;
+	$effect(() => {
+		if (connectRequestCount > lastConnectRequest) {
+			lastConnectRequest = connectRequestCount;
+			handleConnect();
+		}
+	});
+
 	async function fetchStatus() {
 		try {
 			const token = await getIdToken();
 			if (!token) return;
 			status = await getGoogleOAuthStatus(token);
+			onStatusChange(status.connected);
 		} catch {
 			// Ignore — show as disconnected
 		}
@@ -68,6 +82,7 @@
 
 				if (event.data.success) {
 					status = { connected: true, email: event.data.email };
+					onStatusChange(true);
 					// Trigger config sync so credentials reach the VPS
 					await triggerSync();
 				} else {
@@ -109,6 +124,7 @@
 			if (!token) throw new Error('Not authenticated');
 			await disconnectGoogle(token);
 			status = { connected: false };
+			onStatusChange(false);
 			// Trigger sync to remove credentials from VPS
 			await triggerSync();
 		} catch (err) {
