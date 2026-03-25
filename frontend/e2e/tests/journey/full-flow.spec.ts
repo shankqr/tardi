@@ -8,6 +8,7 @@ import {
 	createCheckoutSession,
 	deleteStripeCustomer,
 } from '../../helpers/stripe';
+import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
 
 const API_URL = process.env.E2E_API_URL || 'https://tardi-api-dev-lckw22k4gq-uc.a.run.app';
 
@@ -311,6 +312,9 @@ test('Full user journey: signup → deploy → configure → telegram', async ({
 
 		// Recover the page UI (may show "Agent not found" after polling)
 		await ensureInstancePage(page, instanceId);
+
+		// Verify OpenClaw is Running after API key change (must be < 1 min)
+		await waitForOpenClawRunning(page);
 		console.log('[E2E] API key saved, model dropdown now enabled');
 	});
 
@@ -370,6 +374,9 @@ test('Full user journey: signup → deploy → configure → telegram', async ({
 
 			// Recover the page UI
 			await ensureInstancePage(page, instanceId);
+
+			// Verify OpenClaw is Running after model change (must be < 1 min)
+			await waitForOpenClawRunning(page);
 			console.log('[E2E] Model change synced successfully');
 		} else {
 			console.log('[E2E] Only one model available, keeping default');
@@ -523,6 +530,8 @@ test('Full user journey: signup → deploy → configure → telegram', async ({
 			timeout: 300_000, // 5 minutes
 		});
 
+		// Verify OpenClaw is Running after Telegram config (must be < 1 min)
+		await waitForOpenClawRunning(page);
 		console.log('[E2E] Telegram bot linked successfully');
 	});
 

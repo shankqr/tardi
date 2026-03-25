@@ -94,19 +94,11 @@ else
 fi
 
 if [ "$HEALTHY" = true ]; then
-    # Fix Telegram config ONLY when container was just recreated (env changed).
-    # Each "config set" triggers a gateway restart, and 5 sequential commands
-    # cause ~20-30s of downtime, which breaks concurrent RPC calls from the
-    # next sync. When env is unchanged, Telegram config is already applied
-    # from a previous sync — no need to re-apply.
-    if [ "$ENV_CHANGED" = true ] && [ -n "$NEW_TG_TOKEN" ]; then
-        docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
-        echo "telegram config patched"
-    fi
+    # Telegram config (streaming:off, dmPolicy:open, etc.) is applied by the
+    # backend's config.patch RPC (called by the frontend after sync completes).
+    # Previously this script ran 5 sequential "openclaw config set" CLI commands,
+    # but each one triggers a gateway restart (~4-6s each = 20-30s total downtime).
+    # The single config.patch RPC is atomic (no restart) and takes <1s.
 
     # Model registration + primary model are handled by config.patch RPC
     # from the backend (atomic, live, no restart). The CLI "openclaw models set"

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
 
 const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
 const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
@@ -32,26 +33,6 @@ async function navigateToInstance(page: Page): Promise<boolean> {
 	await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
 	await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
 	return true;
-}
-
-/**
- * Wait for OpenClaw status to show "Running" after a config change.
- * Polls the page for up to timeoutMs, reloading periodically.
- */
-async function waitForOpenClawRunning(page: Page, timeoutMs = 300_000): Promise<void> {
-	const start = Date.now();
-	while (Date.now() - start < timeoutMs) {
-		const statusText = await page.locator('dd').filter({ hasText: /Running|Healthy/i }).first()
-			.isVisible({ timeout: 3_000 }).catch(() => false);
-		if (statusText) {
-			console.log('[E2E] OpenClaw status: Running');
-			return;
-		}
-		console.log(`[E2E] Waiting for OpenClaw to be Running... (${Math.round((Date.now() - start) / 1000)}s)`);
-		await page.reload();
-		await page.waitForTimeout(10_000);
-	}
-	throw new Error('OpenClaw did not return to Running status within timeout');
 }
 
 test.describe('Config swap: API key and Telegram token', () => {

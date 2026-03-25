@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
 
 const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
 const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
@@ -107,18 +108,8 @@ test.describe('Model sync: FE → OC dashboard', () => {
 		).toBeVisible({ timeout: 120_000 });
 		console.log('[E2E] Config sync completed');
 
-		// Verify OpenClaw returns to Running after model change
-		const start = Date.now();
-		while (Date.now() - start < 180_000) {
-			const running = await page.locator('dd').filter({ hasText: /Running/i }).first()
-				.isVisible({ timeout: 3_000 }).catch(() => false);
-			if (running) {
-				console.log('[E2E] OpenClaw is Running after model change');
-				break;
-			}
-			await page.reload();
-			await page.waitForTimeout(10_000);
-		}
+		// Verify OpenClaw returns to Running after model change (must be < 1 min)
+		await waitForOpenClawRunning(page);
 
 		// Now verify on OC dashboard
 		// Get dashboard token by clicking "Open Agent Dashboard" and intercepting window.open
