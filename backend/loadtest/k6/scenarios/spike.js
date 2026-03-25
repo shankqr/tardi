@@ -1,6 +1,6 @@
 import { check, sleep } from "k6";
 import { Trend } from "k6/metrics";
-import { getDashboardState, healthz } from "../helpers.js";
+import { getFirebaseToken, getDashboardState, healthz } from "../helpers.js";
 
 const recoveryLatency = new Trend("post_spike_latency");
 
@@ -20,10 +20,14 @@ export const options = {
   },
 };
 
-export default function () {
-  const vuId = `spike-${__VU}`;
+// Runs once before VUs start — obtain a real Firebase ID token.
+export function setup() {
+  const token = getFirebaseToken();
+  return { token };
+}
 
-  const res = getDashboardState(vuId);
+export default function (data) {
+  const res = getDashboardState(data.token);
   check(res, {
     "response received": (r) => r.status === 200 || r.status === 429,
   });

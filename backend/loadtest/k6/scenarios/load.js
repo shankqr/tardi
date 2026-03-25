@@ -2,6 +2,7 @@ import { check, sleep, group } from "k6";
 import { Counter, Trend } from "k6/metrics";
 import { DEFAULT_THRESHOLDS, BASE_URL } from "../config.js";
 import {
+  getFirebaseToken,
   getDashboardState,
   createInstance,
   deleteInstance,
@@ -44,9 +45,14 @@ export const options = {
   },
 };
 
-export function dashboardPoller() {
-  const vuId = `poller-${__VU}`;
-  const res = getDashboardState(vuId);
+// Runs once before VUs start — obtain a real Firebase ID token.
+export function setup() {
+  const token = getFirebaseToken();
+  return { token };
+}
+
+export function dashboardPoller(data) {
+  const res = getDashboardState(data.token);
   dashboardLatency.add(res.timings.duration);
 
   check(res, {
@@ -56,11 +62,9 @@ export function dashboardPoller() {
   sleep(5); // Match frontend polling interval
 }
 
-export function provisioningLifecycle() {
-  const vuId = `provisioner-${__VU}`;
-
+export function provisioningLifecycle(data) {
   group("create instance", () => {
-    const res = createInstance(vuId, `load-test-agent-${__VU}`, "eu-central");
+    const res = createInstance(data.token, `load-test-agent-${__VU}`, "eu-central");
     const success = check(res, {
       "create returns 201 or 409": (r) => r.status === 201 || r.status === 409,
     });
@@ -72,7 +76,7 @@ export function provisioningLifecycle() {
       // Poll dashboard for status changes
       for (let i = 0; i < 60; i++) {
         sleep(5);
-        const dashboard = getDashboardState(vuId);
+        const dashboard = getDashboardState(data.token);
         if (dashboard.status !== 200) continue;
 
         const state = JSON.parse(dashboard.body);
@@ -84,7 +88,7 @@ export function provisioningLifecycle() {
 
       // Clean up: delete the instance
       group("delete instance", () => {
-        const delRes = deleteInstance(vuId, instanceId);
+        const delRes = deleteInstance(data.token, instanceId);
         check(delRes, {
           "delete returns 200": (r) => r.status === 200,
         });

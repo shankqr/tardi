@@ -1,6 +1,6 @@
 import { check, sleep } from "k6";
 import { Counter } from "k6/metrics";
-import { getDashboardState, createInstance, healthz } from "../helpers.js";
+import { getFirebaseToken, getDashboardState, createInstance, healthz } from "../helpers.js";
 
 const rateLimited = new Counter("rate_limited_responses");
 const accepted = new Counter("accepted_responses");
@@ -34,8 +34,14 @@ export const options = {
   },
 };
 
-export function testGeneralLimit() {
-  const res = getDashboardState(`ratelimit-${__VU}`);
+// Runs once before VUs start — obtain a real Firebase ID token.
+export function setup() {
+  const token = getFirebaseToken();
+  return { token };
+}
+
+export function testGeneralLimit(data) {
+  const res = getDashboardState(data.token);
 
   if (res.status === 429) {
     rateLimited.add(1);
@@ -57,9 +63,8 @@ export function testGeneralLimit() {
   }
 }
 
-export function testProvisioningLimit() {
-  const vuId = `ratelimit-prov-${__VU}`;
-  const res = createInstance(vuId, `rate-test-${__VU}-${__ITER}`, "eu-central");
+export function testProvisioningLimit(data) {
+  const res = createInstance(data.token, `rate-test-${__VU}-${__ITER}`, "eu-central");
 
   if (res.status === 429) {
     rateLimited.add(1);

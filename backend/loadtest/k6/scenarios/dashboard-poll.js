@@ -1,7 +1,7 @@
 import { check, sleep } from "k6";
 import { Trend, Counter } from "k6/metrics";
 import { DEFAULT_THRESHOLDS } from "../config.js";
-import { getDashboardState } from "../helpers.js";
+import { getFirebaseToken, getDashboardState } from "../helpers.js";
 
 const dashboardLatency = new Trend("dashboard_p95");
 const timeouts = new Counter("dashboard_timeouts");
@@ -23,9 +23,14 @@ export const options = {
   },
 };
 
-export default function () {
-  const vuId = `dashboard-${__VU}`;
-  const res = getDashboardState(vuId);
+// Runs once before VUs start — obtain a real Firebase ID token.
+export function setup() {
+  const token = getFirebaseToken();
+  return { token };
+}
+
+export default function (data) {
+  const res = getDashboardState(data.token);
 
   dashboardLatency.add(res.timings.duration);
 
