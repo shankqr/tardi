@@ -155,16 +155,20 @@ func TestTelegramAndModelConfigRace(t *testing.T) {
 		body   string
 	}
 
-	results := make([]result, 2)
-	ready := make(chan struct{})
-
-	// Goroutine 1: Update telegram_bot_token (leave model as nil to preserve)
-	go func() {
-		<-ready
-		config := map[string]any{
-			"telegram_bot_token": "new-telegram-token",
-			// model is nil — should be preserved from existing
+	_ = runConcurrent(2, func(i int) result {
+		var config map[string]any
+		if i == 0 {
+			// Goroutine 1: Update telegram_bot_token (leave model as nil to preserve)
+			config = map[string]any{
+				"telegram_bot_token": "new-telegram-token",
+			}
+		} else {
+			// Goroutine 2: Update model (leave telegram_bot_token as nil to preserve)
+			config = map[string]any{
+				"model": "new-model",
+			}
 		}
+
 		body, _ := json.Marshal(map[string]any{"config": config})
 
 		req := httptest.NewRequest(http.MethodPut, "/api/instances/"+inst.ID.String()+"/config", bytes.NewReader(body))
@@ -173,36 +177,9 @@ func TestTelegramAndModelConfigRace(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
-		results[0] = result{status: w.Code, body: w.Body.String()}
-	}()
 
-	// Goroutine 2: Update model (leave telegram_bot_token as nil to preserve)
-	go func() {
-		<-ready
-		config := map[string]any{
-			"model": "new-model",
-			// telegram_bot_token is nil — should be preserved from existing
-		}
-		body, _ := json.Marshal(map[string]any{"config": config})
-
-		req := httptest.NewRequest(http.MethodPut, "/api/instances/"+inst.ID.String()+"/config", bytes.NewReader(body))
-		req.SetPathValue("id", inst.ID.String())
-		req = req.WithContext(context.WithValue(req.Context(), middleware.UserKey, user))
-		w := httptest.NewRecorder()
-
-		handler.ServeHTTP(w, req)
-		results[1] = result{status: w.Code, body: w.Body.String()}
-	}()
-
-	close(ready)
-
-	// Wait a bit for goroutines to finish
-	// (no BGTasks here, so just check DB after a short delay)
-	for i := 0; i < 100; i++ {
-		if results[0].status != 0 && results[1].status != 0 {
-			break
-		}
-	}
+		return result{status: w.Code, body: w.Body.String()}
+	})
 
 	// Verify final config has BOTH changes
 	finalConfig, err := db.GetAgentConfigByInstanceID(context.Background(), pool, inst.ID)

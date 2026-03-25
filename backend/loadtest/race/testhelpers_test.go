@@ -62,7 +62,11 @@ func cleanupTables(t *testing.T, pool *pgxpool.Pool) {
 		"vps_instances",
 		"subscriptions",
 		"users",
+		"models",
 	}
+	// Disable FK checks temporarily for clean truncation
+	_, _ = pool.Exec(ctx, "SET session_replication_role = 'replica'")
+	defer pool.Exec(ctx, "SET session_replication_role = 'DEFAULT'")
 	for _, table := range tables {
 		_, err := pool.Exec(ctx, fmt.Sprintf("DELETE FROM %s", table))
 		if err != nil {
