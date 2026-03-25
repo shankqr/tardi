@@ -373,10 +373,15 @@ func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
 
 		// Parse the state from the output
 		// ActiveState: active (running), inactive (finished), failed, not-found
-		status := "running"
-		message := ""
-		if strings.Contains(out, "config sync complete") {
-			// Config applied — unit may still be active (model-set running) or inactive
+		// Default to "unknown" (not "running") so that collected/missing transient
+		// units don't falsely report a sync in progress — this caused the
+		// "Applying Config" flash on hard page refresh (Cmd+Shift+R).
+		status := "unknown"
+		message := "No sync in progress"
+		if strings.Contains(out, `"state":"active"`) || strings.Contains(out, `"state":"activating"`) {
+			status = "running"
+			message = "Config sync in progress"
+		} else if strings.Contains(out, "config sync complete") {
 			status = "completed"
 			message = "Configuration applied successfully"
 		} else if strings.Contains(out, `"state":"inactive"`) {
@@ -385,9 +390,6 @@ func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
 		} else if strings.Contains(out, `"state":"failed"`) {
 			status = "failed"
 			message = "Config sync failed on your agent"
-		} else if strings.Contains(out, `"state":"not-found"`) {
-			status = "unknown"
-			message = "No sync in progress"
 		}
 
 		WriteJSON(w, http.StatusOK, map[string]any{
