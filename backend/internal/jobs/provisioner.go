@@ -214,6 +214,9 @@ NODE_ENV=production
 {{- if .BackendEgressCIDRs}}
 BACKEND_EGRESS_CIDRS={{.BackendEgressCIDRs}}
 {{- end}}
+{{- if .PreviewDomain}}
+PREVIEW_DOMAIN={{.PreviewDomain}}
+{{- end}}
 ENVEOF
 {{- if .AnthropicAPIKey}}
 echo "ANTHROPIC_API_KEY={{.AnthropicAPIKey}}" >> /opt/openclaw/.env
@@ -230,17 +233,52 @@ echo "{{.ConfigVersion}}" > /opt/openclaw/.config_version
 {{- end}}
 
 # --- TLS: Cloudflare Proxy handles TLS at the edge ---
-# No Caddy, no self-signed certs. Cloudflare terminates TLS and connects
-# to the origin on port 80 (HTTP). iptables NAT redirects port 80 to 18789.
+# No self-signed certs. Cloudflare terminates TLS and connects to the
+# origin on port 80 (HTTP). Caddy reverse proxy handles hostname routing.
 log_status "TLS_CLOUDFLARE_PROXY"
 
-# --- iptables NAT: redirect port 80 → 18789 ---
-# OpenClaw runs as UID 1000 and cannot bind port 80. Cloudflare Proxy
-# connects to the origin on port 80 (Flexible SSL mode).
-iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
-apt-get install -y -qq iptables-persistent
-netfilter-persistent save
-log_status "IPTABLES_NAT_CONFIGURED"
+# --- Caddy reverse proxy: hostname-based routing on port 80 ---
+# Preview domain (e.g., abc12345-b.tardi.ai) → localhost:3000 (user-built apps)
+# All other traffic → localhost:18789 (OpenClaw gateway)
+# Caddy runs on port 80 as root (no TLS — Cloudflare handles that).
+for i in 1 2 3; do
+    curl -sL "https://caddyserver.com/api/download?os=linux&arch=amd64" -o /usr/local/bin/caddy && break
+    sleep 3
+done
+chmod +x /usr/local/bin/caddy
+
+mkdir -p /etc/caddy
+cat > /etc/caddy/Caddyfile <<CADDYEOF
+{{- if .PreviewDomain}}
+http://{{.PreviewDomain}} {
+    reverse_proxy localhost:3000
+}
+{{- end}}
+
+http:// {
+    reverse_proxy localhost:18789
+}
+CADDYEOF
+
+cat > /etc/systemd/system/caddy.service <<'CADDYSVCEOF'
+[Unit]
+Description=Caddy reverse proxy
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+CADDYSVCEOF
+
+systemctl daemon-reload
+systemctl enable caddy
+systemctl start caddy
+log_status "CADDY_PROXY_CONFIGURED"
 
 # --- Docker Compose (single container, host networking) ---
 cat > /opt/openclaw/docker-compose.yml <<'COMPOSEEOF'

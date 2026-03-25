@@ -15,7 +15,6 @@ import (
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/crypto"
 	"github.com/shanq/tardi/internal/db"
-	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/scripts"
 )
 
@@ -193,9 +192,17 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			targetVersion, _ = db.GetGlobalTargetVersion(r.Context(), deps.Pool)
 		}
 
+		// Include preview_domain so the heartbeat script can configure
+		// Caddy hostname-based routing (preview domain → port 3000).
+		var previewDomain string
+		if inst.PreviewDomain != nil {
+			previewDomain = *inst.PreviewDomain
+		}
+
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"config_version":          configVersion,
 			"target_openclaw_version": targetVersion,
+			"preview_domain":          previewDomain,
 		})
 	}
 }
@@ -310,33 +317,12 @@ func UpdateAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 			}
 		}
 
-		// Preserve existing config fields when frontend sends null (unchanged)
-		existing, _ := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
-		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "telegram_bot_token", "provider", "model"} {
-			if body.Config[keyField] == nil && existing != nil {
-				if v, ok := existing.Config[keyField].(string); ok && v != "" {
-					body.Config[keyField] = v
-				}
-			}
-		}
-
-		ac := &models.AgentConfig{
-			ID:            uuid.New(),
-			VpsInstanceID: inst.ID,
-			Config:        body.Config,
-			Version:       1,
-		}
-		if err := db.CreateAgentConfig(r.Context(), deps.Pool, ac); err != nil {
+		// Atomic read-merge-write to prevent concurrent updates from losing changes
+		preserveKeys := []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "telegram_bot_token", "provider", "model"}
+		saved, err := db.UpdateAgentConfigAtomic(r.Context(), deps.Pool, inst.ID, body.Config, preserveKeys)
+		if err != nil {
 			slog.Error("update agent config: save", "error", err)
 			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
-			return
-		}
-
-		// Read back the saved config to get the actual version
-		saved, err := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
-		if err != nil {
-			slog.Error("update agent config: read back", "error", err)
-			WriteJSON(w, http.StatusOK, map[string]any{"config": body.Config, "version": 1})
 			return
 		}
 

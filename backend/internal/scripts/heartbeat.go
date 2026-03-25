@@ -53,12 +53,8 @@ services:
       start_period: 60s
 
 MIGRATEEOF
-    # Set up iptables NAT if not already present
-    if ! iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789 2>/dev/null; then
-        iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
-        netfilter-persistent save 2>/dev/null || true
-    fi
     # UFW 18789 rules will be set by the hardening section below (per-CIDR, not blanket allow)
+    # Caddy will be installed by the Caddy drift guard section below
     # Ensure trustedProxies is set (Cloudflare adds proxy headers; without this
     # OpenClaw treats connections as untrusted and won't grant operator scopes)
     python3 -c "
@@ -120,6 +116,16 @@ RESPONSE=$(curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
     -H "Authorization: Bearer ${AGENT_TOKEN}" \
     -H "Content-Type: application/json" \
     -d "{\"status\":\"${STATUS}\",\"openclaw_version\":\"${CURRENT_TAG}\",\"openclaw_update_status\":\"${UPDATE_STATUS}\",\"openclaw_update_error\":\"${UPDATE_ERROR}\",\"agent_error\":\"${AGENT_ERROR}\"}" 2>/dev/null)
+
+# --- Sync PREVIEW_DOMAIN from heartbeat response (for existing VPSes) ---
+# New VPSes get PREVIEW_DOMAIN in .env from cloud-init. Existing VPSes need
+# it from the API so Caddy can route the preview domain to port 3000.
+API_PREVIEW_DOMAIN=$(echo "$RESPONSE" | jq -r '.preview_domain // empty' 2>/dev/null)
+if [ -n "$API_PREVIEW_DOMAIN" ] && ! grep -q "^PREVIEW_DOMAIN=" /opt/openclaw/.env 2>/dev/null; then
+    echo "PREVIEW_DOMAIN=$API_PREVIEW_DOMAIN" >> /opt/openclaw/.env
+    # Re-source to pick up the new value for the Caddy drift guard below
+    source /opt/openclaw/.env
+fi
 
 # --- Telegram config drift guard (runs every heartbeat) ---
 # OpenClaw resets Telegram config to bad defaults on every container restart
@@ -184,19 +190,85 @@ if docker ps -q -f name=openclaw-caddy 2>/dev/null | grep -q .; then
     docker image rm caddy:2-alpine 2>/dev/null || true
 fi
 
-# --- iptables NAT drift guard (runs every heartbeat) ---
-# Ensure port 80 → 18789 NAT rule exists (Cloudflare Proxy connects on port 80).
-# OpenClaw runs as UID 1000 and cannot bind port 80 directly.
-if ! iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789 2>/dev/null; then
-    iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
+# --- Caddy reverse proxy drift guard (runs every heartbeat) ---
+# Caddy routes by hostname: preview domain → port 3000, everything else → 18789.
+# Remove old iptables NAT rule if present (replaced by Caddy).
+if iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789 2>/dev/null; then
+    iptables -t nat -D PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
     netfilter-persistent save 2>/dev/null || true
 fi
 
+# Install Caddy binary if not present
+if [ ! -x /usr/local/bin/caddy ]; then
+    for i in 1 2 3; do
+        curl -sL "https://caddyserver.com/api/download?os=linux&arch=amd64" -o /usr/local/bin/caddy && break
+        sleep 3
+    done
+    chmod +x /usr/local/bin/caddy 2>/dev/null || true
+fi
+
+# Ensure Caddyfile has correct routing and Caddy is running.
+# PREVIEW_DOMAIN comes from .env (new VPSes) or heartbeat API response (migration).
+PREVIEW_DOMAIN_ENV=$(grep '^PREVIEW_DOMAIN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
+if [ -x /usr/local/bin/caddy ]; then
+    CADDY_NEEDS_UPDATE=false
+    mkdir -p /etc/caddy
+
+    # Build expected Caddyfile content
+    if [ -n "$PREVIEW_DOMAIN_ENV" ]; then
+        EXPECTED_CADDY="http://${PREVIEW_DOMAIN_ENV} {
+    reverse_proxy localhost:3000
+}
+
+http:// {
+    reverse_proxy localhost:18789
+}"
+    else
+        EXPECTED_CADDY="http:// {
+    reverse_proxy localhost:18789
+}"
+    fi
+
+    # Check if Caddyfile matches expected content
+    CURRENT_CADDY=$(cat /etc/caddy/Caddyfile 2>/dev/null || echo "")
+    if [ "$CURRENT_CADDY" != "$EXPECTED_CADDY" ]; then
+        printf '%s\n' "$EXPECTED_CADDY" > /etc/caddy/Caddyfile
+        CADDY_NEEDS_UPDATE=true
+    fi
+
+    # Ensure systemd service exists
+    if [ ! -f /etc/systemd/system/caddy.service ]; then
+        cat > /etc/systemd/system/caddy.service <<'CADDYSVCEOF'
+[Unit]
+Description=Caddy reverse proxy
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+CADDYSVCEOF
+        systemctl daemon-reload
+        systemctl enable caddy 2>/dev/null || true
+        CADDY_NEEDS_UPDATE=true
+    fi
+
+    # Start or reload Caddy
+    if ! systemctl is-active --quiet caddy 2>/dev/null; then
+        systemctl start caddy 2>/dev/null || true
+    elif [ "$CADDY_NEEDS_UPDATE" = true ]; then
+        systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || true
+    fi
+fi
+
 # --- UFW security hardening for port 18789 and SSH ---
-# Port 18789 must be allowed (iptables PREROUTING rewrites dest port before UFW
-# INPUT chain), but we restrict it to Cloudflare IPs + backend egress CIDRs
-# instead of allowing from all sources. This prevents direct access to OpenClaw
-# from arbitrary IPs that would bypass Cloudflare proxy/WAF/DDoS protection.
+# Port 18789 must be allowed for backend direct WebSocket RPC connections.
+# We restrict it to Cloudflare IPs + backend egress CIDRs to prevent direct
+# access to OpenClaw from arbitrary IPs that bypass Cloudflare proxy/WAF.
 #
 # Migration: if blanket "18789/tcp ALLOW Anywhere" exists, replace it with
 # per-CIDR rules. Cloudflare IPs are refreshed daily via a marker file.
