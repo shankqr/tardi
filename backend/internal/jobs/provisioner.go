@@ -164,7 +164,7 @@ useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
 usermod -aG docker openclaw
 
 # --- Directory structure ---
-mkdir -p /opt/openclaw/data/openclaw
+mkdir -p /opt/openclaw/data/openclaw /opt/openclaw/data/gogcli
 chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
