@@ -68,7 +68,9 @@ test.describe('Snapshot create/delete', () => {
 			await expect(page.getByText(snapshotName)).toBeVisible({ timeout: 30_000 });
 
 			// Wait for status to transition from "creating" to "ready" (up to 3 minutes)
-			await expect(page.getByText(/ready/i).first()).toBeVisible({ timeout: 180_000 });
+			// When status is "ready", the UI renders Restore/Delete buttons instead of text
+			const snapshotRow = page.getByText(snapshotName).locator('..').locator('..');
+			await expect(snapshotRow.getByRole('button', { name: 'Delete' })).toBeVisible({ timeout: 180_000 });
 		});
 
 		// ── Step 3: Verify snapshot in list ──
@@ -77,10 +79,9 @@ test.describe('Snapshot create/delete', () => {
 			const snapshotEntry = page.getByText(snapshotName);
 			await expect(snapshotEntry).toBeVisible();
 
-			// Verify it shows "ready" status
-			// The snapshot row contains both the name and a StatusBadge with "ready"
+			// Verify it shows "ready" status — when ready, Delete button is rendered (no "ready" text)
 			const snapshotRow = snapshotEntry.locator('..').locator('..');
-			await expect(snapshotRow.getByText(/ready/i)).toBeVisible();
+			await expect(snapshotRow.getByRole('button', { name: 'Delete' })).toBeVisible();
 		});
 
 		// ── Step 4: Delete snapshot ──

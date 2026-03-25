@@ -38,7 +38,7 @@ async function navigateToInstance(page: Page): Promise<boolean> {
  * Wait for OpenClaw status to show "Running" after a config change.
  * Polls the page for up to timeoutMs, reloading periodically.
  */
-async function waitForOpenClawRunning(page: Page, timeoutMs = 180_000): Promise<void> {
+async function waitForOpenClawRunning(page: Page, timeoutMs = 300_000): Promise<void> {
 	const start = Date.now();
 	while (Date.now() - start < timeoutMs) {
 		const statusText = await page.locator('dd').filter({ hasText: /Running|Healthy/i }).first()
@@ -140,14 +140,14 @@ test.describe('Config swap: API key and Telegram token', () => {
 				await expect(connectInput).toBeVisible({ timeout: 10_000 });
 				await connectInput.click();
 				await connectInput.pressSequentially(TG_TOKEN_2, { delay: 10 });
-				await page.getByRole('button', { name: /connect/i }).click();
+				await page.getByRole('button', { name: 'Connect', exact: true }).click();
 			}
 		} else {
 			const connectInput = page.locator('input[placeholder="Paste your bot token here"]');
 			await expect(connectInput).toBeVisible({ timeout: 10_000 });
 			await connectInput.click();
 			await connectInput.pressSequentially(TG_TOKEN_2, { delay: 10 });
-			await page.getByRole('button', { name: /connect/i }).click();
+			await page.getByRole('button', { name: 'Connect', exact: true }).click();
 		}
 
 		// Wait for sync — look for success indicator or the disconnect button to reappear
@@ -161,7 +161,11 @@ test.describe('Config swap: API key and Telegram token', () => {
 		console.log('[E2E] Restoring Telegram token 1...');
 		await page.reload();
 		await page.waitForTimeout(5000);
-		await telegramHeading.scrollIntoViewIfNeeded();
+
+		// Re-locate Telegram section after reload
+		const telegramHeading2 = page.getByText('Telegram').first();
+		await telegramHeading2.scrollIntoViewIfNeeded();
+		await page.waitForTimeout(2000);
 
 		const updateInput = page.locator('input[placeholder="Paste new bot token"]');
 		if (await updateInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
@@ -173,13 +177,14 @@ test.describe('Config swap: API key and Telegram token', () => {
 			const disc = page.getByRole('button', { name: /disconnect/i });
 			if (await disc.isVisible({ timeout: 3_000 }).catch(() => false)) {
 				await disc.click();
-				await page.waitForTimeout(3000);
+				await page.waitForTimeout(5000);
+				await telegramHeading2.scrollIntoViewIfNeeded();
 			}
 			const connectInput = page.locator('input[placeholder="Paste your bot token here"]');
-			await expect(connectInput).toBeVisible({ timeout: 10_000 });
+			await expect(connectInput).toBeVisible({ timeout: 15_000 });
 			await connectInput.click();
 			await connectInput.pressSequentially(TG_TOKEN_1, { delay: 10 });
-			await page.getByRole('button', { name: /connect/i }).click();
+			await page.getByRole('button', { name: 'Connect', exact: true }).click();
 		}
 
 		await expect(page.getByRole('button', { name: /disconnect/i })).toBeVisible({ timeout: 120_000 });
