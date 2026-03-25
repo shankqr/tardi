@@ -62,25 +62,18 @@ func CreateSnapshotHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Enforce 3-snapshot limit
-		count, err := db.CountActiveSnapshotsByInstanceID(r.Context(), deps.Pool, instanceID)
-		if err != nil {
-			slog.Error("create snapshot: count snapshots", "error", err)
-			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to check snapshot limit")
-			return
-		}
-		if count >= 3 {
-			WriteError(w, http.StatusConflict, "limit_reached", "maximum 3 snapshots allowed")
-			return
-		}
-
+		// Create snapshot with atomic limit check (prevents race condition)
 		snap := &models.Snapshot{
 			ID:            uuid.New(),
 			VpsInstanceID: instanceID,
 			Name:          req.Name,
 			Status:        models.SnapshotStatusCreating,
 		}
-		if err := db.CreateSnapshot(r.Context(), deps.Pool, snap); err != nil {
+		if err := db.CreateSnapshotWithLimit(r.Context(), deps.Pool, snap, 3); err != nil {
+			if errors.Is(err, db.ErrLimitReached) {
+				WriteError(w, http.StatusConflict, "limit_reached", "maximum 3 snapshots allowed")
+				return
+			}
 			slog.Error("create snapshot: insert", "error", err)
 			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to create snapshot")
 			return

@@ -88,6 +88,10 @@ func CreateInstanceHandler(deps Dependencies) http.HandlerFunc {
 			CreatedAt:      now,
 		}
 		if err := db.CreateInstance(r.Context(), deps.Pool, inst); err != nil {
+			if db.IsUniqueViolation(err) {
+				WriteError(w, http.StatusConflict, "limit_reached", "maximum 1 active agent allowed")
+				return
+			}
 			slog.Error("create instance: insert", "error", err)
 			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to create instance")
 			return
@@ -150,12 +154,11 @@ func RestartInstanceHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		if inst.Status != models.VpsStatusActive {
-			WriteError(w, http.StatusConflict, "invalid_state", "instance must be active to restart")
-			return
-		}
-
-		if err := db.UpdateInstanceStatus(r.Context(), deps.Pool, instanceID, models.VpsStatusRestarting); err != nil {
+		if err := db.UpdateInstanceStatusConditional(r.Context(), deps.Pool, instanceID, models.VpsStatusActive, models.VpsStatusRestarting); err != nil {
+			if errors.Is(err, db.ErrConflict) {
+				WriteError(w, http.StatusConflict, "invalid_state", "instance must be active to restart")
+				return
+			}
 			slog.Error("restart instance: update status", "error", err)
 			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to restart instance")
 			return
@@ -207,12 +210,12 @@ func DeleteInstanceHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		if inst.Status == models.VpsStatusTerminating || inst.Status == models.VpsStatusTerminated {
-			WriteError(w, http.StatusConflict, "invalid_state", "instance is already being terminated")
-			return
-		}
-
-		if err := db.UpdateInstanceStatus(r.Context(), deps.Pool, instanceID, models.VpsStatusTerminating); err != nil {
+		excludeStatuses := []models.VpsStatus{models.VpsStatusTerminating, models.VpsStatusTerminated}
+		if err := db.UpdateInstanceStatusConditionalNot(r.Context(), deps.Pool, instanceID, excludeStatuses, models.VpsStatusTerminating); err != nil {
+			if errors.Is(err, db.ErrConflict) {
+				WriteError(w, http.StatusConflict, "invalid_state", "instance is already being terminated")
+				return
+			}
 			slog.Error("delete instance: update status", "error", err)
 			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to terminate instance")
 			return

@@ -116,6 +116,11 @@ func handleCheckoutCompleted(r *http.Request, deps Dependencies, event *stripe.E
 	}
 
 	if err := db.CreateSubscription(r.Context(), deps.Pool, sub); err != nil {
+		if db.IsUniqueViolation(err) {
+			slog.Info("stripe webhook: subscription already exists (concurrent create)",
+				"user_id", user.ID, "stripe_sub", subID)
+			return
+		}
 		slog.Error("stripe webhook: create subscription", "error", err)
 		return
 	}
@@ -146,31 +151,22 @@ func handleSubscriptionUpdated(r *http.Request, deps Dependencies, event *stripe
 	periodEnd := getSubscriptionPeriodEnd(&sub)
 	cancelAtPeriodEnd := sub.CancelAtPeriodEnd
 
-	// Check if this is a reactivation from suspended — must query BEFORE updating status
-	var wasSuspended bool
-	if status == models.SubStatusActive {
-		prevSub, _ := db.GetSubscriptionByStripeSubID(r.Context(), deps.Pool, sub.ID)
-		if prevSub != nil && prevSub.Status == models.SubStatusSuspended {
-			wasSuspended = true
-		}
-	}
-
-	if err := db.UpdateSubscriptionStatus(r.Context(), deps.Pool, sub.ID, status, periodEnd, cancelAtPeriodEnd); err != nil {
+	// Atomically update status and get the previous status (prevents double-reactivation race)
+	prevStatus, subDBID, err := db.UpdateSubscriptionStatusReturningPrev(r.Context(), deps.Pool, sub.ID, status, periodEnd, cancelAtPeriodEnd)
+	if err != nil {
 		slog.Error("stripe webhook: update subscription", "stripe_sub", sub.ID, "error", err)
 		return
 	}
+	wasSuspended := prevStatus == models.SubStatusSuspended && status == models.SubStatusActive
 
 	// Trigger resume for suspended instances when subscription reactivates
 	if wasSuspended {
-		prevSub, _ := db.GetSubscriptionByStripeSubID(r.Context(), deps.Pool, sub.ID)
-		if prevSub != nil {
-			instances, _ := db.GetInstancesBySubscriptionID(r.Context(), deps.Pool, prevSub.ID)
-			for i := range instances {
-				if instances[i].Status == models.VpsStatusSuspended {
-					slog.Info("stripe webhook: triggering resume for suspended instance",
-						"instance_id", instances[i].ID, "stripe_sub", sub.ID)
-					deps.Resumer.ResumeInstance(&instances[i])
-				}
+		instances, _ := db.GetInstancesBySubscriptionID(r.Context(), deps.Pool, subDBID)
+		for i := range instances {
+			if instances[i].Status == models.VpsStatusSuspended {
+				slog.Info("stripe webhook: triggering resume for suspended instance",
+					"instance_id", instances[i].ID, "stripe_sub", sub.ID)
+				deps.Resumer.ResumeInstance(&instances[i])
 			}
 		}
 	}

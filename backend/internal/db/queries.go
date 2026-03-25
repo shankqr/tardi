@@ -1201,3 +1201,165 @@ func UpdateGoogleOAuthTokenFields(ctx context.Context, pool *pgxpool.Pool, token
 	}
 	return nil
 }
+
+// --- Race condition safeguards ---
+
+// UpdateInstanceStatusConditional updates status only if the current status matches expectedStatus.
+// Returns ErrConflict if no rows were updated (status already changed).
+func UpdateInstanceStatusConditional(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, expectedStatus models.VpsStatus, newStatus models.VpsStatus) error {
+	result, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET status = $1, updated_at = now()
+		WHERE id = $2 AND status = $3
+	`, newStatus, instanceID, expectedStatus)
+	if err != nil {
+		return fmt.Errorf("conditional status update: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
+}
+
+// UpdateInstanceStatusConditionalNot updates status only if the current status is NOT in excludeStatuses.
+// Returns ErrConflict if no rows were updated.
+func UpdateInstanceStatusConditionalNot(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, excludeStatuses []models.VpsStatus, newStatus models.VpsStatus) error {
+	// Convert to string slice for PostgreSQL array parameter
+	strs := make([]string, len(excludeStatuses))
+	for i, s := range excludeStatuses {
+		strs[i] = string(s)
+	}
+	result, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET status = $1, updated_at = now()
+		WHERE id = $2 AND status != ALL($3::text[])
+	`, newStatus, instanceID, strs)
+	if err != nil {
+		return fmt.Errorf("conditional status update: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrConflict
+	}
+	return nil
+}
+
+// CreateSnapshotWithLimit atomically checks the snapshot count and inserts a new snapshot.
+// Returns ErrLimitReached if the limit would be exceeded.
+func CreateSnapshotWithLimit(ctx context.Context, pool *pgxpool.Pool, snap *models.Snapshot, limit int) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Lock the instance row to serialize snapshot creation for this instance
+	var instanceID uuid.UUID
+	err = tx.QueryRow(ctx, `
+		SELECT id FROM vps_instances WHERE id = $1 FOR UPDATE
+	`, snap.VpsInstanceID).Scan(&instanceID)
+	if err != nil {
+		return fmt.Errorf("lock instance: %w", err)
+	}
+
+	// Count active snapshots within the transaction (after acquiring lock)
+	var count int
+	err = tx.QueryRow(ctx, `
+		SELECT count(*) FROM snapshots
+		WHERE vps_instance_id = $1 AND status NOT IN ('deleted', 'error', 'deleting') AND is_system = false
+	`, snap.VpsInstanceID).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("count snapshots: %w", err)
+	}
+	if count >= limit {
+		return ErrLimitReached
+	}
+
+	_, err = tx.Exec(ctx, `
+		INSERT INTO snapshots (id, vps_instance_id, name, status, is_system)
+		VALUES ($1, $2, $3, $4, $5)
+	`, snap.ID, snap.VpsInstanceID, snap.Name, snap.Status, snap.IsSystem)
+	if err != nil {
+		return fmt.Errorf("insert snapshot: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+// UpdateAgentConfigAtomic reads existing config under a row lock, merges with updates, and writes atomically.
+// preserveKeys are config keys to preserve from the existing config if not present in updates.
+func UpdateAgentConfigAtomic(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, updates map[string]any, preserveKeys []string) (*models.AgentConfig, error) {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Read existing config with lock
+	var existing models.AgentConfig
+	var configJSON []byte
+	err = tx.QueryRow(ctx, `
+		SELECT id, vps_instance_id, config, version, created_at, updated_at
+		FROM agent_configs WHERE vps_instance_id = $1
+		FOR UPDATE
+	`, instanceID).Scan(&existing.ID, &existing.VpsInstanceID, &configJSON, &existing.Version, &existing.CreatedAt, &existing.UpdatedAt)
+
+	hasExisting := err == nil
+	if hasExisting {
+		_ = json.Unmarshal(configJSON, &existing.Config)
+	}
+
+	// Merge: preserve existing keys not present in updates
+	merged := updates
+	if hasExisting {
+		for _, key := range preserveKeys {
+			if merged[key] == nil {
+				if v, ok := existing.Config[key].(string); ok && v != "" {
+					merged[key] = v
+				}
+			}
+		}
+	}
+
+	mergedJSON, err := json.Marshal(merged)
+	if err != nil {
+		return nil, fmt.Errorf("marshal config: %w", err)
+	}
+
+	// Upsert with version increment
+	var result models.AgentConfig
+	var resultConfigJSON []byte
+	err = tx.QueryRow(ctx, `
+		INSERT INTO agent_configs (id, vps_instance_id, config, version)
+		VALUES ($1, $2, $3, 1)
+		ON CONFLICT (vps_instance_id) DO UPDATE SET
+			config = $3,
+			version = agent_configs.version + 1,
+			updated_at = now()
+		RETURNING id, vps_instance_id, config, version, created_at, updated_at
+	`, uuid.New(), instanceID, mergedJSON).Scan(
+		&result.ID, &result.VpsInstanceID, &resultConfigJSON,
+		&result.Version, &result.CreatedAt, &result.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("upsert config: %w", err)
+	}
+	_ = json.Unmarshal(resultConfigJSON, &result.Config)
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	return &result, nil
+}
+
+// UpdateSubscriptionStatusReturningPrev atomically updates subscription status and returns the previous status.
+// The subquery in RETURNING reads the pre-update value within the same statement.
+func UpdateSubscriptionStatusReturningPrev(ctx context.Context, pool *pgxpool.Pool, stripeSubID string, status models.SubscriptionStatus, periodEnd *time.Time, cancelAtPeriodEnd bool) (prevStatus models.SubscriptionStatus, subID uuid.UUID, err error) {
+	err = pool.QueryRow(ctx, `
+		UPDATE subscriptions
+		SET status = $1, current_period_end = $2, cancel_at_period_end = $3, updated_at = now()
+		WHERE stripe_subscription_id = $4
+		RETURNING (SELECT status FROM subscriptions WHERE stripe_subscription_id = $4), id
+	`, status, periodEnd, cancelAtPeriodEnd, stripeSubID).Scan(&prevStatus, &subID)
+	if err != nil {
+		return "", uuid.Nil, fmt.Errorf("update subscription status: %w", err)
+	}
+	return prevStatus, subID, nil
+}
