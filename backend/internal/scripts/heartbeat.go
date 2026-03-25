@@ -42,6 +42,7 @@ services:
       - "${DOCKER_GID}"
     volumes:
       - ./data/openclaw:/home/node/.openclaw:rw
+      - ./data/gogcli:/home/node/.config/gogcli:rw
       - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env
@@ -73,6 +74,14 @@ with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     rm -f /opt/openclaw/Caddyfile
     rm -rf /opt/openclaw/certs /opt/openclaw/caddy
     docker image rm caddy:2-alpine 2>/dev/null || true
+fi
+
+# --- Migrate: add gogcli volume mount if missing ---
+if ! grep -q 'data/gogcli' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    mkdir -p /opt/openclaw/data/gogcli
+    chown 1000:1000 /opt/openclaw/data/gogcli
+    sed -i '/\.\/data\/openclaw:\/home\/node\/\.openclaw:rw/a\      - ./data/gogcli:/home/node/.config/gogcli:rw' /opt/openclaw/docker-compose.yml
+    cd /opt/openclaw && docker compose up -d 2>/dev/null || true
 fi
 
 # Check OpenClaw gateway health
