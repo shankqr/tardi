@@ -538,6 +538,7 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
                 mkdir -p "$GOG_DIR/tokens"
                 [ -n "$NEW_GOOGLE_CLIENT" ] && printf '%s' "$NEW_GOOGLE_CLIENT" | base64 -d > "$GOG_DIR/credentials.json"
                 printf '%s' "$NEW_GOOGLE_TOKEN" | base64 -d > "$GOG_DIR/tokens/${NEW_GOOGLE_EMAIL}.json"
+                chown -R 1000:1000 "$GOG_DIR"
                 chmod -R 600 "$GOG_DIR"
                 chmod 700 "$GOG_DIR" "$GOG_DIR/tokens"
             else
