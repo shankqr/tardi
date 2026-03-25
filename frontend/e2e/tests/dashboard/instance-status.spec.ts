@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+persistent@gmail.com';
-const PASSWORD = process.env.E2E_TEST_PASSWORD || '';
+const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
+const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
 
 async function login(page: Page): Promise<void> {
 	await page.goto('/login');
@@ -19,7 +19,7 @@ async function login(page: Page): Promise<void> {
 }
 
 test.describe('Instance status', () => {
-	test.skip(!PASSWORD, 'E2E_TEST_PASSWORD not set');
+	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('instance card shows status badge on dashboard', async ({ page }) => {
 		await login(page);

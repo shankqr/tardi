@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
 
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+persistent@gmail.com';
-const PASSWORD = process.env.E2E_TEST_PASSWORD || '';
+const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
+const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
 
 test.describe('Logout', () => {
-	test.skip(!PASSWORD, 'E2E_TEST_PASSWORD not set');
+	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('logout redirects to homepage and clears session', async ({ page }) => {
 		// Login first
