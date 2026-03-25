@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 /**
  * Wait for OpenClaw status to show "Running" after a config change.
@@ -33,7 +33,7 @@ export async function waitForOpenClawRunning(page: Page, timeoutMs = 60_000): Pr
 		} else {
 			await page.reload();
 		}
-		await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 15_000 }).catch(() => {});
+		await page.getByText('Agent Details').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {});
 		await page.waitForTimeout(3_000);
 	}
 	throw new Error(`OpenClaw did not return to Running status within ${timeoutMs / 1000}s`);
