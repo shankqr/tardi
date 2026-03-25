@@ -94,12 +94,12 @@ else
 fi
 
 if [ "$HEALTHY" = true ]; then
-    # Fix Telegram config if bot token is set:
-    # - streaming:"off" prevents double replies (OpenClaw defaults to "partial")
-    # - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
-    # - groupPolicy:"disabled" ignores group messages
-    # Must set allowFrom before dmPolicy (validation requires it)
-    if [ -n "$NEW_TG_TOKEN" ]; then
+    # Fix Telegram config ONLY when container was just recreated (env changed).
+    # Each "config set" triggers a gateway restart, and 5 sequential commands
+    # cause ~20-30s of downtime, which breaks concurrent RPC calls from the
+    # next sync. When env is unchanged, Telegram config is already applied
+    # from a previous sync — no need to re-apply.
+    if [ "$ENV_CHANGED" = true ] && [ -n "$NEW_TG_TOKEN" ]; then
         docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
@@ -182,10 +182,10 @@ func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model stri
 	patchJSON, _ := json.Marshal(patch)
 
 	var lastErr error
-	for attempt := 1; attempt <= 3; attempt++ {
+	for attempt := 1; attempt <= 5; attempt++ {
 		if attempt > 1 {
 			slog.Info("patchModelConfig: retrying", "attempt", attempt, "ip", ipv4)
-			time.Sleep(time.Duration(attempt*3) * time.Second)
+			time.Sleep(time.Duration(attempt*2) * time.Second)
 		}
 
 		// Get the current config hash (required by config.patch)
