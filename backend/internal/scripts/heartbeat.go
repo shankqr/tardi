@@ -148,16 +148,33 @@ fi
 # --- Model drift guard (runs every heartbeat) ---
 # OpenClaw loses the model setting on container restart (Docker auto-restarts
 # from crashes/OOM). Re-apply models from saved config if missing.
-# Also registers all Tardi catalog models so the OC dashboard dropdown matches.
+# Also checks that the PRIMARY model matches the DB — a failed config.patch
+# RPC during sync can leave the old primary even though models are registered.
 if [ "$STATUS" = "running" ]; then
     MODEL_OUT=$(docker exec openclaw-gateway openclaw models list 2>&1 || echo "")
     MODEL_LINES=$(echo "$MODEL_OUT" | wc -l | tr -d ' ')
+
+    # Fetch expected config from API
+    SAVED_CFG=$(curl -sf "${API_URL}/api/agent/config" \
+        -H "Authorization: Bearer ${AGENT_TOKEN}" 2>/dev/null)
+    SAVED_MODEL=$(echo "$SAVED_CFG" | jq -r '.config.model // empty' 2>/dev/null)
+    SAVED_PROVIDER=$(echo "$SAVED_CFG" | jq -r '.config.provider // empty' 2>/dev/null)
+
+    # Build the expected full model ID
+    EXPECTED_PRIMARY=""
+    if [ -n "$SAVED_MODEL" ]; then
+        if [ "$SAVED_PROVIDER" = "openrouter" ]; then
+            EXPECTED_PRIMARY="openrouter/${SAVED_MODEL}"
+        else
+            EXPECTED_PRIMARY="${SAVED_MODEL}"
+        fi
+    fi
+
+    # Check current primary from openclaw.json
+    CURRENT_PRIMARY=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.agents.defaults.model.primary // empty' 2>/dev/null || true)
+
+    # Re-register all models if none exist
     if [ "$MODEL_LINES" -le 1 ]; then
-        # No model set — fetch from API and re-apply all models
-        SAVED_CFG=$(curl -sf "${API_URL}/api/agent/config" \
-            -H "Authorization: Bearer ${AGENT_TOKEN}" 2>/dev/null)
-        SAVED_MODEL=$(echo "$SAVED_CFG" | jq -r '.config.model // empty' 2>/dev/null)
-        SAVED_PROVIDER=$(echo "$SAVED_CFG" | jq -r '.config.provider // empty' 2>/dev/null)
         ALL_MIDS=$(echo "$SAVED_CFG" | jq -r '.model_ids // [] | .[]' 2>/dev/null)
         # Register non-active models first
         if [ -n "$ALL_MIDS" ]; then
@@ -170,17 +187,19 @@ if [ "$STATUS" = "running" ]; then
                 fi
             done
         fi
-        # Set active model last and set it as the primary model.
-        # "openclaw models set" only registers it — "config set" makes it primary.
+        # Register active model
         if [ -n "$SAVED_MODEL" ]; then
             if [ "$SAVED_PROVIDER" = "openrouter" ]; then
                 docker exec openclaw-gateway openclaw models set "openrouter/${SAVED_MODEL}" 2>/dev/null
-                docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "openrouter/${SAVED_MODEL}" 2>/dev/null
             else
                 docker exec openclaw-gateway openclaw models set "${SAVED_MODEL}" 2>/dev/null
-                docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "${SAVED_MODEL}" 2>/dev/null
             fi
         fi
+    fi
+
+    # Fix primary model if it doesn't match the expected model from DB
+    if [ -n "$EXPECTED_PRIMARY" ] && [ "$CURRENT_PRIMARY" != "$EXPECTED_PRIMARY" ]; then
+        docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "$EXPECTED_PRIMARY" 2>/dev/null || true
     fi
 fi
 

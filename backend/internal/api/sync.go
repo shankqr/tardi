@@ -100,10 +100,25 @@ if [ "$HEALTHY" = true ]; then
     # but each one triggers a gateway restart (~4-6s each = 20-30s total downtime).
     # The single config.patch RPC is atomic (no restart) and takes <1s.
 
-    # Model registration + primary model are handled by config.patch RPC
-    # from the backend (atomic, live, no restart). The CLI "openclaw models set"
-    # loop was removed because it changes the primary as a side effect of each
-    # registration, racing with the RPC and causing model flip-flop.
+    # Model primary is set by config.patch RPC from the backend (atomic, no
+    # restart). As a fallback in case the RPC failed, also set it here via CLI.
+    # Only "config set" (not "models set") — avoids the primary flip-flop side
+    # effect of model registration.
+    if [ -n "$NEW_MODEL" ]; then
+        if [ "$NEW_PROVIDER" = "openrouter" ]; then
+            FULL_MODEL="openrouter/${NEW_MODEL}"
+        else
+            FULL_MODEL="${NEW_MODEL}"
+        fi
+        CURRENT_PRIMARY=$(docker exec openclaw-gateway cat /tmp/openclaw/openclaw.json 2>/dev/null | jq -r '.agents.defaults.model.primary // empty' 2>/dev/null || true)
+        if [ -z "$CURRENT_PRIMARY" ]; then
+            CURRENT_PRIMARY=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.agents.defaults.model.primary // empty' 2>/dev/null || true)
+        fi
+        if [ "$CURRENT_PRIMARY" != "$FULL_MODEL" ]; then
+            docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "$FULL_MODEL" 2>/dev/null || true
+            echo "model primary set to $FULL_MODEL (was $CURRENT_PRIMARY)"
+        fi
+    fi
 
     # Write Google OAuth credential files for gog CLI
     GOG_DIR="/opt/openclaw/data/openclaw/.config/gogcli"
