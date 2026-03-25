@@ -149,23 +149,14 @@ fi
 // the CLI "openclaw models set" loop which changes the primary as a side
 // effect of each registration, causing race conditions with the RPC.
 // config.patch applies live (no restart) and persists to the JSON file.
+//
+// Retries up to 3 times with backoff because a previous sync's SSH script
+// may still be running Telegram `config set` CLI commands which cause the
+// gateway to reload, briefly making port 18789 unreachable.
 func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model string, allModelIDs []string) error {
 	fullModel := model
 	if provider == "openrouter" {
 		fullModel = "openrouter/" + model
-	}
-
-	// First, get the current config hash (required by config.patch)
-	getResult, err := openclawRPC(ctx, ipv4, authToken, "config.get", map[string]any{})
-	if err != nil {
-		return fmt.Errorf("config.get: %w", err)
-	}
-
-	var configResp struct {
-		Hash string `json:"hash"`
-	}
-	if err := json.Unmarshal(getResult, &configResp); err != nil || configResp.Hash == "" {
-		return fmt.Errorf("config.get: missing hash")
 	}
 
 	// Build the models map for registration in OC dashboard dropdown
@@ -178,8 +169,6 @@ func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model stri
 		modelsMap[fmid] = map[string]any{}
 	}
 
-	// Single atomic patch: set primary + register all models.
-	// config.patch requires {raw: "<json string>", hash: "<current hash>"}.
 	patch := map[string]any{
 		"agents": map[string]any{
 			"defaults": map[string]any{
@@ -192,14 +181,40 @@ func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model stri
 	}
 	patchJSON, _ := json.Marshal(patch)
 
-	_, err = openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
-		"raw":      string(patchJSON),
-		"baseHash": configResp.Hash,
-	})
-	if err != nil {
-		return fmt.Errorf("config.patch: %w", err)
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			slog.Info("patchModelConfig: retrying", "attempt", attempt, "ip", ipv4)
+			time.Sleep(time.Duration(attempt*3) * time.Second)
+		}
+
+		// Get the current config hash (required by config.patch)
+		getResult, err := openclawRPC(ctx, ipv4, authToken, "config.get", map[string]any{})
+		if err != nil {
+			lastErr = fmt.Errorf("config.get (attempt %d): %w", attempt, err)
+			continue
+		}
+
+		var configResp struct {
+			Hash string `json:"hash"`
+		}
+		if err := json.Unmarshal(getResult, &configResp); err != nil || configResp.Hash == "" {
+			lastErr = fmt.Errorf("config.get: missing hash (attempt %d)", attempt)
+			continue
+		}
+
+		// Single atomic patch: set primary + register all models.
+		_, err = openclawRPC(ctx, ipv4, authToken, "config.patch", map[string]any{
+			"raw":      string(patchJSON),
+			"baseHash": configResp.Hash,
+		})
+		if err != nil {
+			lastErr = fmt.Errorf("config.patch (attempt %d): %w", attempt, err)
+			continue
+		}
+		return nil
 	}
-	return nil
+	return lastErr
 }
 
 // SyncConfigHandler triggers an immediate config sync on the VPS by
