@@ -1258,6 +1258,7 @@
 
 				{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url}
 					<MagicMoment
+						previewUrl={instance.preview_url}
 						googleConnected={googleConnected}
 						onConnectGoogle={() => { googleConnectRequests++; }}
 					/>

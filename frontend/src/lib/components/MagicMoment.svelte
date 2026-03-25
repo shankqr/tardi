@@ -1,61 +1,108 @@
 <script lang="ts">
 	interface Props {
+		previewUrl?: string | null;
 		googleConnected?: boolean;
 		onConnectGoogle?: () => void;
 	}
 
-	let { googleConnected = false, onConnectGoogle = () => {} }: Props = $props();
+	let { previewUrl, googleConnected = false, onConnectGoogle = () => {} }: Props = $props();
 
-	let copiedIndex = $state<number | null>(null);
+	let copiedIndex = $state<string | null>(null);
 
-	const prompts = [
+	const servingInstruction = $derived(
+		previewUrl
+			? `Serve it on port 3000. IMPORTANT: The finished result will be publicly accessible at ${previewUrl} — make sure the app works correctly when visited at that URL. Use relative paths for all assets and links so everything loads properly.`
+			: 'Serve it on port 3000.'
+	);
+
+	const basePrompts = [
+		{
+			icon: '🌐',
+			title: 'Build a portfolio website',
+			description: 'Personal site with hero, projects, and contact form',
+			prompt:
+				'Build a personal portfolio website with a hero section, about me, projects gallery, and contact form. Use a modern dark theme with gradient accents.'
+		},
+		{
+			icon: '🚀',
+			title: 'Create a startup landing page',
+			description: 'Landing page for "FreshBite" meal delivery service',
+			prompt:
+				'Create a landing page for a startup called "FreshBite" — a healthy meal delivery service. Include a hero with CTA, feature highlights, pricing cards, testimonials section, and footer. Modern design.'
+		},
+		{
+			icon: '✅',
+			title: 'Build a full-stack todo app',
+			description: 'Todo app with SQLite, categories, and due dates',
+			prompt:
+				'Build a full-stack todo app with a SQLite database. Features: add, complete, delete tasks, with categories and due dates. Clean minimal UI.'
+		}
+	];
+
+	const webPrompts = $derived(
+		basePrompts.map((p) => ({
+			...p,
+			prompt: `${p.prompt} ${servingInstruction}`
+		}))
+	);
+
+	const googlePrompts = [
 		{
 			icon: '📅',
 			title: 'Plan my week',
 			description: 'Create a structured weekly schedule in Google Calendar',
 			prompt:
-				'Create a productive weekly schedule in my Google Calendar for next week. Add focused work blocks (9am-12pm), lunch break (12-1pm), meetings placeholder (2-3pm), and a Friday wrap-up session. Color-code by category. When done, return the Google Calendar link so I can review it.'
+				'Create a productive weekly schedule in my Google Calendar for next week. Add focused work blocks (9am-12pm), lunch break (12-1pm), meetings placeholder (2-3pm), and a Friday wrap-up session. Color-code by category. When done, return the Google Calendar link so I can review it.',
+			requiresGoogle: true
 		},
 		{
 			icon: '📧',
 			title: 'Draft a follow-up email',
 			description: 'Compose a professional follow-up and save it as a Gmail draft',
 			prompt:
-				"Create a Gmail draft for a polite follow-up email to a client named Alex about a project proposal I sent last week. Keep it professional but warm, mention I'm happy to jump on a call to discuss details. Save it as a draft in Gmail and return the link to the draft so I can review before sending."
+				"Create a Gmail draft for a polite follow-up email to a client named Alex about a project proposal I sent last week. Keep it professional but warm, mention I'm happy to jump on a call to discuss details. Save it as a draft in Gmail and return the link to the draft so I can review before sending.",
+			requiresGoogle: true
 		},
 		{
 			icon: '📝',
 			title: 'Write a meeting notes template',
 			description: 'Create a reusable meeting notes doc in Google Docs',
 			prompt:
-				'Create a Google Doc titled "Meeting Notes Template" with sections for: Date, Attendees, Agenda Items, Discussion Notes, Action Items (with owner and due date columns as a table), and Next Meeting. Format it cleanly with headers. Share the Google Doc URL with me so I can bookmark it.'
+				'Create a Google Doc titled "Meeting Notes Template" with sections for: Date, Attendees, Agenda Items, Discussion Notes, Action Items (with owner and due date columns as a table), and Next Meeting. Format it cleanly with headers. Share the Google Doc URL with me so I can bookmark it.',
+			requiresGoogle: true
 		},
 		{
 			icon: '📊',
 			title: 'Build a budget tracker',
 			description: 'Set up a personal budget spreadsheet in Google Sheets',
 			prompt:
-				'Create a Google Sheets personal budget tracker for this month. Include columns for Date, Category (groceries, dining, transport, entertainment, bills), Description, and Amount. Add a summary section at the top with totals per category using SUMIF formulas, and a remaining budget calculation assuming a $3,000 monthly budget. Return the Google Sheets URL so I can start logging expenses.'
+				'Create a Google Sheets personal budget tracker for this month. Include columns for Date, Category (groceries, dining, transport, entertainment, bills), Description, and Amount. Add a summary section at the top with totals per category using SUMIF formulas, and a remaining budget calculation assuming a $3,000 monthly budget. Return the Google Sheets URL so I can start logging expenses.',
+			requiresGoogle: true
 		},
 		{
 			icon: '📁',
 			title: 'Organize my Drive',
 			description: 'Create a project folder structure in Google Drive',
 			prompt:
-				'Create an organized folder structure in my Google Drive for a project called "Q2 Launch". Create subfolders: "01 - Planning", "02 - Design Assets", "03 - Content Drafts", "04 - Reviews & Feedback", and "05 - Final Deliverables". In the Planning folder, create a Google Doc called "Project Brief" with placeholder sections for Objectives, Timeline, Team, and Budget. Return the link to the main project folder.'
+				'Create an organized folder structure in my Google Drive for a project called "Q2 Launch". Create subfolders: "01 - Planning", "02 - Design Assets", "03 - Content Drafts", "04 - Reviews & Feedback", and "05 - Final Deliverables". In the Planning folder, create a Google Doc called "Project Brief" with placeholder sections for Objectives, Timeline, Team, and Budget. Return the link to the main project folder.',
+			requiresGoogle: true
 		}
 	];
 
-	function copyPrompt(index: number) {
+	function copyWebPrompt(index: number) {
+		navigator.clipboard.writeText(webPrompts[index].prompt);
+		copiedIndex = `web-${index}`;
+		setTimeout(() => { copiedIndex = null; }, 1500);
+	}
+
+	function copyGooglePrompt(index: number) {
 		if (!googleConnected) {
 			onConnectGoogle();
 			return;
 		}
-		navigator.clipboard.writeText(prompts[index].prompt);
-		copiedIndex = index;
-		setTimeout(() => {
-			copiedIndex = null;
-		}, 1500);
+		navigator.clipboard.writeText(googlePrompts[index].prompt);
+		copiedIndex = `google-${index}`;
+		setTimeout(() => { copiedIndex = null; }, 1500);
 	}
 </script>
 
@@ -69,16 +116,12 @@
 			<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Try Your Agent</h3>
 		</div>
 		<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-			Copy a prompt, paste it in your agent's dashboard, and watch it work with your Google apps.
+			Copy a prompt, open your agent's dashboard, and watch it build something real.
 		</p>
-		{#if !googleConnected}
-			<p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
-				Clicking a prompt will connect your Google account first
-			</p>
-		{/if}
 
+		<!-- Web dev prompts -->
 		<div class="mt-4 space-y-3">
-			{#each prompts as item, index}
+			{#each webPrompts as item, index}
 				<div
 					class="group rounded-lg border border-gray-100 dark:border-gray-700 p-3 transition-all hover:border-gray-300 dark:hover:border-gray-600"
 				>
@@ -91,10 +134,54 @@
 							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400 pl-7">{item.description}</p>
 						</div>
 						<button
-							onclick={() => copyPrompt(index)}
+							onclick={() => copyWebPrompt(index)}
 							class="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white"
 						>
-							{#if copiedIndex === index}
+							{#if copiedIndex === `web-${index}`}
+								<span class="text-green-600 dark:text-green-400">Copied!</span>
+							{:else}
+								Copy
+							{/if}
+						</button>
+					</div>
+				</div>
+			{/each}
+		</div>
+
+		<!-- Google Workspace prompts -->
+		<div class="mt-5 flex items-center gap-2">
+			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="h-4 w-4">
+				<path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+				<path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+				<path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+				<path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+			</svg>
+			<h4 class="text-xs font-semibold text-gray-700 dark:text-gray-300">Google Workspace</h4>
+		</div>
+		{#if !googleConnected}
+			<p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+				Clicking a prompt below will connect your Google account first
+			</p>
+		{/if}
+
+		<div class="mt-3 space-y-3">
+			{#each googlePrompts as item, index}
+				<div
+					class="group rounded-lg border border-gray-100 dark:border-gray-700 p-3 transition-all hover:border-gray-300 dark:hover:border-gray-600"
+				>
+					<div class="flex items-start justify-between gap-3">
+						<div class="min-w-0 flex-1">
+							<div class="flex items-center gap-2">
+								<span class="text-base">{item.icon}</span>
+								<p class="text-sm font-medium text-gray-900 dark:text-white">{item.title}</p>
+							</div>
+							<p class="mt-1 text-xs text-gray-500 dark:text-gray-400 pl-7">{item.description}</p>
+						</div>
+						<button
+							onclick={() => copyGooglePrompt(index)}
+							class="shrink-0 rounded-md border border-gray-200 dark:border-gray-600 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white"
+						>
+							{#if copiedIndex === `google-${index}`}
 								<span class="text-green-600 dark:text-green-400">Copied!</span>
 							{:else if !googleConnected}
 								Connect & Copy
