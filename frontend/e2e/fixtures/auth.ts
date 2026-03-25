@@ -30,8 +30,23 @@ export async function loginWithCredentials(
 /**
  * Navigate to the first instance detail page from the dashboard.
  * Returns false if no instance is found (caller should skip the test).
+ *
+ * Waits for the dashboard API polling to populate the instance list before
+ * checking for instance links — the dashboard loads a shell first, then
+ * fetches state via /api/dashboard/state which populates instance cards.
  */
 export async function navigateToInstance(page: Page): Promise<boolean> {
+	// Wait for the dashboard API polling to finish — the page shows "Loading dashboard..."
+	// until /api/dashboard/state returns, then renders either instance cards or deploy form.
+	// First wait for the loading indicator to disappear, then check for content.
+	const loading = page.getByText('Loading dashboard...');
+	await loading.waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => {});
+
+	// Now wait for actual dashboard content (use heading role to avoid matching description text)
+	await expect(
+		page.getByRole('heading', { name: 'Your Agent' }).or(page.getByRole('heading', { name: 'Deploy your agent' })).first()
+	).toBeVisible({ timeout: 15_000 });
+
 	const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
 	const hasInstance = await instanceLink
 		.isVisible({ timeout: 15_000 })
@@ -61,6 +76,12 @@ export const test = base.extend<{ authedPage: Page }>({
 			);
 		}
 		await loginWithCredentials(page, PERSISTENT_EMAIL, PERSISTENT_PASSWORD);
+		// Wait for dashboard API polling to finish loading
+		const loading = page.getByText('Loading dashboard...');
+		await loading.waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => {});
+		await expect(
+			page.getByRole('heading', { name: 'Your Agent' }).or(page.getByText('Deploy your agent').first())
+		).toBeVisible({ timeout: 15_000 });
 		await use(page);
 	},
 });

@@ -84,7 +84,7 @@ test.describe('Subscription lifecycle', () => {
 
 				// Wait for dashboard to load
 				await expect(
-					page.getByText('Your Agent').or(page.getByText('Deploy your agent'))
+					page.getByRole('heading', { name: 'Your Agent' }).or(page.getByRole('heading', { name: 'Deploy your agent' })).first()
 				).toBeVisible({ timeout: 15_000 });
 
 				// Check for cancellation warning banner

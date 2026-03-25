@@ -257,7 +257,7 @@ test('Full user journey: signup → deploy → configure → telegram', async ({
 			}
 		}
 
-		await expect(page.getByText('Your Agent')).toBeVisible({
+		await expect(page.getByRole('heading', { name: 'Your Agent' })).toBeVisible({
 			timeout: 15_000,
 		});
 	});

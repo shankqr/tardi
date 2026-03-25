@@ -5,7 +5,7 @@ test.describe('Network error handling', () => {
 
 	test('dashboard handles API failure gracefully', async ({ authedPage: page }) => {
 		// Wait for dashboard to fully load first
-		await expect(page.getByText('Your Agent').or(page.getByText('Deploy your agent'))).toBeVisible({ timeout: 15_000 });
+		await expect(page.getByRole('heading', { name: 'Your Agent' }).or(page.getByRole('heading', { name: 'Deploy your agent' })).first()).toBeVisible({ timeout: 15_000 });
 
 		// Intercept the dashboard state API and return a 500
 		await page.route('**/api/dashboard/state', (route) => {
