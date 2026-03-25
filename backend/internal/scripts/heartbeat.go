@@ -230,15 +230,6 @@ if [ "$STATUS" = "running" ]; then
     if [ -n "$EXPECTED_PRIMARY" ] && [ "$CURRENT_PRIMARY" != "$EXPECTED_PRIMARY" ]; then
         docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "$EXPECTED_PRIMARY" 2>/dev/null || true
     fi
-
-    # Ensure thinkingDefault is off to prevent empty replies from reasoning
-    # models (e.g. nemotron). OC auto-enables reasoning for OpenRouter models
-    # but its streaming parser only reads content, not reasoning field.
-    # TODO: revert when OC fixes issue #27806 properly.
-    CURRENT_THINKING=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.agents.defaults.thinkingDefault // empty' 2>/dev/null || true)
-    if [ "$CURRENT_THINKING" != "off" ]; then
-        docker exec openclaw-gateway openclaw config set agents.defaults.thinkingDefault off 2>/dev/null || true
-    fi
 fi
 
 # --- Remove orphaned Caddy container if still running ---

@@ -184,12 +184,6 @@ func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model stri
 					"primary": fullModel,
 				},
 				"models": modelsMap,
-				// Disable reasoning/thinking globally to prevent empty replies
-				// from reasoning models (e.g. nemotron). OC auto-enables reasoning
-				// for models with reasoning:true in the OpenRouter catalog, but its
-				// streaming parser doesn't handle the reasoning field — only content.
-				// TODO: revert when OC fixes issue #27806 properly.
-				"thinkingDefault": "off",
 			},
 		},
 	}
