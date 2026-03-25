@@ -407,6 +407,12 @@ if [ "$HEALTHY" = true ]; then
 {{- end}}
 {{- end}}
 
+    # Disable reasoning/thinking to prevent empty replies from reasoning models
+    # (e.g. nemotron). OC auto-enables reasoning for OpenRouter models with
+    # reasoning:true but its streaming parser only reads content, not reasoning.
+    # TODO: revert when OC fixes issue #27806 properly.
+    docker exec openclaw-gateway openclaw config set agents.defaults.thinkingDefault off 2>/dev/null
+
     # Fix Telegram config if bot token is set:
     # - streaming:"off" prevents double replies (OpenClaw defaults to "partial")
     # - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
