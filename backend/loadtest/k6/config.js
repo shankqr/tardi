@@ -24,3 +24,15 @@ export const STRESS_THRESHOLDS = {
   http_req_duration: ["p(95)<2000"],
   http_req_failed: ["rate<0.05"],
 };
+
+// Dev environment thresholds — accounts for minimal Cloud Run + db-f1-micro infra.
+// Use these when running against dev (2 instances, 1 CPU, 512Mi, micro DB).
+export const DEV_THRESHOLDS = {
+  http_req_duration: ["p(95)<5000", "p(99)<10000"],
+  http_req_failed: ["rate<0.15"],
+};
+
+export const DEV_STRESS_THRESHOLDS = {
+  http_req_duration: ["p(95)<8000"],
+  http_req_failed: ["rate<0.35"],
+};

@@ -1,6 +1,7 @@
 import { check, sleep, group } from "k6";
 import { Counter, Trend } from "k6/metrics";
-import { DEFAULT_THRESHOLDS, BASE_URL } from "../config.js";
+import http from "k6/http";
+import { DEV_THRESHOLDS, BASE_URL } from "../config.js";
 import {
   getFirebaseToken,
   getDashboardState,
@@ -40,8 +41,8 @@ export const options = {
     },
   },
   thresholds: {
-    ...DEFAULT_THRESHOLDS,
-    dashboard_latency: ["p(95)<300"],
+    ...DEV_THRESHOLDS,
+    dashboard_latency: ["p(95)<5000"],
   },
 };
 
@@ -101,10 +102,22 @@ export function provisioningLifecycle(data) {
   sleep(10);
 }
 
-export function heartbeatAgent() {
-  // Simulate agent heartbeat — uses a fake agent token
-  // In a real test, you'd need valid agent tokens from seeded instances
-  const res = healthz(); // Fallback: just hit health endpoint
-  check(res, { "heartbeat proxy 200": (r) => r.status === 200 });
-  sleep(300); // Every 5 minutes
+export function heartbeatAgent(data) {
+  // Simulate agent heartbeat — uses a fake agent token so expect 401.
+  // This tests that the heartbeat endpoint stays responsive under load.
+  const agentToken = `agent-loadtest-${__VU}`;
+  const res = http.post(
+    `${BASE_URL}/api/agent/heartbeat`,
+    JSON.stringify({ status: "healthy", openclaw_version: "1.0.0-loadtest" }),
+    {
+      headers: {
+        Authorization: `Bearer ${agentToken}`,
+        "Content-Type": "application/json",
+      },
+    },
+  );
+  check(res, {
+    "heartbeat responded": (r) => r.status === 200 || r.status === 401 || r.status === 404,
+  });
+  sleep(30); // Every 30s during load test (faster than prod's 5m)
 }

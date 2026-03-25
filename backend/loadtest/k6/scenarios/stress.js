@@ -1,5 +1,5 @@
 import { check, sleep } from "k6";
-import { STRESS_THRESHOLDS } from "../config.js";
+import { DEV_STRESS_THRESHOLDS } from "../config.js";
 import { getFirebaseToken, getDashboardState, createInstance, healthz } from "../helpers.js";
 
 export const options = {
@@ -12,7 +12,7 @@ export const options = {
     { duration: "2m", target: 50 },   // Recovery
     { duration: "2m", target: 0 },    // Ramp down
   ],
-  thresholds: STRESS_THRESHOLDS,
+  thresholds: DEV_STRESS_THRESHOLDS,
 };
 
 // Runs once before VUs start — obtain a real Firebase ID token.

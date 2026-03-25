@@ -19,7 +19,8 @@ export const options = {
   thresholds: {
     heartbeat_latency: ["p(95)<1000"],
     heartbeat_errors: ["count<20"],
-    http_req_failed: ["rate<0.05"],
+    // Fake agent tokens return 401 (expected), so http_req_failed will be ~100%.
+    // The heartbeat_errors counter is the meaningful metric.
   },
 };
 

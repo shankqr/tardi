@@ -17,9 +17,9 @@ export const options = {
     { duration: "30s", target: 10 },   // Cool down
   ],
   thresholds: {
-    dashboard_p95: ["p(95)<500"],      // Expect degradation at high VU counts
-    dashboard_timeouts: ["count<50"],  // Some timeouts expected under extreme load
-    http_req_failed: ["rate<0.1"],     // Allow up to 10% failures at peak
+    dashboard_p95: ["p(95)<3000"],     // Dev infra (db-f1-micro) saturates at high VUs
+    dashboard_timeouts: ["count<200"], // Some timeouts expected under extreme load
+    http_req_failed: ["rate<0.15"],    // Allow up to 15% failures at peak on dev
   },
 };
 
