@@ -131,6 +131,13 @@ fi
 # OpenClaw resets Telegram config to bad defaults on every container restart
 # (Docker auto-restarts from crashes/OOM bypass all other config-sync paths).
 # Check actual config and fix if drifted. Cost: 1 cat+jq when config is fine.
+#
+# Two levels need guarding:
+# 1. Top-level channels.telegram.* — the channel-wide defaults
+# 2. Account-level channels.telegram.accounts.<name>.* — per-bot overrides
+#    OpenClaw auto-creates account entries with dmPolicy:"pairing" and
+#    streaming:"partial" which OVERRIDE the top-level settings, causing
+#    the bot to silently ignore DMs and send double replies.
 TG_TOKEN_SET=$(grep -c '^TELEGRAM_BOT_TOKEN=.\+' /opt/openclaw/.env 2>/dev/null || echo "0")
 if [ "$TG_TOKEN_SET" -gt 0 ] && [ "$STATUS" = "running" ]; then
     TG_CONFIG=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null)
@@ -143,6 +150,19 @@ if [ "$TG_TOKEN_SET" -gt 0 ] && [ "$STATUS" = "running" ]; then
         docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
     fi
+
+    # Fix account-level overrides: OpenClaw auto-creates accounts with bad defaults
+    # (dmPolicy:"pairing", streaming:"partial") that override the top-level settings.
+    TG_ACCOUNTS=$(echo "$TG_CONFIG" | jq -r '.channels.telegram.accounts // {} | keys[]' 2>/dev/null)
+    for ACCT in $TG_ACCOUNTS; do
+        ACCT_DM=$(echo "$TG_CONFIG" | jq -r ".channels.telegram.accounts[\"$ACCT\"].dmPolicy // \"unknown\"" 2>/dev/null)
+        ACCT_STREAM=$(echo "$TG_CONFIG" | jq -r ".channels.telegram.accounts[\"$ACCT\"].streaming // \"unknown\"" 2>/dev/null)
+        if [ "$ACCT_DM" != "open" ] || [ "$ACCT_STREAM" != "off" ]; then
+            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.dmPolicy" open 2>/dev/null
+            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.streaming" off 2>/dev/null
+            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.allowFrom" '["*"]' 2>/dev/null
+        fi
+    done
 fi
 
 # --- Model drift guard (runs every heartbeat) ---
@@ -452,12 +472,21 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
             # - streaming:"off" prevents double replies (OpenClaw defaults to "partial")
             # - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
             # - groupPolicy:"disabled" ignores group messages
+            # Also fix account-level overrides that OpenClaw auto-creates with bad defaults.
             if [ -n "$NEW_TG_TOKEN" ]; then
                 docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
                 docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
                 docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
                 docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
                 docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
+
+                # Fix account-level overrides
+                SYNC_TG_ACCOUNTS=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.channels.telegram.accounts // {} | keys[]' 2>/dev/null)
+                for ACCT in $SYNC_TG_ACCOUNTS; do
+                    docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.dmPolicy" open 2>/dev/null
+                    docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.streaming" off 2>/dev/null
+                    docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.allowFrom" '["*"]' 2>/dev/null
+                done
             fi
 
             # Register all Tardi catalog models so OC dashboard dropdown matches.
@@ -555,6 +584,7 @@ if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
         # Re-apply Telegram config after version update — OpenClaw auto-detects
         # TELEGRAM_BOT_TOKEN on startup and resets to bad defaults (streaming:"partial",
         # restrictive dmPolicy) which causes double replies and pairing prompts.
+        # Also fix account-level overrides that OpenClaw auto-creates.
         TG_TOKEN_SET=$(grep -c '^TELEGRAM_BOT_TOKEN=.\+' /opt/openclaw/.env 2>/dev/null || echo "0")
         if [ "$TG_TOKEN_SET" -gt 0 ]; then
             docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
@@ -562,6 +592,14 @@ if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
             docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
             docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
             docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
+
+            # Fix account-level overrides
+            UPD_TG_ACCOUNTS=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.channels.telegram.accounts // {} | keys[]' 2>/dev/null)
+            for ACCT in $UPD_TG_ACCOUNTS; do
+                docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.dmPolicy" open 2>/dev/null
+                docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.streaming" off 2>/dev/null
+                docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.allowFrom" '["*"]' 2>/dev/null
+            done
         fi
 
         # Clean up old images to save disk space

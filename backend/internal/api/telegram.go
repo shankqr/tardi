@@ -168,15 +168,45 @@ func patchTelegramConfig(ctx context.Context, ipv4, authToken string) error {
 	// config.patch requires {raw: "<json string>", hash: "<current hash>"}.
 	// - streaming:"off" prevents double replies (the actual root cause)
 	// - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
+	// Also fix account-level overrides: OpenClaw auto-creates account entries
+	// with dmPolicy:"pairing" and streaming:"partial" which override top-level settings.
+	telegramPatch := map[string]any{
+		"enabled":     true,
+		"streaming":   "off",
+		"dmPolicy":    "open",
+		"allowFrom":   []string{"*"},
+		"groupPolicy": "disabled",
+	}
+
+	// Parse current config to find and fix account-level overrides.
+	// config.get response may have config at top level or nested under "config" key.
+	var resp map[string]any
+	if err := json.Unmarshal(getResult, &resp); err == nil {
+		// Try top-level first, then nested "config" key
+		cfg := resp
+		if nested, ok := resp["config"].(map[string]any); ok {
+			cfg = nested
+		}
+		if channels, ok := cfg["channels"].(map[string]any); ok {
+			if tg, ok := channels["telegram"].(map[string]any); ok {
+				if accts, ok := tg["accounts"].(map[string]any); ok && len(accts) > 0 {
+					accounts := make(map[string]any)
+					for name := range accts {
+						accounts[name] = map[string]any{
+							"dmPolicy":  "open",
+							"streaming": "off",
+							"allowFrom": []string{"*"},
+						}
+					}
+					telegramPatch["accounts"] = accounts
+				}
+			}
+		}
+	}
+
 	patch := map[string]any{
 		"channels": map[string]any{
-			"telegram": map[string]any{
-				"enabled":     true,
-				"streaming":   "off",
-				"dmPolicy":    "open",
-				"allowFrom":   []string{"*"},
-				"groupPolicy": "disabled",
-			},
+			"telegram": telegramPatch,
 		},
 	}
 	patchJSON, _ := json.Marshal(patch)

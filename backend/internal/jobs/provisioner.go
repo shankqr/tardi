@@ -412,12 +412,21 @@ if [ "$HEALTHY" = true ]; then
     # - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
     # - groupPolicy:"disabled" ignores group messages
     # Must set allowFrom before dmPolicy (validation requires it)
+    # Also fix account-level overrides that OpenClaw auto-creates with bad defaults.
     if grep -q '^TELEGRAM_BOT_TOKEN=.' /opt/openclaw/.env 2>/dev/null; then
         docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
+
+        # Fix account-level overrides
+        PROV_TG_ACCOUNTS=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.channels.telegram.accounts // {} | keys[]' 2>/dev/null)
+        for ACCT in $PROV_TG_ACCOUNTS; do
+            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.dmPolicy" open 2>/dev/null
+            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.streaming" off 2>/dev/null
+            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.allowFrom" '["*"]' 2>/dev/null
+        done
     fi
 fi
 
