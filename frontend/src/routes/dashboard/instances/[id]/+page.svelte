@@ -460,6 +460,55 @@
 		}
 	}
 
+	// Restore "Applying Config" state on page load if a sync is still running
+	// on the backend. This survives navigation because we query the actual
+	// systemd unit state on the VPS rather than relying on in-memory flags.
+	let syncChecked = false;
+	let restoredSyncPollTimer: ReturnType<typeof setInterval> | null = null;
+	$effect(() => {
+		if (instance?.status === 'active' && !syncChecked) {
+			syncChecked = true;
+			(async () => {
+				try {
+					const token = await getIdToken();
+					if (!token) {
+						syncChecked = false;
+						return;
+					}
+					const result = await getSyncStatus(token, instance.id);
+					if (result.status === 'running') {
+						// A sync is in progress — restore the syncing UI
+						aiConfigSyncing = true;
+						restoredSyncPollTimer = setInterval(async () => {
+							try {
+								const t = await getIdToken();
+								if (!t) return;
+								const r = await getSyncStatus(t, instance.id);
+								if (r.status === 'completed' || r.status === 'failed') {
+									aiConfigSyncing = false;
+									if (restoredSyncPollTimer) {
+										clearInterval(restoredSyncPollTimer);
+										restoredSyncPollTimer = null;
+									}
+								}
+							} catch {
+								// ignore poll errors
+							}
+						}, 5000);
+					}
+				} catch {
+					syncChecked = false;
+				}
+			})();
+		}
+		return () => {
+			if (restoredSyncPollTimer) {
+				clearInterval(restoredSyncPollTimer);
+				restoredSyncPollTimer = null;
+			}
+		};
+	});
+
 	// Check Telegram status on load (token exists in config = connected)
 	// Uses a plain flag (not $state) to avoid re-triggering the effect.
 	let configChecked = false;
