@@ -293,6 +293,7 @@ services:
       - "${DOCKER_GID}"
     volumes:
       - ./data/openclaw:/home/node/.openclaw:rw
+      - ./data/gogcli:/home/node/.config/gogcli:rw
       - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env

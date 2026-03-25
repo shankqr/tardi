@@ -121,7 +121,7 @@ if [ "$HEALTHY" = true ]; then
     fi
 
     # Write Google OAuth credential files for gog CLI
-    GOG_DIR="/opt/openclaw/data/openclaw/.config/gogcli"
+    GOG_DIR="/opt/openclaw/data/gogcli"
     if [ -n "$NEW_GOOGLE_TOKEN" ] && [ -n "$NEW_GOOGLE_EMAIL" ]; then
         mkdir -p "$GOG_DIR/tokens"
         [ -n "$NEW_GOOGLE_CLIENT" ] && printf '%s' "$NEW_GOOGLE_CLIENT" | base64 -d > "$GOG_DIR/credentials.json"
