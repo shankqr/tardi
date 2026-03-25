@@ -1,0 +1,42 @@
+import { check, sleep } from "k6";
+import { Trend, Counter } from "k6/metrics";
+import { DEFAULT_THRESHOLDS } from "../config.js";
+import { getDashboardState } from "../helpers.js";
+
+const dashboardLatency = new Trend("dashboard_p95");
+const timeouts = new Counter("dashboard_timeouts");
+
+export const options = {
+  // Ramp from 10 to 500 VUs to find the pool saturation inflection point
+  stages: [
+    { duration: "30s", target: 10 },   // Warm up
+    { duration: "1m", target: 50 },    // Light load
+    { duration: "1m", target: 100 },   // Normal load
+    { duration: "1m", target: 200 },   // Heavy load
+    { duration: "1m", target: 500 },   // Stress — expect pool saturation
+    { duration: "30s", target: 10 },   // Cool down
+  ],
+  thresholds: {
+    dashboard_p95: ["p(95)<500"],      // Expect degradation at high VU counts
+    dashboard_timeouts: ["count<50"],  // Some timeouts expected under extreme load
+    http_req_failed: ["rate<0.1"],     // Allow up to 10% failures at peak
+  },
+};
+
+export default function () {
+  const vuId = `dashboard-${__VU}`;
+  const res = getDashboardState(vuId);
+
+  dashboardLatency.add(res.timings.duration);
+
+  const ok = check(res, {
+    "status 200": (r) => r.status === 200,
+    "under 1s": (r) => r.timings.duration < 1000,
+  });
+
+  if (res.timings.duration > 5000) {
+    timeouts.add(1);
+  }
+
+  sleep(5); // Match frontend polling interval
+}
