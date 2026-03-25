@@ -38,6 +38,7 @@ export interface VpsInstance {
 	root_password?: string | null;
 	region: string;
 	agent_status: string | null;
+	agent_error?: string | null;
 	last_heartbeat_at: string | null;
 	dashboard_url: string | null;
 	openclaw_auth_token?: string | null;

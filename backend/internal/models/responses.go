@@ -24,6 +24,7 @@ type InstanceResponse struct {
 	Region          string  `json:"region"`
 	RootPassword      *string `json:"root_password,omitempty"`
 	AgentStatus       *string `json:"agent_status"`
+	AgentError        *string `json:"agent_error"`
 	LastHeartbeatAt   *string `json:"last_heartbeat_at"`
 	DashboardURL      *string `json:"dashboard_url"`
 	OpenClawAuthToken    *string `json:"openclaw_auth_token,omitempty"`
@@ -60,6 +61,7 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 	}
 	// root_password intentionally omitted — frontend fetches via reset endpoint
 	r.AgentStatus = inst.AgentStatus
+	r.AgentError = inst.AgentError
 	r.OpenClawAuthToken = inst.OpenClawAuthToken
 	r.OpenClawVersion = inst.OpenClawVersion
 	r.OpenClawUpdateStatus = inst.OpenClawUpdateStatus

@@ -102,6 +102,7 @@ type VpsInstance struct {
 	AgentTokenSecretName *string
 	OpenClawAuthToken    *string
 	AgentStatus              *string
+	AgentError               *string
 	LastHeartbeatAt          *time.Time
 	OpenClawVersion          *string
 	TargetOpenClawVersion    *string

@@ -843,7 +843,7 @@ func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.Provisio
 			resp.Body.Close()
 			if resp.StatusCode == 200 {
 				p.logger.Info("provisioner: agent health check passed", "instance_id", job.VpsInstanceID)
-				_ = db.UpdateInstanceHeartbeat(ctx, p.pool, inst.ID, nil)
+				_ = db.UpdateInstanceHeartbeat(ctx, p.pool, inst.ID, nil, nil)
 				return nil
 			}
 			p.logger.Debug("provisioner: agent health non-200", "status", resp.StatusCode, "instance_id", job.VpsInstanceID)

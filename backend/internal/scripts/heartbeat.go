@@ -104,11 +104,22 @@ CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://' | tr -d '[:space:]')
 UPDATE_STATUS=$(cat /opt/openclaw/.update_status 2>/dev/null || echo "")
 UPDATE_ERROR=$(cat /opt/openclaw/.update_error 2>/dev/null || echo "")
 
+# Check for provider errors in recent docker logs
+AGENT_ERROR=""
+if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
+    RECENT_LOGS=$(docker logs openclaw-gateway --tail 100 --since 10m 2>&1)
+    if echo "$RECENT_LOGS" | grep -qi "key limit exceeded"; then
+        AGENT_ERROR="openrouter_credits_exhausted"
+    elif echo "$RECENT_LOGS" | grep -qi "invalid.*api.*key\|authentication.*failed"; then
+        AGENT_ERROR="invalid_api_key"
+    fi
+fi
+
 # Send heartbeat with version info and capture response
 RESPONSE=$(curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
     -H "Authorization: Bearer ${AGENT_TOKEN}" \
     -H "Content-Type: application/json" \
-    -d "{\"status\":\"${STATUS}\",\"openclaw_version\":\"${CURRENT_TAG}\",\"openclaw_update_status\":\"${UPDATE_STATUS}\",\"openclaw_update_error\":\"${UPDATE_ERROR}\"}" 2>/dev/null)
+    -d "{\"status\":\"${STATUS}\",\"openclaw_version\":\"${CURRENT_TAG}\",\"openclaw_update_status\":\"${UPDATE_STATUS}\",\"openclaw_update_error\":\"${UPDATE_ERROR}\",\"agent_error\":\"${AGENT_ERROR}\"}" 2>/dev/null)
 
 # --- Telegram config drift guard (runs every heartbeat) ---
 # OpenClaw resets Telegram config to bad defaults on every container restart

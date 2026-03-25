@@ -143,6 +143,7 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			OpenClawVersion      string `json:"openclaw_version"`
 			OpenClawUpdateStatus string `json:"openclaw_update_status"`
 			OpenClawUpdateError  string `json:"openclaw_update_error"`
+			AgentError           string `json:"agent_error"`
 		}
 		json.NewDecoder(r.Body).Decode(&body)
 
@@ -151,7 +152,12 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			agentStatus = &body.Status
 		}
 
-		if err := db.UpdateInstanceHeartbeat(r.Context(), deps.Pool, inst.ID, agentStatus); err != nil {
+		var agentError *string
+		if body.AgentError != "" {
+			agentError = &body.AgentError
+		}
+
+		if err := db.UpdateInstanceHeartbeat(r.Context(), deps.Pool, inst.ID, agentStatus, agentError); err != nil {
 			slog.Error("agent heartbeat: update", "error", err)
 			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to record heartbeat")
 			return

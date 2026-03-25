@@ -124,7 +124,7 @@ func (m *MockProvider) CreateServer(ctx context.Context, req CreateServerRequest
 					return
 				}
 
-				if err := db.UpdateInstanceHeartbeat(context.Background(), m.pool, instanceID, nil); err != nil {
+				if err := db.UpdateInstanceHeartbeat(context.Background(), m.pool, instanceID, nil, nil); err != nil {
 					m.logger.Error("mock: heartbeat write failed",
 						"instance_id", instanceIDStr, "error", err)
 					return

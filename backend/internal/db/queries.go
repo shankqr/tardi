@@ -143,7 +143,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running','failed') ORDER BY updated_at DESC LIMIT 1),
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
@@ -163,7 +163,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status, &inst.Step,
-			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 			&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 			&inst.CreatedAt, &inst.UpdatedAt,
@@ -182,7 +182,7 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running','failed') ORDER BY updated_at DESC LIMIT 1),
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
@@ -192,7 +192,7 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status, &inst.Step,
-		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 		&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 		&inst.CreatedAt, &inst.UpdatedAt,
@@ -242,10 +242,10 @@ func UpdateInstanceProviderInfo(ctx context.Context, pool *pgxpool.Pool, instanc
 }
 
 // UpdateInstanceHeartbeat records the latest heartbeat and optional agent status.
-func UpdateInstanceHeartbeat(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, agentStatus *string) error {
+func UpdateInstanceHeartbeat(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, agentStatus *string, agentError *string) error {
 	_, err := pool.Exec(ctx, `
-		UPDATE vps_instances SET last_heartbeat_at = now(), agent_status = COALESCE($2, agent_status), updated_at = now() WHERE id = $1
-	`, instanceID, agentStatus)
+		UPDATE vps_instances SET last_heartbeat_at = now(), agent_status = COALESCE($2, agent_status), agent_error = $3, updated_at = now() WHERE id = $1
+	`, instanceID, agentStatus, agentError)
 	if err != nil {
 		return fmt.Errorf("update heartbeat: %w", err)
 	}
@@ -507,7 +507,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
@@ -526,7 +526,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
-			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 			&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 			&inst.CreatedAt, &inst.UpdatedAt,
@@ -671,7 +671,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 	rows, err := pool.Query(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
@@ -690,7 +690,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
-			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 			&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 			&inst.CreatedAt, &inst.UpdatedAt,
@@ -899,7 +899,7 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 	err := pool.QueryRow(ctx, `
 		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
-		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
+		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id,
 		       created_at, updated_at
@@ -909,7 +909,7 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
-		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,
+		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 		&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID,
 		&inst.CreatedAt, &inst.UpdatedAt,

@@ -771,10 +771,17 @@
 										Applying Config
 									</span>
 								{:else if instance.agent_status === 'running'}
-									<span class="inline-flex items-center gap-1.5 text-green-700 dark:text-green-400">
-										<span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
-										Running
-									</span>
+									{#if instance.agent_error}
+										<span class="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+											<span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+											Degraded
+										</span>
+									{:else}
+										<span class="inline-flex items-center gap-1.5 text-green-700 dark:text-green-400">
+											<span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+											Running
+										</span>
+									{/if}
 								{:else if instance.agent_status === 'unhealthy'}
 									<span class="inline-flex items-center gap-1.5 text-yellow-700 dark:text-yellow-400">
 										<span class="h-1.5 w-1.5 rounded-full bg-yellow-500"></span>
@@ -1159,6 +1166,20 @@
 										</div>
 									{/if}
 								</div>
+							{/if}
+						</div>
+					{/if}
+
+					{#if !isConfigSyncing && !isProvisioning && !activationCooloff && instance.agent_error}
+						<div class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-800 dark:text-red-400">
+							{#if instance.agent_error === 'openrouter_credits_exhausted'}
+								<p class="font-medium">OpenRouter API credits exhausted</p>
+								<p class="mt-1">Your OpenRouter API key has hit its credit limit. <a href="https://openrouter.ai/settings/credits" target="_blank" rel="noopener" class="underline font-medium hover:text-red-900 dark:hover:text-red-300">Top up your credits</a> to resume.</p>
+							{:else if instance.agent_error === 'invalid_api_key'}
+								<p class="font-medium">Invalid API key</p>
+								<p class="mt-1">Your AI provider API key appears invalid. Update it in Settings below.</p>
+							{:else}
+								<p>{instance.agent_error}</p>
 							{/if}
 						</div>
 					{/if}
