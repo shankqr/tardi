@@ -645,7 +645,7 @@
 								</svg>
 							</div>
 							<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Setting up your agent</h3>
-							<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">This usually takes 2–3 minutes</p>
+							<p class="mt-2 text-sm text-gray-500 dark:text-gray-400">This usually takes 10–15 minutes</p>
 
 							<div class="mt-6 text-left">
 								{#if isProvisioning}
