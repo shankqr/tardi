@@ -30,7 +30,7 @@ test.describe('Settings page', () => {
 		await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 10_000 });
 
 		// Should show the user's email
-		await expect(page.getByText(EMAIL)).toBeVisible({ timeout: 10_000 });
+		await expect(page.getByText(EMAIL).first()).toBeVisible({ timeout: 10_000 });
 
 		// Should show back to dashboard link
 		await expect(page.getByRole('link', { name: /back to dashboard/i })).toBeVisible();

@@ -24,7 +24,7 @@ test.describe('Mobile responsive', () => {
 		await page.waitForTimeout(500);
 
 		// After clicking, the mobile menu should show Log in and Get Started links
-		await expect(page.getByRole('link', { name: 'Log in' })).toBeVisible();
+		await expect(page.getByRole('link', { name: 'Log in' }).first()).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Get Started' }).first()).toBeVisible();
 	});
 
