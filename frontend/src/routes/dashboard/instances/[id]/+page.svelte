@@ -42,6 +42,18 @@
 	let restarting = $state(false);
 	let actionError = $state<string | null>(null);
 
+	// Restart cooloff — prevents rapid successive restarts after server reboots
+	let restartCooloffUntil = $state(0);
+	let now = $state(Date.now());
+	const restartCooloff = $derived(now < restartCooloffUntil);
+	const restartCooloffRemaining = $derived(Math.ceil((restartCooloffUntil - now) / 1000));
+
+	$effect(() => {
+		if (!restartCooloff) return;
+		const timer = setInterval(() => { now = Date.now(); }, 1000);
+		return () => clearInterval(timer);
+	});
+
 	// Rename state
 	let editing = $state(false);
 	let editName = $state('');
@@ -252,6 +264,10 @@
 		if (previousStatus === 'snapshotting' && current === 'active')
 			snapshotResult = 'success';
 		if (previousStatus === 'snapshotting' && current === 'error') snapshotResult = 'failed';
+		if (previousStatus === 'restarting' && current === 'active') {
+			restartCooloffUntil = Date.now() + 60_000;
+			now = Date.now();
+		}
 		previousStatus = current;
 	});
 
@@ -1105,10 +1121,10 @@
 									<div class="flex gap-3">
 										<button
 											onclick={handleRestart}
-											disabled={restarting || instance.status !== 'active'}
+											disabled={restarting || restartCooloff || instance.status !== 'active'}
 											class="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
 										>
-											{instance.status === 'restarting' ? 'Restarting...' : restarting ? 'Restarting...' : 'Restart'}
+											{instance.status === 'restarting' ? 'Restarting...' : restarting ? 'Restarting...' : restartCooloff ? `Restart (${restartCooloffRemaining}s)` : 'Restart'}
 										</button>
 										<button
 											onclick={handleRunDoctor}
@@ -1194,10 +1210,10 @@
 								<span>Your agent appears stopped. Restart to bring it back online.</span>
 								<button
 									onclick={handleRestart}
-									disabled={restarting || instance.status !== 'active'}
+									disabled={restarting || restartCooloff || instance.status !== 'active'}
 									class="ml-3 shrink-0 rounded-md bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
 								>
-									{restarting ? 'Restarting...' : 'Restart'}
+									{restarting ? 'Restarting...' : restartCooloff ? `Restart (${restartCooloffRemaining}s)` : 'Restart'}
 								</button>
 							{:else}
 								<span>Your agent appears unhealthy. Run a health check to diagnose the issue.</span>
