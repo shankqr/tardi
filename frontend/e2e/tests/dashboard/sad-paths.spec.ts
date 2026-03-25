@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+persistent@gmail.com';
-const PASSWORD = process.env.E2E_TEST_PASSWORD || '';
+const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
+const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
 
 async function login(page: Page): Promise<void> {
 	await page.goto('/login');
@@ -19,7 +19,7 @@ async function login(page: Page): Promise<void> {
 }
 
 test.describe('Dashboard sad paths', () => {
-	test.skip(!PASSWORD, 'E2E_TEST_PASSWORD not set');
+	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('invalid instance ID shows not found', async ({ page }) => {
 		await login(page);
@@ -44,7 +44,7 @@ test.describe('Dashboard sad paths', () => {
 
 		await instanceLink.click();
 		await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
-		await expect(page.getByText('Snapshots')).toBeVisible({ timeout: 30_000 });
+		await expect(page.getByRole('heading', { name: 'Snapshots' })).toBeVisible({ timeout: 30_000 });
 
 		// Click "+ Create Snapshot" to expand form
 		const createToggle = page.getByRole('button', { name: '+ Create Snapshot' });
@@ -127,7 +127,9 @@ test.describe('Dashboard sad paths', () => {
 		await nameInput.clear();
 		await nameInput.pressSequentially(longName, { delay: 5 });
 
-		const saveButton = page.getByRole('button', { name: 'Save' });
+		// Scope Save button to the rename section (near the input)
+		const renameSection = nameInput.locator('..');
+		const saveButton = renameSection.getByRole('button', { name: 'Save' });
 		await expect(saveButton).toBeVisible();
 		await saveButton.click();
 
@@ -142,18 +144,17 @@ test.describe('Dashboard sad paths', () => {
 			console.log('[E2E] Long name correctly rejected with error');
 		} else if (nameChanged) {
 			console.log('[E2E] Long name accepted — restoring original');
-			// Restore original name
 			const editAgain = page.locator('button[title="Rename agent"]');
 			await editAgain.click();
 			const input = page.locator('input[type="text"]').first();
 			await expect(input).toBeVisible({ timeout: 5_000 });
 			await input.clear();
 			await input.pressSequentially(originalName, { delay: 20 });
-			await page.getByRole('button', { name: 'Save' }).click();
+			const restoreSection = input.locator('..');
+			await restoreSection.getByRole('button', { name: 'Save' }).click();
 			await expect(page.locator('h2').filter({ hasText: originalName })).toBeVisible({ timeout: 15_000 });
 		}
 
-		// Either outcome is acceptable — we just verify the app doesn't crash
 		expect(hasError || nameChanged).toBeTruthy();
 	});
 });

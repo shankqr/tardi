@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 
 const PERSISTENT_EMAIL =
-	process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+persistent@gmail.com';
-const TEST_PASSWORD = process.env.E2E_TEST_PASSWORD;
+	process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
+const TEST_PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD;
 
 test.describe('Snapshot create/delete', () => {
-	test.skip(!TEST_PASSWORD, 'E2E_TEST_PASSWORD not set — skipping snapshot tests');
+	test.skip(!TEST_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set — skipping snapshot tests');
 
 	let snapshotName: string;
 
@@ -40,7 +40,7 @@ test.describe('Snapshot create/delete', () => {
 			await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
 
 			// Verify the instance page loaded — look for the Snapshots heading
-			await expect(page.getByText('Snapshots')).toBeVisible({ timeout: 30_000 });
+			await expect(page.getByRole('heading', { name: 'Snapshots' })).toBeVisible({ timeout: 30_000 });
 		});
 
 		// ── Step 2: Create snapshot ──
@@ -68,7 +68,7 @@ test.describe('Snapshot create/delete', () => {
 			await expect(page.getByText(snapshotName)).toBeVisible({ timeout: 30_000 });
 
 			// Wait for status to transition from "creating" to "ready" (up to 3 minutes)
-			await expect(page.getByText('ready')).toBeVisible({ timeout: 180_000 });
+			await expect(page.getByText(/ready/i).first()).toBeVisible({ timeout: 180_000 });
 		});
 
 		// ── Step 3: Verify snapshot in list ──
@@ -80,7 +80,7 @@ test.describe('Snapshot create/delete', () => {
 			// Verify it shows "ready" status
 			// The snapshot row contains both the name and a StatusBadge with "ready"
 			const snapshotRow = snapshotEntry.locator('..').locator('..');
-			await expect(snapshotRow.getByText('ready')).toBeVisible();
+			await expect(snapshotRow.getByText(/ready/i)).toBeVisible();
 		});
 
 		// ── Step 4: Delete snapshot ──

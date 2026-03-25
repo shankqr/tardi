@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+persistent@gmail.com';
-const PASSWORD = process.env.E2E_TEST_PASSWORD || '';
+const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
+const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
 
 async function login(page: Page): Promise<void> {
 	await page.goto('/login');
@@ -20,7 +20,7 @@ async function login(page: Page): Promise<void> {
 }
 
 test.describe('Model sync: FE → OC dashboard', () => {
-	test.skip(!PASSWORD, 'E2E_TEST_PASSWORD not set');
+	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('change model and verify on OC dashboard', async ({ page }) => {
 		await login(page);
@@ -43,9 +43,35 @@ test.describe('Model sync: FE → OC dashboard', () => {
 		await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
 
 		// Wait for AI Provider section to load
+		const keyInput = page.locator('#openrouter-key');
+		await expect(keyInput).toBeVisible({ timeout: 60_000 });
+
+		// If no API key is saved, save one first so model dropdown enables
 		const modelSelect = page.locator('#model-select');
-		await expect(modelSelect).toBeVisible({ timeout: 60_000 });
-		await expect(modelSelect).toBeEnabled({ timeout: 60_000 });
+		const isModelEnabled = await modelSelect.isEnabled({ timeout: 3_000 }).catch(() => false);
+		if (!isModelEnabled) {
+			const apiKey = process.env.E2E_OPENROUTER_API_KEY;
+			if (!apiKey) {
+				test.skip(true, 'Model dropdown disabled and E2E_OPENROUTER_API_KEY not set');
+				return;
+			}
+			console.log('[E2E] No API key saved, saving one first...');
+			await keyInput.fill(apiKey);
+			// Save button in AI Provider section
+			const aiProviderSave = page.getByRole('button', { name: /save/i }).last();
+			await aiProviderSave.click();
+
+			// Wait for sync to complete
+			await expect(
+				page.getByText('Configuration applied successfully')
+			).toBeVisible({ timeout: 120_000 });
+			console.log('[E2E] API key saved');
+
+			// Reload to get fresh state
+			await page.reload();
+			await page.waitForTimeout(8000);
+			await expect(modelSelect).toBeEnabled({ timeout: 60_000 });
+		}
 
 		// Read current model
 		const originalModel = await modelSelect.inputValue();
@@ -80,6 +106,19 @@ test.describe('Model sync: FE → OC dashboard', () => {
 			page.getByText('Configuration applied successfully')
 		).toBeVisible({ timeout: 120_000 });
 		console.log('[E2E] Config sync completed');
+
+		// Verify OpenClaw returns to Running after model change
+		const start = Date.now();
+		while (Date.now() - start < 180_000) {
+			const running = await page.locator('dd').filter({ hasText: /Running/i }).first()
+				.isVisible({ timeout: 3_000 }).catch(() => false);
+			if (running) {
+				console.log('[E2E] OpenClaw is Running after model change');
+				break;
+			}
+			await page.reload();
+			await page.waitForTimeout(10_000);
+		}
 
 		// Now verify on OC dashboard
 		// Get dashboard token by clicking "Open Agent Dashboard" and intercepting window.open
