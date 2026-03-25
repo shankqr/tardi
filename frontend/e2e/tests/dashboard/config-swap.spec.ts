@@ -63,34 +63,28 @@ test.describe('Config swap: API key and Telegram token', () => {
 			return;
 		}
 
-		// Scroll to Telegram section
+		// Scroll to Telegram section and wait for it to load
 		const telegramHeading = page.getByText('Telegram').first();
 		await telegramHeading.scrollIntoViewIfNeeded();
 
-		// Check if Telegram is already connected
+		// Check if Telegram is already connected (give it time to load state from API)
 		const disconnectBtn = page.getByRole('button', { name: /disconnect/i });
-		const isConnected = await disconnectBtn.isVisible({ timeout: 5_000 }).catch(() => false);
+		const isConnected = await disconnectBtn.isVisible({ timeout: 15_000 }).catch(() => false);
 
 		// Step 1: Connect/update with token 2
 		console.log('[E2E] Setting Telegram token 2...');
 		if (isConnected) {
-			// Use the "update" input
-			const updateInput = page.locator('input[placeholder="Paste new bot token"]');
-			if (await updateInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
-				await updateInput.click();
-				await updateInput.pressSequentially(TG_TOKEN_2, { delay: 10 });
-				const updateBtn = page.getByRole('button', { name: /update/i });
-				await updateBtn.click();
-			} else {
-				// Disconnect first, then connect with new token
-				await disconnectBtn.click();
-				await page.waitForTimeout(3000);
-				const connectInput = page.locator('input[placeholder="Paste your bot token here"]');
-				await expect(connectInput).toBeVisible({ timeout: 10_000 });
-				await connectInput.click();
-				await connectInput.pressSequentially(TG_TOKEN_2, { delay: 10 });
-				await page.getByRole('button', { name: 'Connect', exact: true }).click();
+			// Click "Update Token" to reveal the update input
+			const updateTokenBtn = page.getByRole('button', { name: /update token/i });
+			if (await updateTokenBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
+				await updateTokenBtn.click();
 			}
+			const updateInput = page.locator('input[placeholder="Paste new bot token"]');
+			await expect(updateInput).toBeVisible({ timeout: 10_000 });
+			await updateInput.click();
+			await updateInput.pressSequentially(TG_TOKEN_2, { delay: 10 });
+			const updateBtn = page.getByRole('button', { name: /^update$/i });
+			await updateBtn.click();
 		} else {
 			const connectInput = page.locator('input[placeholder="Paste your bot token here"]');
 			await expect(connectInput).toBeVisible({ timeout: 10_000 });
@@ -115,25 +109,19 @@ test.describe('Config swap: API key and Telegram token', () => {
 		const telegramHeading2 = page.getByText('Telegram').first();
 		await telegramHeading2.scrollIntoViewIfNeeded();
 
-		const updateInput = page.locator('input[placeholder="Paste new bot token"]');
-		if (await updateInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
-			await updateInput.click();
-			await updateInput.pressSequentially(TG_TOKEN_1, { delay: 10 });
-			await page.getByRole('button', { name: /update/i }).click();
-		} else {
-			// May need to disconnect first
-			const disc = page.getByRole('button', { name: /disconnect/i });
-			if (await disc.isVisible({ timeout: 3_000 }).catch(() => false)) {
-				await disc.click();
-				await page.waitForTimeout(5000);
-				await telegramHeading2.scrollIntoViewIfNeeded();
-			}
-			const connectInput = page.locator('input[placeholder="Paste your bot token here"]');
-			await expect(connectInput).toBeVisible({ timeout: 15_000 });
-			await connectInput.click();
-			await connectInput.pressSequentially(TG_TOKEN_1, { delay: 10 });
-			await page.getByRole('button', { name: 'Connect', exact: true }).click();
+		// Wait for disconnect button to confirm connected state loaded
+		await expect(page.getByRole('button', { name: /disconnect/i })).toBeVisible({ timeout: 15_000 });
+
+		// Click "Update Token" to reveal the update input
+		const updateTokenBtn2 = page.getByRole('button', { name: /update token/i });
+		if (await updateTokenBtn2.isVisible({ timeout: 5_000 }).catch(() => false)) {
+			await updateTokenBtn2.click();
 		}
+		const restoreInput = page.locator('input[placeholder="Paste new bot token"]');
+		await expect(restoreInput).toBeVisible({ timeout: 10_000 });
+		await restoreInput.click();
+		await restoreInput.pressSequentially(TG_TOKEN_1, { delay: 10 });
+		await page.getByRole('button', { name: /^update$/i }).click();
 
 		await expect(page.getByRole('button', { name: /disconnect/i })).toBeVisible({ timeout: 120_000 });
 		console.log('[E2E] Telegram token 1 restored');

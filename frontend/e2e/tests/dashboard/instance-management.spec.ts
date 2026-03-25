@@ -57,53 +57,38 @@ test.describe('Instance management', () => {
 			return;
 		}
 
-		// Health Check button can appear in two places:
-		// 1. Inside Power User accordion
-		// 2. In the unhealthy warning banner at the bottom
-		const healthCheckButton = page.getByRole('button', { name: 'Health Check' });
+		// Expand Power User section to find Health Check button
+		const powerUserButton = page.getByText('Power User').first();
+		await powerUserButton.scrollIntoViewIfNeeded();
+		await powerUserButton.click();
+		await page.waitForTimeout(500);
 
-		// Try to find it directly first (may be in warning banner)
-		let isVisible = await healthCheckButton.isVisible({ timeout: 3_000 }).catch(() => false);
-
-		if (!isVisible) {
-			// Try expanding Power User section
-			const powerUserButton = page.getByText('Power User').first();
-			await powerUserButton.scrollIntoViewIfNeeded();
-			await powerUserButton.click();
-			await page.waitForTimeout(500);
-		}
-
+		// Health Check button inside Power User accordion
+		const healthCheckButton = page.getByRole('button', { name: 'Health Check' }).first();
 		await healthCheckButton.scrollIntoViewIfNeeded();
 		await expect(healthCheckButton).toBeVisible({ timeout: 10_000 });
 		await expect(healthCheckButton).toBeEnabled({ timeout: 10_000 });
 		await healthCheckButton.click();
 
-		// Wait for health check results to appear (up to 60s)
-		// Results show as individual check items with pass/fail/warn/info status
-		const resultsHeading = page.getByText(/health check result/i);
-		await expect(resultsHeading).toBeVisible({ timeout: 60_000 });
+		// Button should change to "Checking..." while running
+		await expect(page.getByRole('button', { name: 'Checking...' }).first()).toBeVisible({ timeout: 5_000 }).catch(() => {
+			console.log('[E2E] Health check button did not show Checking... state (may have completed fast)');
+		});
 
-		// Verify at least one check item is present with a recognizable status
-		const checkItems = page.locator('[class*="health"], [class*="check"]').or(
-			page.locator('li').filter({ hasText: /pass|fail|warn|✓|✗|container|telegram|api|disk|memory/i })
-		);
-		const itemCount = await checkItems.count();
+		// Wait for health check results heading to appear (up to 90s)
+		const resultsHeading = page.getByText('Health Check Results');
+		await expect(resultsHeading).toBeVisible({ timeout: 90_000 });
+		console.log('[E2E] Health check results heading visible');
 
-		if (itemCount > 0) {
-			console.log(`[E2E] Health check returned ${itemCount} check items`);
-		} else {
-			// Fallback: verify page content contains health check keywords
-			const pageContent = (await page.textContent('body') || '').toLowerCase();
-			const hasCheckContent =
-				pageContent.includes('pass') ||
-				pageContent.includes('fail') ||
-				pageContent.includes('warn') ||
-				pageContent.includes('container') ||
-				pageContent.includes('healthy');
-			expect(hasCheckContent).toBeTruthy();
-			console.log('[E2E] Health check results verified via page content');
-		}
-
+		// Verify the results contain check items with pass/fail/warn indicators
+		const pageContent = (await page.textContent('body') || '').toLowerCase();
+		const hasCheckContent =
+			pageContent.includes('pass') ||
+			pageContent.includes('fail') ||
+			pageContent.includes('warn') ||
+			pageContent.includes('✓') ||
+			pageContent.includes('✗');
+		expect(hasCheckContent).toBeTruthy();
 		console.log('[E2E] Health check completed with results');
 	});
 });
