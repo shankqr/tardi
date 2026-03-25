@@ -1,12 +1,43 @@
 import http from "k6/http";
-import { BASE_URL } from "./config.js";
+import { BASE_URL, FIREBASE_API_KEY, FIREBASE_EMAIL, FIREBASE_PASSWORD } from "./config.js";
 
-// Generate a unique auth token per VU. In dev mode, the backend treats
-// arbitrary bearer tokens as Firebase UIDs, auto-creating users.
-export function authHeaders(vuId) {
+// Obtain a real Firebase ID token via the REST API.
+// Called once in setup() and shared across all VUs.
+export function getFirebaseToken() {
+  if (!FIREBASE_API_KEY || !FIREBASE_EMAIL || !FIREBASE_PASSWORD) {
+    throw new Error(
+      "Missing FIREBASE_API_KEY, FIREBASE_EMAIL, or FIREBASE_PASSWORD env vars. " +
+      "Required for authenticated load tests against deployed environments."
+    );
+  }
+
+  const res = http.post(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
+    JSON.stringify({
+      email: FIREBASE_EMAIL,
+      password: FIREBASE_PASSWORD,
+      returnSecureToken: true,
+    }),
+    { headers: { "Content-Type": "application/json" } },
+  );
+
+  if (res.status !== 200) {
+    throw new Error(`Firebase auth failed (${res.status}): ${res.body}`);
+  }
+
+  const body = JSON.parse(res.body);
+  return body.idToken;
+}
+
+// Build auth headers using a real Firebase token (from setup) or a VU-specific
+// fake token (for local dev mode where Firebase is not initialised).
+export function authHeaders(tokenOrVuId) {
+  const token = tokenOrVuId.startsWith && tokenOrVuId.startsWith("ey")
+    ? tokenOrVuId
+    : `loadtest-user-${tokenOrVuId}`;
   return {
     headers: {
-      Authorization: `Bearer loadtest-user-${vuId}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
   };

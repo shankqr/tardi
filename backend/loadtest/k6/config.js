@@ -2,6 +2,11 @@
 
 export const BASE_URL = __ENV.BASE_URL || "http://localhost:8080";
 
+// Firebase auth config — pass via env vars or use defaults for dev
+export const FIREBASE_API_KEY = __ENV.FIREBASE_API_KEY || "";
+export const FIREBASE_EMAIL = __ENV.FIREBASE_EMAIL || "";
+export const FIREBASE_PASSWORD = __ENV.FIREBASE_PASSWORD || "";
+
 // Default thresholds applied to all scenarios
 export const DEFAULT_THRESHOLDS = {
   http_req_duration: ["p(95)<500", "p(99)<1000"],
