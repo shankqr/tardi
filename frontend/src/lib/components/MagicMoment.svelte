@@ -7,29 +7,42 @@
 
 	let copiedIndex = $state<number | null>(null);
 
-	const prompts = [
+	const basePrompts = [
 		{
 			icon: '🌐',
 			title: 'Build a portfolio website',
 			description: 'Personal site with hero, projects, and contact form',
 			prompt:
-				'Build a personal portfolio website with a hero section, about me, projects gallery, and contact form. Use a modern dark theme with gradient accents. Serve it on port 3000.'
+				'Build a personal portfolio website with a hero section, about me, projects gallery, and contact form. Use a modern dark theme with gradient accents.'
 		},
 		{
 			icon: '🚀',
 			title: 'Create a startup landing page',
 			description: 'Landing page for "FreshBite" meal delivery service',
 			prompt:
-				'Create a landing page for a startup called "FreshBite" — a healthy meal delivery service. Include a hero with CTA, feature highlights, pricing cards, testimonials section, and footer. Modern design, serve on port 3000.'
+				'Create a landing page for a startup called "FreshBite" — a healthy meal delivery service. Include a hero with CTA, feature highlights, pricing cards, testimonials section, and footer. Modern design.'
 		},
 		{
 			icon: '✅',
 			title: 'Build a full-stack todo app',
 			description: 'Todo app with SQLite, categories, and due dates',
 			prompt:
-				'Build a full-stack todo app with a SQLite database. Features: add, complete, delete tasks, with categories and due dates. Clean minimal UI. Serve on port 3000.'
+				'Build a full-stack todo app with a SQLite database. Features: add, complete, delete tasks, with categories and due dates. Clean minimal UI.'
 		}
 	];
+
+	const servingInstruction = $derived(
+		previewUrl
+			? `Serve it on port 3000. IMPORTANT: The finished result will be publicly accessible at ${previewUrl} — make sure the app works correctly when visited at that URL. Use relative paths for all assets and links so everything loads properly.`
+			: 'Serve it on port 3000.'
+	);
+
+	const prompts = $derived(
+		basePrompts.map((p) => ({
+			...p,
+			prompt: `${p.prompt} ${servingInstruction}`
+		}))
+	);
 
 	function copyPrompt(index: number) {
 		navigator.clipboard.writeText(prompts[index].prompt);
@@ -82,11 +95,4 @@
 			{/each}
 		</div>
 
-		{#if previewUrl}
-			<p class="mt-3 text-xs text-gray-400 dark:text-gray-500 text-center">
-				After your agent finishes, visit
-				<a href={previewUrl} target="_blank" rel="noopener noreferrer" class="font-mono text-gray-500 dark:text-gray-400 underline hover:text-gray-700 dark:hover:text-gray-300">{previewUrl}</a>
-				to see what it built
-			</p>
-		{/if}
 </div>
