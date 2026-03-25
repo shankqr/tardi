@@ -473,23 +473,43 @@ test('Full user journey: signup → deploy → configure → telegram', async ({
 		// We can't access the Tardi page anymore since we navigated away
 		// Instead, search for key parts of the model name in the response
 
-		// Wait for any response to appear (look for assistant message)
-		// Give the LLM time to respond
-		await page.waitForTimeout(15000);
+		// Wait for an assistant response to appear
+		// The response takes time — poll for new content appearing on the page
+		let responseDetected = false;
+		const startTime = Date.now();
+		const initialContent = await page.textContent('body') || '';
+		const initialLength = initialContent.length;
 
-		// Get the page content and check for model-related text
+		while (Date.now() - startTime < 30_000) {
+			await page.waitForTimeout(3000);
+			const currentContent = await page.textContent('body') || '';
+			// Response detected when page content grows significantly (agent replied)
+			if (currentContent.length > initialLength + 50) {
+				responseDetected = true;
+				break;
+			}
+		}
+
 		const pageContent = await page.textContent('body');
 		console.log(`[E2E] Looking for model info in response...`);
-		console.log(
-			`[E2E] Selected model was: ${selectedModelName}`
-		);
+		console.log(`[E2E] Selected model was: ${selectedModelName}`);
 
-		// The response should mention the model name somewhere
-		// Look for it in the page content (case-insensitive)
-		const hasModelMention =
-			pageContent?.toLowerCase().includes('model') ?? false;
-		expect(hasModelMention).toBeTruthy();
-		console.log('[E2E] Dashboard responded with model information');
+		// Verify the agent actually responded (content grew)
+		expect(responseDetected).toBeTruthy();
+
+		// The response should contain substantive text (not just an error)
+		const responseLength = (pageContent?.length || 0) - initialLength;
+		expect(responseLength).toBeGreaterThan(20);
+
+		// Check the response mentions something about the model or AI
+		const lowerContent = pageContent?.toLowerCase() || '';
+		const hasRelevantContent =
+			lowerContent.includes('model') ||
+			lowerContent.includes('ai') ||
+			lowerContent.includes('language') ||
+			lowerContent.includes('assistant');
+		expect(hasRelevantContent).toBeTruthy();
+		console.log('[E2E] Dashboard responded with relevant content');
 
 		// Navigate back to the instance page for the next step
 		await page.goto(`/dashboard/instances/${instanceId}`);

@@ -1,43 +1,17 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
 
-const PERSISTENT_EMAIL =
-	process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const TEST_PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD;
+test.describe('Snapshot create, restore, and delete', () => {
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set — skipping snapshot tests');
 
-test.describe('Snapshot create/delete', () => {
-	test.skip(!TEST_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set — skipping snapshot tests');
+	test('create, restore, and delete a snapshot', async ({ authedPage: page }) => {
+		let snapshotName: string;
 
-	let snapshotName: string;
-
-	test('create and delete a snapshot', async ({ page }) => {
-		// ── Step 1: Login and navigate to instance ──
-		await test.step('Login and navigate to instance', async () => {
-			await page.goto('/login');
-
-			const signInBtn = page.getByRole('button', { name: 'Sign in' });
-			await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-			await expect(signInBtn).toBeEnabled();
-			await page.waitForTimeout(1000);
-
-			await page.locator('#email').click();
-			await page.locator('#email').pressSequentially(PERSISTENT_EMAIL, { delay: 20 });
-			await page.locator('#password').click();
-			await page.locator('#password').pressSequentially(TEST_PASSWORD!, { delay: 20 });
-
-			await signInBtn.click();
-			await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-
-			// Click the first instance card to navigate to instance details
-			await page.waitForTimeout(5000);
-			const instanceLink = page.locator('a[href^="/dashboard/instances/"]').first();
-			const hasInstance = await instanceLink.isVisible({ timeout: 10_000 }).catch(() => false);
-			if (!hasInstance) {
+		// ── Step 1: Navigate to instance ──
+		await test.step('Navigate to instance', async () => {
+			if (!(await navigateToInstance(page))) {
 				test.skip(true, 'No active instance found — run journey test or deploy manually first');
 				return;
 			}
-			await instanceLink.click();
-
-			await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
 
 			// Verify the instance page loaded — look for the Snapshots heading
 			await expect(page.getByRole('heading', { name: 'Snapshots' })).toBeVisible({ timeout: 30_000 });
@@ -71,6 +45,7 @@ test.describe('Snapshot create/delete', () => {
 			// When status is "ready", the UI renders Restore/Delete buttons instead of text
 			const snapshotRow = page.getByText(snapshotName).locator('..').locator('..');
 			await expect(snapshotRow.getByRole('button', { name: 'Delete' })).toBeVisible({ timeout: 180_000 });
+			console.log(`[E2E] Snapshot "${snapshotName}" created and ready`);
 		});
 
 		// ── Step 3: Verify snapshot in list ──
@@ -79,12 +54,40 @@ test.describe('Snapshot create/delete', () => {
 			const snapshotEntry = page.getByText(snapshotName);
 			await expect(snapshotEntry).toBeVisible();
 
-			// Verify it shows "ready" status — when ready, Delete button is rendered (no "ready" text)
+			// Verify it shows "ready" status — when ready, Restore and Delete buttons are rendered
 			const snapshotRow = snapshotEntry.locator('..').locator('..');
+			await expect(snapshotRow.getByRole('button', { name: 'Restore' })).toBeVisible();
 			await expect(snapshotRow.getByRole('button', { name: 'Delete' })).toBeVisible();
 		});
 
-		// ── Step 4: Delete snapshot ──
+		// ── Step 4: Restore snapshot ──
+		await test.step('Restore snapshot', async () => {
+			const snapshotEntry = page.getByText(snapshotName);
+			const snapshotRow = snapshotEntry.locator('..').locator('..');
+			const restoreBtn = snapshotRow.getByRole('button', { name: 'Restore' });
+			await restoreBtn.click();
+
+			// Confirmation dialog should appear
+			const confirmBtn = page.getByRole('button', { name: /confirm|yes|restore/i }).last();
+			await expect(confirmBtn).toBeVisible({ timeout: 5_000 });
+			await confirmBtn.click();
+
+			// Wait for restore to complete — instance status transitions through "Restoring"
+			// and eventually returns to active/running
+			// Look for success message or status returning to normal
+			const restoreSuccess = page.getByText(/restore.*success|restored|running/i);
+			const agentDetails = page.getByText('Agent Details');
+
+			// Wait up to 3 minutes for restore to complete
+			await expect(restoreSuccess.or(agentDetails)).toBeVisible({ timeout: 180_000 });
+
+			// Verify instance returns to a healthy state
+			const runningStatus = page.locator('dd').filter({ hasText: /Running|Active/i }).first();
+			await expect(runningStatus).toBeVisible({ timeout: 120_000 });
+			console.log(`[E2E] Snapshot "${snapshotName}" restored successfully`);
+		});
+
+		// ── Step 5: Delete snapshot ──
 		await test.step('Delete snapshot', async () => {
 			// Find the snapshot row and click its Delete button
 			const snapshotEntry = page.getByText(snapshotName);
@@ -105,6 +108,7 @@ test.describe('Snapshot create/delete', () => {
 
 			// Wait for the snapshot to disappear from the list
 			await expect(page.getByText(snapshotName)).toBeHidden({ timeout: 30_000 });
+			console.log(`[E2E] Snapshot "${snapshotName}" deleted`);
 		});
 	});
 });

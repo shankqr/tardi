@@ -1,39 +1,17 @@
-import { test, expect, type Page } from '@playwright/test';
-
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
-
-async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
+import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('Instance status', () => {
-	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
-	test('instance card shows status badge on dashboard', async ({ page }) => {
-		await login(page);
-		await page.waitForTimeout(5000);
-
+	test('instance card shows status badge on dashboard', async ({ authedPage: page }) => {
 		const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
-		const hasInstance = await instanceLink.isVisible({ timeout: 10_000 }).catch(() => false);
+		const hasInstance = await instanceLink.isVisible({ timeout: 15_000 }).catch(() => false);
 		if (!hasInstance) {
 			test.skip(true, 'No active instance found');
 			return;
 		}
 
 		// The instance card should show a status badge (Active, Provisioning, etc.)
-		// StatusBadge renders as a span with rounded-full class
 		const statusBadge = page.locator('span.rounded-full').first();
 		await expect(statusBadge).toBeVisible({ timeout: 10_000 });
 
@@ -42,20 +20,11 @@ test.describe('Instance status', () => {
 		console.log(`[E2E] Instance status badge: ${statusText?.trim()}`);
 	});
 
-	test('instance detail page shows status badge', async ({ page }) => {
-		await login(page);
-		await page.waitForTimeout(5000);
-
-		const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
-		const hasInstance = await instanceLink.isVisible({ timeout: 10_000 }).catch(() => false);
-		if (!hasInstance) {
+	test('instance detail page shows status badge', async ({ authedPage: page }) => {
+		if (!(await navigateToInstance(page))) {
 			test.skip(true, 'No active instance found');
 			return;
 		}
-
-		await instanceLink.click();
-		await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
-		await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
 
 		// Status badge should be visible on the detail page
 		const statusBadge = page.locator('span.rounded-full').first();

@@ -1,29 +1,11 @@
-import { test, expect, type Page } from '@playwright/test';
-
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
-
-async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
+import { test, expect, PERSISTENT_PASSWORD } from '../../fixtures/auth';
 
 test.describe('Network error handling', () => {
-	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
-	test('dashboard handles API failure gracefully', async ({ page }) => {
-		await login(page);
-		await page.waitForTimeout(3000);
+	test('dashboard handles API failure gracefully', async ({ authedPage: page }) => {
+		// Wait for dashboard to fully load first
+		await expect(page.getByText('Your Agent').or(page.getByText('Deploy your agent'))).toBeVisible({ timeout: 15_000 });
 
 		// Intercept the dashboard state API and return a 500
 		await page.route('**/api/dashboard/state', (route) => {
@@ -35,22 +17,18 @@ test.describe('Network error handling', () => {
 
 		// Reload to trigger the intercepted API call
 		await page.reload();
-		await page.waitForTimeout(5000);
 
-		// The page should still render without crashing
-		// It may show an error message or just show empty state
-		const pageContent = await page.textContent('body');
-		expect(pageContent).toBeTruthy();
+		// The page should still render the dashboard shell without crashing
+		// Look for any dashboard UI element (nav, heading, or even an error message)
+		const dashboardShell = page.getByText('Your Agent')
+			.or(page.getByText('Dashboard'))
+			.or(page.getByRole('button', { name: 'Sign out' }));
+		await expect(dashboardShell.first()).toBeVisible({ timeout: 15_000 });
 
-		// Page should not show a white screen or unhandled error
-		const hasContent = (pageContent?.length || 0) > 50;
-		expect(hasContent).toBeTruthy();
 		console.log('[E2E] Dashboard handled API failure gracefully');
 	});
 
-	test('billing page handles missing subscription gracefully', async ({ page }) => {
-		await login(page);
-
+	test('billing page handles missing subscription gracefully', async ({ authedPage: page }) => {
 		// Intercept billing/subscription API to return empty
 		await page.route('**/api/dashboard/state', (route) => {
 			route.fulfill({
@@ -61,12 +39,12 @@ test.describe('Network error handling', () => {
 		});
 
 		await page.goto('/dashboard/billing');
-		await page.waitForTimeout(5000);
 
-		// Page should render without crashing
-		const pageContent = await page.textContent('body');
-		expect(pageContent).toBeTruthy();
-		expect((pageContent?.length || 0) > 50).toBeTruthy();
+		// Page should render billing shell — look for the heading or a "no subscription" state
+		const billingContent = page.getByRole('heading', { name: 'Billing' })
+			.or(page.getByText(/no.*subscription|subscribe|plan/i));
+		await expect(billingContent.first()).toBeVisible({ timeout: 15_000 });
+
 		console.log('[E2E] Billing page handled missing subscription gracefully');
 	});
 });

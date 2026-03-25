@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { loginWithCredentials } from '../../fixtures/auth';
 import {
 	createTestUser,
 	deleteTestUser,
@@ -9,26 +10,6 @@ import {
 } from '../../helpers/stripe';
 
 const PASSWORD = process.env.E2E_TEST_PASSWORD || 'T4rd1E2e!xK9mQ2z';
-
-async function login(page: import('@playwright/test').Page, email: string) {
-	await page.goto('/login');
-
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-
-	// Wait for SvelteKit hydration
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(email, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-
-	await signInBtn.click();
-
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
 
 test('Billing page shows plan, status, and manage billing button', async ({
 	page,
@@ -49,8 +30,7 @@ test('Billing page shows plan, status, and manage billing button', async ({
 
 		// ── Step 2: Login and complete Stripe checkout ──
 		await test.step('Login and complete Stripe checkout', async () => {
-			// Login first so the session is authenticated for the success redirect
-			await login(page, email);
+			await loginWithCredentials(page, email, PASSWORD);
 
 			console.log('[E2E Billing] Creating Stripe Checkout Session...');
 			const checkoutUrl = await createCheckoutSession(email, firebaseUid);

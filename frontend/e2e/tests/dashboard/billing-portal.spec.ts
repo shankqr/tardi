@@ -1,28 +1,9 @@
-import { test, expect, type Page } from '@playwright/test';
-
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
-
-async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
+import { test, expect, PERSISTENT_PASSWORD } from '../../fixtures/auth';
 
 test.describe('Billing portal', () => {
-	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
-	test('billing page renders plan details', async ({ page }) => {
-		await login(page);
+	test('billing page renders plan details', async ({ authedPage: page }) => {
 		await page.goto('/dashboard/billing');
 		await page.waitForURL('**/dashboard/billing**', { timeout: 15_000 });
 
@@ -38,11 +19,12 @@ test.describe('Billing portal', () => {
 		console.log('[E2E] Billing page rendered correctly');
 	});
 
-	test('manage billing button triggers Stripe portal (if available)', async ({ page }) => {
-		await login(page);
+	test('manage billing button triggers Stripe portal (if available)', async ({ authedPage: page }) => {
 		await page.goto('/dashboard/billing');
 		await page.waitForURL('**/dashboard/billing**', { timeout: 15_000 });
-		await page.waitForTimeout(3000);
+
+		// Wait for billing content to load
+		await expect(page.getByText('Plan Details')).toBeVisible({ timeout: 10_000 });
 
 		// Find the Manage Billing button/link — may not exist for all accounts
 		const manageBillingBtn = page.getByRole('link', { name: /manage billing/i }).or(

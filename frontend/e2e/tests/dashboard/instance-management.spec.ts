@@ -1,39 +1,9 @@
-import { test, expect, type Page } from '@playwright/test';
-
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
-
-async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
-
-async function navigateToInstance(page: Page): Promise<boolean> {
-	await page.waitForTimeout(5000);
-	const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
-	const hasInstance = await instanceLink.isVisible({ timeout: 10_000 }).catch(() => false);
-	if (!hasInstance) return false;
-	await instanceLink.click();
-	await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
-	await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
-	return true;
-}
+import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('Instance management', () => {
-	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set — skipping instance management tests');
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set — skipping instance management tests');
 
-	test('rename instance and restore original name', async ({ page }) => {
-		await login(page);
+	test('rename instance and restore original name', async ({ authedPage: page }) => {
 		if (!(await navigateToInstance(page))) {
 			test.skip(true, 'No active instance found');
 			return;
@@ -56,7 +26,6 @@ test.describe('Instance management', () => {
 		await nameInput.pressSequentially(newName, { delay: 20 });
 
 		// Click the Save button next to the rename input (scoped near the input)
-		// Use Cancel as anchor — Save is its sibling
 		const renameSection = nameInput.locator('..');
 		const saveButton = renameSection.getByRole('button', { name: 'Save' });
 		await expect(saveButton).toBeVisible();
@@ -82,8 +51,7 @@ test.describe('Instance management', () => {
 		console.log(`[E2E] Instance name restored to: ${originalName}`);
 	});
 
-	test('run health check', async ({ page }) => {
-		await login(page);
+	test('run health check and verify results', async ({ authedPage: page }) => {
 		if (!(await navigateToInstance(page))) {
 			test.skip(true, 'No active instance found');
 			return;
@@ -110,26 +78,32 @@ test.describe('Instance management', () => {
 		await expect(healthCheckButton).toBeEnabled({ timeout: 10_000 });
 		await healthCheckButton.click();
 
-		// Wait for results (up to 60s) — look for results heading or any result indicator
-		// Health check results can show as "Health Check Results" heading or inline results
-		await page.waitForTimeout(15_000);
+		// Wait for health check results to appear (up to 60s)
+		// Results show as individual check items with pass/fail/warn/info status
+		const resultsHeading = page.getByText(/health check result/i);
+		await expect(resultsHeading).toBeVisible({ timeout: 60_000 });
 
-		// After clicking, either results appear or the button changes state
-		const pageContent = await page.textContent('body') || '';
-		const lowerContent = pageContent.toLowerCase();
-		const hasResults =
-			lowerContent.includes('health check result') ||
-			lowerContent.includes('pass') ||
-			lowerContent.includes('fail') ||
-			lowerContent.includes('warn') ||
-			lowerContent.includes('✓') ||
-			lowerContent.includes('✗') ||
-			lowerContent.includes('running') ||
-			lowerContent.includes('check complete') ||
-			lowerContent.includes('healthy') ||
-			lowerContent.includes('unhealthy');
+		// Verify at least one check item is present with a recognizable status
+		const checkItems = page.locator('[class*="health"], [class*="check"]').or(
+			page.locator('li').filter({ hasText: /pass|fail|warn|✓|✗|container|telegram|api|disk|memory/i })
+		);
+		const itemCount = await checkItems.count();
 
-		expect(hasResults).toBeTruthy();
-		console.log('[E2E] Health check completed');
+		if (itemCount > 0) {
+			console.log(`[E2E] Health check returned ${itemCount} check items`);
+		} else {
+			// Fallback: verify page content contains health check keywords
+			const pageContent = (await page.textContent('body') || '').toLowerCase();
+			const hasCheckContent =
+				pageContent.includes('pass') ||
+				pageContent.includes('fail') ||
+				pageContent.includes('warn') ||
+				pageContent.includes('container') ||
+				pageContent.includes('healthy');
+			expect(hasCheckContent).toBeTruthy();
+			console.log('[E2E] Health check results verified via page content');
+		}
+
+		console.log('[E2E] Health check completed with results');
 	});
 });

@@ -1,39 +1,13 @@
-import { test, expect, type Page } from '@playwright/test';
-
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
-
-async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
+import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('API key masking', () => {
-	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
-	test('saved API key is shown as password field', async ({ page }) => {
-		await login(page);
-		await page.waitForTimeout(5000);
-
-		const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
-		const hasInstance = await instanceLink.isVisible({ timeout: 10_000 }).catch(() => false);
-		if (!hasInstance) {
+	test('saved API key is shown as password field', async ({ authedPage: page }) => {
+		if (!(await navigateToInstance(page))) {
 			test.skip(true, 'No active instance found');
 			return;
 		}
-
-		await instanceLink.click();
-		await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
 
 		// Wait for AI Provider section to load
 		const keyInput = page.locator('#openrouter-key');

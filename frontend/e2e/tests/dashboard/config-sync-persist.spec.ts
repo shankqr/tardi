@@ -1,43 +1,14 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
 
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
 const API_KEY = process.env.E2E_OPENROUTER_API_KEY || '';
 
-async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
-
-async function navigateToInstance(page: Page): Promise<boolean> {
-	await page.waitForTimeout(5000);
-	const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
-	const hasInstance = await instanceLink.isVisible({ timeout: 10_000 }).catch(() => false);
-	if (!hasInstance) return false;
-	await instanceLink.click();
-	await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
-	await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
-	return true;
-}
-
 test.describe('Config sync persists across navigation', () => {
-	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
-	test('"Applying Config" survives navigation away and back', async ({ page }) => {
+	test('"Applying Config" survives navigation away and back', async ({ authedPage: page }) => {
 		test.skip(!API_KEY, 'E2E_OPENROUTER_API_KEY required');
 
-		await login(page);
 		if (!(await navigateToInstance(page))) {
 			test.skip(true, 'No active instance found');
 			return;
@@ -61,7 +32,9 @@ test.describe('Config sync persists across navigation', () => {
 		// Navigate away to the dashboard list
 		console.log('[E2E] Navigating away to dashboard...');
 		await page.goto('/dashboard');
-		await page.waitForTimeout(2000);
+
+		// Wait for dashboard to load
+		await expect(page.locator('a[href*="/dashboard/instances/"]').first()).toBeVisible({ timeout: 15_000 });
 
 		// Navigate back to the instance page
 		console.log('[E2E] Navigating back to instance...');

@@ -1,47 +1,17 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
-
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
 
 const API_KEY_1 = process.env.E2E_OPENROUTER_API_KEY || '';
 const API_KEY_2 = process.env.E2E_OPENROUTER_API_KEY_2 || '';
 const TG_TOKEN_1 = process.env.E2E_TELEGRAM_BOT_TOKEN || '';
 const TG_TOKEN_2 = process.env.E2E_TELEGRAM_BOT_TOKEN_2 || '';
 
-async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
-
-async function navigateToInstance(page: Page): Promise<boolean> {
-	await page.waitForTimeout(5000);
-	const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
-	const hasInstance = await instanceLink.isVisible({ timeout: 10_000 }).catch(() => false);
-	if (!hasInstance) return false;
-	await instanceLink.click();
-	await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
-	await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
-	return true;
-}
-
 test.describe('Config swap: API key and Telegram token', () => {
-	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
-	test('swap OpenRouter API key and restore', async ({ page }) => {
+	test('swap OpenRouter API key and restore', async ({ authedPage: page }) => {
 		test.skip(!API_KEY_1 || !API_KEY_2, 'Both E2E_OPENROUTER_API_KEY and E2E_OPENROUTER_API_KEY_2 required');
 
-		await login(page);
 		if (!(await navigateToInstance(page))) {
 			test.skip(true, 'No active instance found');
 			return;
@@ -68,7 +38,7 @@ test.describe('Config swap: API key and Telegram token', () => {
 		// Step 2: Swap back to the original key
 		console.log('[E2E] Restoring API key 1...');
 		await page.reload();
-		await page.waitForTimeout(5000);
+		await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
 		const keyInputAgain = page.locator('#openrouter-key');
 		await expect(keyInputAgain).toBeVisible({ timeout: 30_000 });
 		await keyInputAgain.fill(API_KEY_1);
@@ -85,10 +55,9 @@ test.describe('Config swap: API key and Telegram token', () => {
 		console.log('[E2E] OpenRouter API key swap complete — OpenClaw Running');
 	});
 
-	test('swap Telegram bot token and restore', async ({ page }) => {
+	test('swap Telegram bot token and restore', async ({ authedPage: page }) => {
 		test.skip(!TG_TOKEN_1 || !TG_TOKEN_2, 'Both E2E_TELEGRAM_BOT_TOKEN and E2E_TELEGRAM_BOT_TOKEN_2 required');
 
-		await login(page);
 		if (!(await navigateToInstance(page))) {
 			test.skip(true, 'No active instance found');
 			return;
@@ -97,7 +66,6 @@ test.describe('Config swap: API key and Telegram token', () => {
 		// Scroll to Telegram section
 		const telegramHeading = page.getByText('Telegram').first();
 		await telegramHeading.scrollIntoViewIfNeeded();
-		await page.waitForTimeout(2000);
 
 		// Check if Telegram is already connected
 		const disconnectBtn = page.getByRole('button', { name: /disconnect/i });
@@ -141,12 +109,11 @@ test.describe('Config swap: API key and Telegram token', () => {
 		// Step 2: Swap back to token 1
 		console.log('[E2E] Restoring Telegram token 1...');
 		await page.reload();
-		await page.waitForTimeout(5000);
+		await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
 
 		// Re-locate Telegram section after reload
 		const telegramHeading2 = page.getByText('Telegram').first();
 		await telegramHeading2.scrollIntoViewIfNeeded();
-		await page.waitForTimeout(2000);
 
 		const updateInput = page.locator('input[placeholder="Paste new bot token"]');
 		if (await updateInput.isVisible({ timeout: 5_000 }).catch(() => false)) {

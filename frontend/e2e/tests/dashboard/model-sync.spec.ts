@@ -1,35 +1,13 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
 
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
-
-async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
-
 test.describe('Model sync: FE → OC dashboard', () => {
-	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
-	test('change model and verify on OC dashboard', async ({ page }) => {
-		await login(page);
-
+	test('change model and verify on OC dashboard', async ({ authedPage: page }) => {
 		// Navigate to instance
-		await page.waitForTimeout(5000);
 		const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
-		const hasInstance = await instanceLink.isVisible({ timeout: 10_000 }).catch(() => false);
+		const hasInstance = await instanceLink.isVisible({ timeout: 15_000 }).catch(() => false);
 		if (!hasInstance) {
 			test.skip(true, 'No active instance found');
 			return;
@@ -70,7 +48,7 @@ test.describe('Model sync: FE → OC dashboard', () => {
 
 			// Reload to get fresh state
 			await page.reload();
-			await page.waitForTimeout(8000);
+			await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
 			await expect(modelSelect).toBeEnabled({ timeout: 60_000 });
 		}
 
@@ -130,7 +108,7 @@ test.describe('Model sync: FE → OC dashboard', () => {
 		});
 
 		await page.reload();
-		await page.waitForTimeout(8000);
+		await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
 
 		if (!dashboardUrl) {
 			const content = await page.content();
@@ -201,7 +179,7 @@ test.describe('Model sync: FE → OC dashboard', () => {
 		// Restore original model
 		try {
 			await page.goto(`/dashboard/instances/${instanceId}`);
-			await page.waitForTimeout(5000);
+			await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
 			const restoreSelect = page.locator('#model-select');
 			if (await restoreSelect.isVisible({ timeout: 10_000 }).catch(() => false)) {
 				await restoreSelect.selectOption(originalModel);

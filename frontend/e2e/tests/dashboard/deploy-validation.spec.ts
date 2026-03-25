@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { loginWithCredentials } from '../../fixtures/auth';
 import {
 	createTestUser,
 	deleteTestUser,
@@ -9,21 +10,6 @@ import {
 } from '../../helpers/stripe';
 
 const PASSWORD = process.env.E2E_TEST_PASSWORD || 'T4rd1E2e!xK9mQ2z';
-
-async function login(page: import('@playwright/test').Page, email: string) {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(email, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-}
 
 test.describe('Deploy validation', () => {
 	test('deploy form requires agent name', async ({ page }) => {
@@ -36,7 +22,7 @@ test.describe('Deploy validation', () => {
 			const user = await createTestUser(email, PASSWORD);
 			firebaseUid = user.uid;
 
-			await login(page, email);
+			await loginWithCredentials(page, email, PASSWORD);
 
 			// Create Stripe checkout session and complete payment
 			const checkoutUrl = await createCheckoutSession(email, firebaseUid);

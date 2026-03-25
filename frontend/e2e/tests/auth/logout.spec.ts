@@ -1,26 +1,9 @@
-import { test, expect } from '@playwright/test';
-
-const EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-const PASSWORD = process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
+import { test, expect, PERSISTENT_PASSWORD } from '../../fixtures/auth';
 
 test.describe('Logout', () => {
-	test.skip(!PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
+	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
-	test('logout redirects to homepage and clears session', async ({ page }) => {
-		// Login first
-		await page.goto('/login');
-		const signInBtn = page.getByRole('button', { name: 'Sign in' });
-		await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-		await expect(signInBtn).toBeEnabled();
-		await page.waitForTimeout(1000);
-
-		await page.locator('#email').click();
-		await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-		await page.locator('#password').click();
-		await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-		await signInBtn.click();
-		await page.waitForURL('**/dashboard**', { timeout: 30_000 });
-
+	test('logout redirects to homepage and clears session', async ({ authedPage: page }) => {
 		// Click Sign out
 		const signOutBtn = page.getByRole('button', { name: 'Sign out' });
 		await expect(signOutBtn).toBeVisible({ timeout: 10_000 });
