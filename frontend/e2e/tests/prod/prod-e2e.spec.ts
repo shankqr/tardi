@@ -154,13 +154,14 @@ test('Prod E2E: delete instance → redeploy → configure → verify', async ({
 
 		if (!dashboardUrl || !dashboardToken) {
 			console.log('[Prod E2E] Skipping dashboard test: no URL or token available');
+			// Navigate back so subsequent steps work
+			await ensureInstancePage(page, instanceId);
 			return;
 		}
 
 		console.log(`[Prod E2E] Opening dashboard: ${dashboardUrl}`);
 
-		// Use browser-based navigation instead of Node.js fetch for reachability —
-		// Cloudflare proxy SSL works in Chromium but may fail with Node.js fetch
+		// Prod uses {id}.tardi.ai (wildcard SSL on *.tardi.ai works)
 		const ocUrl = `${dashboardUrl}/#token=${dashboardToken}`;
 		let dashboardReady = false;
 		for (let attempt = 0; attempt < 6; attempt++) {
@@ -178,7 +179,6 @@ test('Prod E2E: delete instance → redeploy → configure → verify', async ({
 		}
 
 		if (dashboardReady) {
-			// Wait for the Control UI to load and connect via WebSocket
 			const chatInput = page.locator(
 				'textarea, input[type="text"], [contenteditable="true"]'
 			).last();
@@ -189,7 +189,6 @@ test('Prod E2E: delete instance → redeploy → configure → verify', async ({
 			await chatInput.fill('what model are you using right now?');
 			await page.keyboard.press('Enter');
 
-			// Wait for a response
 			let responseDetected = false;
 			const startTime = Date.now();
 			const initialContent = await page.textContent('body') || '';
