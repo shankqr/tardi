@@ -249,15 +249,42 @@ func TelegramCleanupHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		// Retry with backoff: OpenClaw may still be starting up after container
+		// recreation. The config.patch RPC will fail if the gateway isn't ready.
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 
-		if err := patchTelegramConfig(ctx, *inst.IPv4, *inst.OpenClawAuthToken); err != nil {
-			slog.Warn("telegram cleanup: config.patch failed",
-				"error", err,
+		var lastErr error
+		for attempt := range 3 {
+			if attempt > 0 {
+				// Wait before retry: 5s, then 10s — gives OpenClaw time to start
+				delay := time.Duration(attempt) * 5 * time.Second
+				select {
+				case <-time.After(delay):
+				case <-ctx.Done():
+					lastErr = ctx.Err()
+					break
+				}
+			}
+			if err := patchTelegramConfig(ctx, *inst.IPv4, *inst.OpenClawAuthToken); err != nil {
+				slog.Warn("telegram cleanup: config.patch attempt failed",
+					"error", err,
+					"instance_id", instanceID,
+					"attempt", attempt+1,
+				)
+				lastErr = err
+				continue
+			}
+			lastErr = nil
+			break
+		}
+
+		if lastErr != nil {
+			slog.Warn("telegram cleanup: config.patch failed after retries",
+				"error", lastErr,
 				"instance_id", instanceID,
 			)
-			// Non-fatal — return success anyway, the env var handler will still work
+			// Non-fatal — return success anyway, heartbeat drift guard will fix it
 			WriteJSON(w, http.StatusOK, map[string]any{
 				"cleaned": false,
 				"error":   "could not patch OpenClaw config",

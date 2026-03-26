@@ -160,7 +160,8 @@ if [ "$TG_TOKEN_SET" -gt 0 ] && [ "$STATUS" = "running" ]; then
     TG_CONFIG=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null)
     TG_STREAMING=$(echo "$TG_CONFIG" | jq -r '.channels.telegram.streaming // "unknown"' 2>/dev/null)
     TG_ENABLED=$(echo "$TG_CONFIG" | jq -r '.channels.telegram.enabled // false' 2>/dev/null)
-    if [ "$TG_STREAMING" != "off" ] || [ "$TG_ENABLED" != "true" ]; then
+    TG_DMPOLICY=$(echo "$TG_CONFIG" | jq -r '.channels.telegram.dmPolicy // "unknown"' 2>/dev/null)
+    if [ "$TG_STREAMING" != "off" ] || [ "$TG_ENABLED" != "true" ] || [ "$TG_DMPOLICY" != "open" ]; then
         docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
         docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
