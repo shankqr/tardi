@@ -203,6 +203,25 @@ resource "google_secret_manager_secret_version" "google_oauth_client_secret" {
   }
 }
 
+# Admin API token — for internal admin endpoint authentication
+resource "google_secret_manager_secret" "admin_api_token" {
+  secret_id = "${var.environment}-admin-api-token"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "admin_api_token" {
+  secret      = google_secret_manager_secret.admin_api_token.id
+  secret_data = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
 # Token encryption key — AES-256-GCM key for encrypting OAuth tokens at rest
 resource "google_secret_manager_secret" "token_encryption_key" {
   secret_id = "${var.environment}-token-encryption-key"
