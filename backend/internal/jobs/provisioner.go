@@ -433,219 +433,6 @@ fi
 log_status "COMPLETED"
 `))
 
-// minimalCloudInitTemplate is used when provisioning from a golden image.
-// The golden image already has Docker, Caddy, OpenClaw images, systemd units, etc.
-// This template only injects per-user configuration and starts services.
-var minimalCloudInitTemplate = template.Must(template.New("minimal-cloudinit").Parse(`#!/bin/bash
-set -euo pipefail
-exec > >(tee -a /var/log/openclaw-init.log) 2>&1
-
-STATUS_FILE=/opt/openclaw/.init-status
-mkdir -p /opt/openclaw
-log_status() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1" | tee -a "$STATUS_FILE"; }
-
-log_status "STARTED_FROM_GOLDEN_IMAGE"
-
-# --- Set root password ---
-{{- if .RootPassword}}
-echo "root:{{.RootPassword}}" | chpasswd
-{{- end}}
-
-# --- SSH key-based auth ---
-{{- if .SSHPublicKey}}
-mkdir -p /root/.ssh
-chmod 700 /root/.ssh
-echo "{{.SSHPublicKey}}" >> /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/authorized_keys
-{{- end}}
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
-sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-mkdir -p /etc/ssh/sshd_config.d
-printf 'PasswordAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/60-tardi.conf
-systemctl restart sshd || systemctl restart ssh || true
-
-# --- Firewall (full setup — golden image leaves UFW disabled) ---
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 80/tcp
-CF_IPS=$(curl -sf https://www.cloudflare.com/ips-v4 2>/dev/null || echo "")
-for cidr in $CF_IPS; do
-    ufw allow from $cidr to any port 18789 2>/dev/null || true
-done
-{{- if .BackendEgressCIDRs}}
-for cidr in $(echo "{{.BackendEgressCIDRs}}" | tr ',' ' '); do
-    ufw allow from $cidr to any port 18789
-    ufw allow from $cidr to any port 22
-done
-{{- else}}
-ufw allow 22/tcp
-{{- end}}
-ufw --force enable
-log_status "FIREWALL_CONFIGURED"
-
-# --- OpenClaw config ---
-cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
-{
-  "gateway": {
-    "bind": "lan",
-    "trustedProxies": ["0.0.0.0/0"],
-    "controlUi": {
-      "allowedOrigins": ["*"{{if .Domain}}, "https://{{.Domain}}"{{end}}],
-      "dangerouslyDisableDeviceAuth": true,
-      "allowInsecureAuth": true
-    },
-    "auth": {
-      "mode": "token"
-    }
-  },
-  "channels": {
-    "whatsapp": {
-      "enabled": true,
-      "dmPolicy": "pairing",
-      "groupPolicy": "disabled"
-    }
-  }
-}
-CFGEOF
-chown 1000:1000 /opt/openclaw/data/openclaw/openclaw.json
-
-# --- Environment file ---
-DOCKER_GID=$(getent group docker | cut -d: -f3)
-cat > /opt/openclaw/.env <<ENVEOF
-DOCKER_GID=${DOCKER_GID}
-AGENT_TOKEN={{.AgentToken}}
-API_URL={{.APIURL}}
-INSTANCE_ID={{.InstanceID}}
-OPENCLAW_AUTH_TOKEN={{.OpenClawAuthToken}}
-OPENCLAW_GATEWAY_TOKEN={{.OpenClawAuthToken}}
-OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
-NODE_ENV=production
-{{- if .BackendEgressCIDRs}}
-BACKEND_EGRESS_CIDRS={{.BackendEgressCIDRs}}
-{{- end}}
-{{- if .PreviewDomain}}
-PREVIEW_DOMAIN={{.PreviewDomain}}
-{{- end}}
-ENVEOF
-{{- if .AnthropicAPIKey}}
-echo "ANTHROPIC_API_KEY={{.AnthropicAPIKey}}" >> /opt/openclaw/.env
-{{- end}}
-{{- if .OpenAIAPIKey}}
-echo "OPENAI_API_KEY={{.OpenAIAPIKey}}" >> /opt/openclaw/.env
-{{- end}}
-{{- if .TelegramBotToken}}
-echo "TELEGRAM_BOT_TOKEN={{.TelegramBotToken}}" >> /opt/openclaw/.env
-{{- end}}
-chmod 600 /opt/openclaw/.env
-{{- if .ConfigVersion}}
-echo "{{.ConfigVersion}}" > /opt/openclaw/.config_version
-{{- end}}
-
-# --- Caddyfile ---
-cat > /etc/caddy/Caddyfile <<CADDYEOF
-{{- if .PreviewDomain}}
-http://{{.PreviewDomain}} {
-    reverse_proxy localhost:3000
-}
-{{- end}}
-
-http:// {
-    reverse_proxy localhost:18789
-}
-CADDYEOF
-
-# --- Docker Compose ---
-cat > /opt/openclaw/docker-compose.yml <<'COMPOSEEOF'
-services:
-  openclaw-gateway:
-    image: ghcr.io/openclaw/openclaw:{{.OpenClawImageTag}}
-    container_name: openclaw-gateway
-    restart: unless-stopped
-    network_mode: host
-    user: "1000:1000"
-    group_add:
-      - "${DOCKER_GID}"
-    volumes:
-      - ./data/openclaw:/home/node/.openclaw:rw
-      - ./data/gogcli:/home/node/.config/gogcli:rw
-      - /var/run/docker.sock:/var/run/docker.sock
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:18789/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-COMPOSEEOF
-log_status "FILES_WRITTEN"
-
-# --- Download heartbeat script ---
-for i in $(seq 1 10); do
-    if curl -sf -H "Authorization: Bearer {{.AgentToken}}" "{{.APIURL}}/api/agent/heartbeat-script" -o /opt/openclaw/heartbeat.sh; then
-        chmod +x /opt/openclaw/heartbeat.sh
-        break
-    fi
-    sleep 5
-done
-
-# --- Start services ---
-systemctl start caddy
-systemctl enable openclaw-stack
-systemctl start openclaw-stack
-systemctl enable openclaw-heartbeat.timer
-systemctl start openclaw-heartbeat.timer
-
-# --- Wait for gateway, then register models + configure telegram ---
-HEALTHY=false
-for i in $(seq 1 30); do
-    if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
-        HEALTHY=true
-        break
-    fi
-    sleep 2
-done
-
-if [ "$HEALTHY" = true ]; then
-{{- range .AllModelIDs}}
-{{- if ne . $.Model}}
-{{- if eq $.Provider "openrouter"}}
-    docker exec openclaw-gateway openclaw models set "openrouter/{{.}}" 2>/dev/null
-{{- else}}
-    docker exec openclaw-gateway openclaw models set "{{.}}" 2>/dev/null
-{{- end}}
-{{- end}}
-{{- end}}
-{{- if .Model}}
-{{- if eq .Provider "openrouter"}}
-    docker exec openclaw-gateway openclaw models set "openrouter/{{.Model}}" 2>/dev/null
-    docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "openrouter/{{.Model}}"
-{{- else}}
-    docker exec openclaw-gateway openclaw models set "{{.Model}}" 2>/dev/null
-    docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "{{.Model}}"
-{{- end}}
-{{- end}}
-
-    if grep -q '^TELEGRAM_BOT_TOKEN=.' /opt/openclaw/.env 2>/dev/null; then
-        docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
-
-        PROV_TG_ACCOUNTS=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.channels.telegram.accounts // {} | keys[]' 2>/dev/null)
-        for ACCT in $PROV_TG_ACCOUNTS; do
-            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.dmPolicy" open 2>/dev/null
-            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.streaming" off 2>/dev/null
-            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.allowFrom" '["*"]' 2>/dev/null
-        done
-    fi
-fi
-
-log_status "COMPLETED"
-`))
-
 type Provisioner struct {
 	pool               *pgxpool.Pool
 	registry           *provider.Registry
@@ -904,36 +691,10 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		}
 	}
 
-	// Try golden image (primary path) with fallback to full cloud-init
-	var userData string
-	var createReq provider.CreateServerRequest
-
-	goldenImage, goldenErr := db.GetActiveGoldenImage(ctx, p.pool, mapping.Provider, mapping.ProviderRegion)
-	if goldenErr != nil {
-		p.logger.Warn("provisioner: golden image lookup failed, falling back to full cloud-init",
-			"error", goldenErr)
-	}
-
-	if goldenImage != nil {
-		// PRIMARY: Golden image + minimal cloud-init
-		userData, err = RenderMinimalCloudInit(ciData)
-		if err != nil {
-			return fmt.Errorf("render minimal cloud-init: %w", err)
-		}
-		p.logger.Info("provisioner: using golden image",
-			"golden_image_id", goldenImage.ID,
-			"provider_image_id", goldenImage.ProviderImageID,
-			"openclaw_version", goldenImage.OpenClawVersion,
-			"instance_id", inst.ID,
-		)
-	} else {
-		// FALLBACK: Full cloud-init from scratch
-		userData, err = RenderCloudInit(ciData)
-		if err != nil {
-			return fmt.Errorf("render cloud-init: %w", err)
-		}
-		p.logger.Info("provisioner: no golden image available, using full cloud-init",
-			"instance_id", inst.ID)
+	// Render cloud-init user data
+	userData, err := RenderCloudInit(ciData)
+	if err != nil {
+		return fmt.Errorf("render cloud-init: %w", err)
 	}
 
 	// Fetch user email for server labels
@@ -942,24 +703,18 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("get user for labels: %w", err)
 	}
 
-	createReq = provider.CreateServerRequest{
+	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
 		Name:       buildServerName("openclaw", user.Email, inst.ID.String()[:8]),
 		ServerType: mapping.ProviderServerType,
 		Region:     mapping.ProviderRegion,
+		Image:      mapping.ProviderImage,
 		UserData:   userData,
 		Labels: map[string]string{
 			"instance_id": inst.ID.String(),
 			"user_id":     inst.UserID.String(),
 			"email":       SanitizeLabelValue(user.Email),
 		},
-	}
-	if goldenImage != nil {
-		createReq.ImageID = goldenImage.ProviderImageID
-	} else {
-		createReq.Image = mapping.ProviderImage
-	}
-
-	server, err := prov.CreateServer(ctx, createReq)
+	})
 	if err != nil {
 		return fmt.Errorf("create server: %w", err)
 	}
@@ -1083,13 +838,12 @@ func (p *Provisioner) stepWaitServerReady(ctx context.Context, job *models.Provi
 }
 
 func (p *Provisioner) stepBootstrap(ctx context.Context, job *models.ProvisioningJob) error {
-	// Cloud-init runs automatically. Brief wait before polling health in stepInstallAgent.
-	// Golden image boots need ~10s; full cloud-init needs longer but stepInstallAgent
-	// handles the actual polling with its own 10-minute timeout.
+	// Cloud-init runs automatically. Wait for the server to finish bootstrap.
+	// The actual verification is the first heartbeat in stepInstallAgent.
 	select {
 	case <-ctx.Done():
 		return fmt.Errorf("timeout during bootstrap: %w", ctx.Err())
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		return nil
 	}
 }
@@ -1264,7 +1018,7 @@ func GenerateRootPassword() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// RenderCloudInit generates the full cloud-init user-data script (fallback path).
+// RenderCloudInit generates the cloud-init user-data script.
 func RenderCloudInit(data CloudInitData) (string, error) {
 	if data.OpenClawImageTag == "" {
 		data.OpenClawImageTag = "latest"
@@ -1272,19 +1026,6 @@ func RenderCloudInit(data CloudInitData) (string, error) {
 	var buf bytes.Buffer
 	if err := cloudInitTemplate.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("execute cloud-init template: %w", err)
-	}
-	return buf.String(), nil
-}
-
-// RenderMinimalCloudInit generates a lightweight cloud-init for golden image boots.
-// Only injects per-user config; static infrastructure is pre-baked in the snapshot.
-func RenderMinimalCloudInit(data CloudInitData) (string, error) {
-	if data.OpenClawImageTag == "" {
-		data.OpenClawImageTag = "latest"
-	}
-	var buf bytes.Buffer
-	if err := minimalCloudInitTemplate.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("execute minimal cloud-init template: %w", err)
 	}
 	return buf.String(), nil
 }

@@ -213,25 +213,3 @@ type AuditLogEntry struct {
 	Metadata     map[string]any
 	CreatedAt    time.Time
 }
-
-type GoldenImageStatus string
-
-const (
-	GoldenImageBuilding   GoldenImageStatus = "building"
-	GoldenImageActive     GoldenImageStatus = "active"
-	GoldenImageDeprecated GoldenImageStatus = "deprecated"
-	GoldenImageDeleted    GoldenImageStatus = "deleted"
-)
-
-type GoldenImage struct {
-	ID              uuid.UUID
-	Provider        string
-	Region          string
-	ServerType      string
-	ProviderImageID string
-	OpenClawVersion string
-	Status          GoldenImageStatus
-	CreatedAt       time.Time
-	ActivatedAt     *time.Time
-	DeprecatedAt    *time.Time
-}

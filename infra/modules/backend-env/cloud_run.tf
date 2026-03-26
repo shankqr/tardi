@@ -141,15 +141,6 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
       env {
-        name = "ADMIN_API_TOKEN"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.admin_api_token.secret_id
-            version = "latest"
-          }
-        }
-      }
-      env {
         name = "TOKEN_ENCRYPTION_KEY"
         value_source {
           secret_key_ref {

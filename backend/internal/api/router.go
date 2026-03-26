@@ -16,16 +16,15 @@ import (
 )
 
 type Dependencies struct {
-	Pool               *pgxpool.Pool
-	Logger             *slog.Logger
-	Config             *config.Config
-	Billing            *billing.StripeService
-	Registry           *provider.Registry
-	Resumer            *jobs.Resumer
-	Upgrader           *jobs.Upgrader
-	GoldenImageBuilder *jobs.GoldenImageBuilder
-	DNSClient          *dns.Client   // nil if Cloudflare DNS not configured
-	BGTasks            *sync.WaitGroup // Tracks background goroutines (snapshots, restores) for graceful shutdown
+	Pool      *pgxpool.Pool
+	Logger    *slog.Logger
+	Config    *config.Config
+	Billing   *billing.StripeService
+	Registry  *provider.Registry
+	Resumer   *jobs.Resumer
+	Upgrader  *jobs.Upgrader
+	DNSClient *dns.Client   // nil if Cloudflare DNS not configured
+	BGTasks   *sync.WaitGroup // Tracks background goroutines (snapshots, restores) for graceful shutdown
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -80,8 +79,6 @@ func NewRouter(deps Dependencies) http.Handler {
 	adminMux.HandleFunc("PUT /api/admin/openclaw/version", AdminSetGlobalVersionHandler(deps))
 	adminMux.HandleFunc("PUT /api/admin/openclaw/version/{id}", AdminSetInstanceVersionHandler(deps))
 	adminMux.HandleFunc("POST /api/admin/reset-password", AdminResetPasswordByIPHandler(deps))
-	adminMux.HandleFunc("POST /api/admin/golden-images/build", AdminBuildGoldenImageHandler(deps))
-	adminMux.HandleFunc("GET /api/admin/golden-images", AdminListGoldenImagesHandler(deps))
 	adminAuth := adminTokenAuth(deps.Config.AdminAPIToken)
 	mux.Handle("/api/admin/", adminAuth(adminMux))
 

@@ -152,23 +152,21 @@ func main() {
 
 	resumer := jobs.NewResumer(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey)
 	upgrader := jobs.NewUpgrader(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey, dnsClient)
-	goldenImageBuilder := jobs.NewGoldenImageBuilder(pool, registry, logger, cfg.OpenClawImageTag)
 
 	// WaitGroup for background goroutines (snapshot create/restore/delete, restart, etc.)
 	var bgTasks sync.WaitGroup
 
 	// Build router with all endpoints
 	deps := api.Dependencies{
-		Pool:               pool,
-		Logger:             logger,
-		Config:             cfg,
-		Billing:            stripeSvc,
-		Registry:           registry,
-		Resumer:            resumer,
-		Upgrader:           upgrader,
-		GoldenImageBuilder: goldenImageBuilder,
-		DNSClient:          dnsClient,
-		BGTasks:            &bgTasks,
+		Pool:      pool,
+		Logger:    logger,
+		Config:    cfg,
+		Billing:   stripeSvc,
+		Registry:  registry,
+		Resumer:   resumer,
+		Upgrader:  upgrader,
+		DNSClient: dnsClient,
+		BGTasks:   &bgTasks,
 	}
 	handler := api.NewRouter(deps)
 
