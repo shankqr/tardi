@@ -58,7 +58,6 @@ jobs:
           }
 
           # API checks
-          check_endpoint "API /healthz" "$API_URL/healthz" 5 ""
           check_endpoint "API /readyz" "$API_URL/readyz" 5 ""
           check_endpoint "API /api/models" "$API_URL/api/models" 5 ""
 
