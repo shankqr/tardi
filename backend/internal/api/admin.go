@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -170,11 +172,13 @@ func AdminBuildGoldenImageHandler(deps Dependencies) http.HandlerFunc {
 			}
 		}
 
-		// Run build in background
+		// Run build in background with independent context (r.Context cancels when response is sent)
+		buildCtx, buildCancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		deps.BGTasks.Add(1)
 		go func() {
 			defer deps.BGTasks.Done()
-			img, err := deps.GoldenImageBuilder.Build(r.Context())
+			defer buildCancel()
+			img, err := deps.GoldenImageBuilder.Build(buildCtx)
 			if err != nil {
 				slog.Error("admin: golden image build failed", "error", err)
 				return
