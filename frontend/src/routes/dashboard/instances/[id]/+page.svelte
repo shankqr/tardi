@@ -108,10 +108,10 @@
 	);
 	const isConfigSyncing = $derived(isAnySyncing || syncGraceActive);
 
-	// Watch for sync ending → start grace period (max 5 min).
+	// Watch for sync ending → start grace period (max 90s).
 	// The config.patch RPC causes OpenClaw to briefly restart, so the
 	// dashboard is unreachable for a few seconds. We keep the grace active
-	// for a minimum of 3 min to avoid showing "Unhealthy" while VPS restarts.
+	// for a minimum of 60s to avoid showing "Unhealthy" while VPS restarts.
 	$effect(() => {
 		if (isAnySyncing) {
 			// Sync just started — cancel any existing grace timer
@@ -119,11 +119,11 @@
 			syncGraceActive = true;
 			syncGraceStartedAt = Date.now();
 		} else if (syncGraceActive) {
-			// Sync just ended — keep grace active for max 5 minutes
+			// Sync just ended — keep grace active for max 90 seconds
 			syncGraceTimer = setTimeout(() => {
 				syncGraceActive = false;
 				syncGraceTimer = null;
-			}, 300_000);
+			}, 90_000);
 		}
 		return () => {
 			if (syncGraceTimer) clearTimeout(syncGraceTimer);
@@ -131,11 +131,11 @@
 	});
 
 	// End grace period early once the heartbeat confirms healthy status,
-	// but only after a minimum 3-min cool-off to let OpenClaw fully restart.
+	// but only after a minimum 60s cool-off to let OpenClaw fully restart.
 	$effect(() => {
 		if (syncGraceActive && !isAnySyncing && instance?.agent_status === 'running') {
 			const elapsed = Date.now() - syncGraceStartedAt;
-			const MIN_COOLOFF = 180_000;
+			const MIN_COOLOFF = 60_000;
 			if (elapsed >= MIN_COOLOFF) {
 				if (syncGraceTimer) clearTimeout(syncGraceTimer);
 				syncGraceActive = false;
