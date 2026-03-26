@@ -105,15 +105,27 @@ export async function waitForInstanceActive(
 
 /**
  * Ensure the instance page is showing the config form.
- * If "Agent not found" is displayed, navigate back to the instance page.
+ * Retries navigation on transient connection errors (e.g. after OC dashboard visit).
  */
 export async function ensureInstancePage(
 	page: Page,
 	instId: string
 ) {
-	await page.goto(`/dashboard/instances/${instId}`);
-	await expect(page.locator('#openrouter-key')).toBeVisible({ timeout: 60_000 });
-	await page.waitForTimeout(5000);
+	for (let attempt = 0; attempt < 3; attempt++) {
+		try {
+			await page.goto(`/dashboard/instances/${instId}`, { timeout: 30_000 });
+			await expect(page.locator('#openrouter-key')).toBeVisible({ timeout: 60_000 });
+			await page.waitForTimeout(5000);
+			return;
+		} catch (err) {
+			if (attempt < 2) {
+				console.log(`[E2E] ensureInstancePage failed (attempt ${attempt + 1}/3), retrying...`);
+				await page.waitForTimeout(5000);
+			} else {
+				throw err;
+			}
+		}
+	}
 }
 
 /**
