@@ -155,7 +155,7 @@ fi
 #    OpenClaw auto-creates account entries with dmPolicy:"pairing" and
 #    streaming:"partial" which OVERRIDE the top-level settings, causing
 #    the bot to silently ignore DMs and send double replies.
-TG_TOKEN_SET=$(grep -c '^TELEGRAM_BOT_TOKEN=.\+' /opt/openclaw/.env 2>/dev/null || echo "0")
+TG_TOKEN_SET=$(grep -c '^TELEGRAM_BOT_TOKEN=.\+' /opt/openclaw/.env 2>/dev/null) || TG_TOKEN_SET=0
 if [ "$TG_TOKEN_SET" -gt 0 ] && [ "$STATUS" = "running" ]; then
     TG_CONFIG=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null)
     TG_STREAMING=$(echo "$TG_CONFIG" | jq -r '.channels.telegram.streaming // "unknown"' 2>/dev/null)
@@ -609,7 +609,7 @@ if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
         # TELEGRAM_BOT_TOKEN on startup and resets to bad defaults (streaming:"partial",
         # restrictive dmPolicy) which causes double replies and pairing prompts.
         # Also fix account-level overrides that OpenClaw auto-creates.
-        TG_TOKEN_SET=$(grep -c '^TELEGRAM_BOT_TOKEN=.\+' /opt/openclaw/.env 2>/dev/null || echo "0")
+        TG_TOKEN_SET=$(grep -c '^TELEGRAM_BOT_TOKEN=.\+' /opt/openclaw/.env 2>/dev/null) || TG_TOKEN_SET=0
         if [ "$TG_TOKEN_SET" -gt 0 ]; then
             docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
             docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
