@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -858,21 +857,14 @@ func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("no IPv4 address available")
 	}
 
-	// Use domain-based health check when available (Let's Encrypt TLS);
-	// fall back to IP-based HTTP check for legacy instances.
-	var healthURL string
-	if inst.Domain != nil && *inst.Domain != "" {
-		healthURL = fmt.Sprintf("https://%s/health", *inst.Domain)
-	} else {
-		healthURL = fmt.Sprintf("http://%s/health", *inst.IPv4)
-	}
+	// Always use IP-based HTTP health check during provisioning.
+	// Domain-based HTTPS is unreliable here: DNS may not have propagated,
+	// TLS certs may not be provisioned yet, and Cloudflare proxy may not
+	// cover nested wildcard subdomains.
+	healthURL := fmt.Sprintf("http://%s/health", *inst.IPv4)
 
-	// TLS client that tolerates in-progress cert provisioning
 	tlsClient := &http.Client{
 		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // health check to our own VPS
-		},
 	}
 
 	ticker := time.NewTicker(10 * time.Second)
