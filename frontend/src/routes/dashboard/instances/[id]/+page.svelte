@@ -107,11 +107,10 @@
 	);
 	const isConfigSyncing = $derived(isAnySyncing || syncGraceActive);
 
-	// Watch for sync ending → start grace period (max 90s).
+	// Watch for sync ending → start grace period (max 5 min).
 	// The config.patch RPC causes OpenClaw to briefly restart, so the
 	// dashboard is unreachable for a few seconds. We keep the grace active
-	// for a minimum of 60s to avoid showing "Web server down" if the user
-	// clicks the dashboard button too early.
+	// for a minimum of 3 min to avoid showing "Unhealthy" while VPS restarts.
 	$effect(() => {
 		if (isAnySyncing) {
 			// Sync just started — cancel any existing grace timer
@@ -119,11 +118,11 @@
 			syncGraceActive = true;
 			syncGraceStartedAt = Date.now();
 		} else if (syncGraceActive) {
-			// Sync just ended — keep grace active for max 90s
+			// Sync just ended — keep grace active for max 5 minutes
 			syncGraceTimer = setTimeout(() => {
 				syncGraceActive = false;
 				syncGraceTimer = null;
-			}, 90_000);
+			}, 300_000);
 		}
 		return () => {
 			if (syncGraceTimer) clearTimeout(syncGraceTimer);
@@ -131,11 +130,11 @@
 	});
 
 	// End grace period early once the heartbeat confirms healthy status,
-	// but only after a minimum 60s cool-off to let OpenClaw fully restart.
+	// but only after a minimum 3-min cool-off to let OpenClaw fully restart.
 	$effect(() => {
 		if (syncGraceActive && !isAnySyncing && instance?.agent_status === 'running') {
 			const elapsed = Date.now() - syncGraceStartedAt;
-			const MIN_COOLOFF = 60_000;
+			const MIN_COOLOFF = 180_000;
 			if (elapsed >= MIN_COOLOFF) {
 				if (syncGraceTimer) clearTimeout(syncGraceTimer);
 				syncGraceActive = false;
@@ -176,14 +175,14 @@
 	});
 
 	// Config-sync grace: if agent is unhealthy but had a heartbeat within
-	// the last 90s, it's likely mid-restart from a config change. Derived
+	// the last 5 min, it's likely mid-restart from a config change. Derived
 	// from server data so it survives page navigation.
 	const recentlyRestarted = $derived(
 		instance?.status === 'active' &&
 			instance.agent_status !== 'running' &&
 			instance.agent_status !== null &&
 			instance.last_heartbeat_at !== null &&
-			Date.now() - new Date(instance.last_heartbeat_at).getTime() < 90_000
+			Date.now() - new Date(instance.last_heartbeat_at).getTime() < 300_000
 	);
 
 	// Doctor state
