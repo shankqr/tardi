@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/models"
 )
 
 // AdminGetVersionHandler returns the global target version and all instance version statuses.
@@ -143,6 +144,102 @@ func AdminSetInstanceVersionHandler(deps Dependencies) http.HandlerFunc {
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"instance_id":            instanceID.String(),
 			"target_openclaw_version": body.Version,
+		})
+	}
+}
+
+// AdminBuildGoldenImageHandler triggers a golden image build.
+func AdminBuildGoldenImageHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if deps.GoldenImageBuilder == nil {
+			WriteError(w, http.StatusServiceUnavailable, "unavailable", "golden image builder not configured")
+			return
+		}
+
+		// Check if there's already a build in progress
+		images, err := db.ListGoldenImages(r.Context(), deps.Pool)
+		if err != nil {
+			slog.Error("admin: list golden images", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to check existing builds")
+			return
+		}
+		for _, img := range images {
+			if img.Status == models.GoldenImageBuilding {
+				WriteError(w, http.StatusConflict, "conflict", "a golden image build is already in progress")
+				return
+			}
+		}
+
+		// Run build in background
+		deps.BGTasks.Add(1)
+		go func() {
+			defer deps.BGTasks.Done()
+			img, err := deps.GoldenImageBuilder.Build(r.Context())
+			if err != nil {
+				slog.Error("admin: golden image build failed", "error", err)
+				return
+			}
+			slog.Info("admin: golden image build complete",
+				"image_id", img.ID,
+				"provider_image_id", img.ProviderImageID,
+			)
+		}()
+
+		WriteJSON(w, http.StatusAccepted, map[string]any{
+			"status":  "building",
+			"message": "golden image build started in background",
+		})
+	}
+}
+
+// AdminListGoldenImagesHandler returns all golden images.
+func AdminListGoldenImagesHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		images, err := db.ListGoldenImages(r.Context(), deps.Pool)
+		if err != nil {
+			slog.Error("admin: list golden images", "error", err)
+			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to list golden images")
+			return
+		}
+
+		type goldenImageResp struct {
+			ID              string  `json:"id"`
+			Provider        string  `json:"provider"`
+			Region          string  `json:"region"`
+			ServerType      string  `json:"server_type"`
+			ProviderImageID string  `json:"provider_image_id"`
+			OpenClawVersion string  `json:"openclaw_version"`
+			Status          string  `json:"status"`
+			CreatedAt       string  `json:"created_at"`
+			ActivatedAt     *string `json:"activated_at,omitempty"`
+			DeprecatedAt    *string `json:"deprecated_at,omitempty"`
+		}
+
+		var resp []goldenImageResp
+		for _, img := range images {
+			item := goldenImageResp{
+				ID:              img.ID.String(),
+				Provider:        img.Provider,
+				Region:          img.Region,
+				ServerType:      img.ServerType,
+				ProviderImageID: img.ProviderImageID,
+				OpenClawVersion: img.OpenClawVersion,
+				Status:          string(img.Status),
+				CreatedAt:       img.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			}
+			if img.ActivatedAt != nil {
+				s := img.ActivatedAt.Format("2006-01-02T15:04:05Z")
+				item.ActivatedAt = &s
+			}
+			if img.DeprecatedAt != nil {
+				s := img.DeprecatedAt.Format("2006-01-02T15:04:05Z")
+				item.DeprecatedAt = &s
+			}
+			resp = append(resp, item)
+		}
+
+		WriteJSON(w, http.StatusOK, map[string]any{
+			"golden_images": resp,
 		})
 	}
 }

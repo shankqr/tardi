@@ -1363,3 +1363,153 @@ func UpdateSubscriptionStatusReturningPrev(ctx context.Context, pool *pgxpool.Po
 	}
 	return prevStatus, subID, nil
 }
+
+// --- Golden Image queries ---
+
+// CreateGoldenImage inserts a new golden image record.
+func CreateGoldenImage(ctx context.Context, pool *pgxpool.Pool, img *models.GoldenImage) error {
+	err := pool.QueryRow(ctx, `
+		INSERT INTO golden_images (id, provider, region, server_type, provider_image_id, openclaw_version, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING created_at
+	`, img.ID, img.Provider, img.Region, img.ServerType, img.ProviderImageID, img.OpenClawVersion, img.Status).Scan(&img.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create golden image: %w", err)
+	}
+	return nil
+}
+
+// GetActiveGoldenImage returns the most recent active golden image for the given provider and region.
+func GetActiveGoldenImage(ctx context.Context, pool *pgxpool.Pool, provider, region string) (*models.GoldenImage, error) {
+	img := &models.GoldenImage{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, provider, region, server_type, provider_image_id, openclaw_version, status,
+		       created_at, activated_at, deprecated_at
+		FROM golden_images
+		WHERE provider = $1 AND region = $2 AND status = 'active'
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, provider, region).Scan(
+		&img.ID, &img.Provider, &img.Region, &img.ServerType, &img.ProviderImageID,
+		&img.OpenClawVersion, &img.Status, &img.CreatedAt, &img.ActivatedAt, &img.DeprecatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get active golden image: %w", err)
+	}
+	return img, nil
+}
+
+// ActivateGoldenImage sets a golden image to active and deprecates any previously active image for the same provider/region.
+func ActivateGoldenImage(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID) error {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Get the image to find its provider/region
+	var provider, region string
+	err = tx.QueryRow(ctx, `SELECT provider, region FROM golden_images WHERE id = $1`, id).Scan(&provider, &region)
+	if err != nil {
+		return fmt.Errorf("get golden image: %w", err)
+	}
+
+	// Deprecate any existing active images for this provider/region
+	_, err = tx.Exec(ctx, `
+		UPDATE golden_images SET status = 'deprecated', deprecated_at = now()
+		WHERE provider = $1 AND region = $2 AND status = 'active' AND id != $3
+	`, provider, region, id)
+	if err != nil {
+		return fmt.Errorf("deprecate old golden images: %w", err)
+	}
+
+	// Activate the new image
+	_, err = tx.Exec(ctx, `
+		UPDATE golden_images SET status = 'active', activated_at = now()
+		WHERE id = $1
+	`, id)
+	if err != nil {
+		return fmt.Errorf("activate golden image: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+// UpdateGoldenImageStatus updates the status of a golden image.
+func UpdateGoldenImageStatus(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, status models.GoldenImageStatus) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE golden_images SET status = $1 WHERE id = $2
+	`, status, id)
+	if err != nil {
+		return fmt.Errorf("update golden image status: %w", err)
+	}
+	return nil
+}
+
+// UpdateGoldenImageProviderID updates the provider image ID after snapshot creation completes.
+func UpdateGoldenImageProviderID(ctx context.Context, pool *pgxpool.Pool, id uuid.UUID, providerImageID string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE golden_images SET provider_image_id = $1 WHERE id = $2
+	`, providerImageID, id)
+	if err != nil {
+		return fmt.Errorf("update golden image provider id: %w", err)
+	}
+	return nil
+}
+
+// ListGoldenImages returns all golden images ordered by creation time.
+func ListGoldenImages(ctx context.Context, pool *pgxpool.Pool) ([]models.GoldenImage, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, provider, region, server_type, provider_image_id, openclaw_version, status,
+		       created_at, activated_at, deprecated_at
+		FROM golden_images
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list golden images: %w", err)
+	}
+	defer rows.Close()
+
+	var images []models.GoldenImage
+	for rows.Next() {
+		var img models.GoldenImage
+		if err := rows.Scan(
+			&img.ID, &img.Provider, &img.Region, &img.ServerType, &img.ProviderImageID,
+			&img.OpenClawVersion, &img.Status, &img.CreatedAt, &img.ActivatedAt, &img.DeprecatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan golden image: %w", err)
+		}
+		images = append(images, img)
+	}
+	return images, rows.Err()
+}
+
+// GetDeprecatedGoldenImages returns deprecated golden images older than the given duration.
+func GetDeprecatedGoldenImages(ctx context.Context, pool *pgxpool.Pool, olderThan time.Duration) ([]models.GoldenImage, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT id, provider, region, server_type, provider_image_id, openclaw_version, status,
+		       created_at, activated_at, deprecated_at
+		FROM golden_images
+		WHERE status = 'deprecated' AND deprecated_at < $1
+	`, time.Now().Add(-olderThan))
+	if err != nil {
+		return nil, fmt.Errorf("get deprecated golden images: %w", err)
+	}
+	defer rows.Close()
+
+	var images []models.GoldenImage
+	for rows.Next() {
+		var img models.GoldenImage
+		if err := rows.Scan(
+			&img.ID, &img.Provider, &img.Region, &img.ServerType, &img.ProviderImageID,
+			&img.OpenClawVersion, &img.Status, &img.CreatedAt, &img.ActivatedAt, &img.DeprecatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan deprecated golden image: %w", err)
+		}
+		images = append(images, img)
+	}
+	return images, rows.Err()
+}
