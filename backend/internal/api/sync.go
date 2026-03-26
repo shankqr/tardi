@@ -79,9 +79,11 @@ if [ "$ENV_CHANGED" = true ]; then
     # endpoint does this after the container is healthy).
     cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
 
-    # Wait for healthy, then apply post-startup config before reporting completion
+    # Wait for healthy, then apply post-startup config before reporting completion.
+    # OpenClaw takes ~70s to start listening; Docker healthcheck has start_period=60s
+    # + interval=30s. Wait up to 120s (24 x 5s) to cover slow starts.
     HEALTHY=false
-    for i in $(seq 1 12); do
+    for i in $(seq 1 24); do
         sleep 5
         if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
             HEALTHY=true

@@ -476,9 +476,10 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
             # it on startup. Config changes must go through openclaw CLI after healthy.
             cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
 
-            # Wait for healthy, then apply post-startup config
+            # Wait for healthy, then apply post-startup config.
+            # OpenClaw takes ~70s to start; wait up to 120s (24 x 5s).
             HEALTHY=false
-            for i in $(seq 1 12); do
+            for i in $(seq 1 24); do
                 sleep 5
                 if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then
                     HEALTHY=true
