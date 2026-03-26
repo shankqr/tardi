@@ -45,9 +45,9 @@ func DashboardHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Auto-unlock instances stuck in snapshotting/restoring by checking provider state
+		// Auto-unlock instances stuck in snapshotting/restoring/restarting by checking provider state
 		for i, inst := range instances {
-			if inst.Status != models.VpsStatusSnapshotting && inst.Status != models.VpsStatusRestoring {
+			if inst.Status != models.VpsStatusSnapshotting && inst.Status != models.VpsStatusRestoring && inst.Status != models.VpsStatusRestarting {
 				continue
 			}
 			if inst.ProviderServerID == nil {
