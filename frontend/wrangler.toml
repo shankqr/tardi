@@ -21,6 +21,7 @@ GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwLtsPQeta-
 VITE_SENTRY_DSN = "https://7b373dad914fe78ef8b1a523ac29e821@o4511031391813632.ingest.us.sentry.io/4511031394893824"
 VITE_SENTRY_ENVIRONMENT = "dev"
 VITE_FF_MODEL_SELECTION = "false"
+VITE_FF_HEALTH_CHECK = "false"
 
 # Production environment
 [env.production.vars]
@@ -40,3 +41,4 @@ GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwLtsPQeta-
 VITE_SENTRY_DSN = "https://7b373dad914fe78ef8b1a523ac29e821@o4511031391813632.ingest.us.sentry.io/4511031394893824"
 VITE_SENTRY_ENVIRONMENT = "production"
 VITE_FF_MODEL_SELECTION = "false"
+VITE_FF_HEALTH_CHECK = "false"

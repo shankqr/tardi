@@ -23,6 +23,7 @@
 	import AIProviderConfig from '$lib/components/AIProviderConfig.svelte';
 	import MagicMoment from '$lib/components/MagicMoment.svelte';
 	import GoogleConnect from '$lib/components/GoogleConnect.svelte';
+	import { featureFlags } from '$lib/featureFlags';
 
 	const instance = $derived(
 		$dashboardState?.instances.find((i) => i.id === page.params.id) ?? null
@@ -1138,6 +1139,7 @@
 										>
 											{instance.status === 'restarting' ? 'Restarting...' : restarting ? 'Restarting...' : restartCooloff ? `Restart (${restartCooloffRemaining}s)` : 'Restart'}
 										</button>
+										{#if featureFlags.healthCheck}
 										<button
 											onclick={handleRunDoctor}
 											disabled={doctorRunning || instance.status !== 'active'}
@@ -1145,9 +1147,10 @@
 										>
 											{doctorRunning ? 'Checking...' : 'Health Check'}
 										</button>
+										{/if}
 									</div>
 
-									{#if doctorChecks !== null || doctorRaw !== null || doctorError !== null}
+									{#if featureFlags.healthCheck && (doctorChecks !== null || doctorRaw !== null || doctorError !== null)}
 										<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
 											<div class="flex items-center justify-between">
 												<h4 class="text-sm font-medium text-gray-900 dark:text-white">Health Check Results</h4>
@@ -1228,13 +1231,13 @@
 									{restarting ? 'Restarting...' : restartCooloff ? `Restart (${restartCooloffRemaining}s)` : 'Restart'}
 								</button>
 							{:else}
-								<span>Your agent appears unhealthy. Run a health check to diagnose the issue.</span>
+								<span>Your agent appears unhealthy. Try restarting to resolve the issue.</span>
 								<button
-									onclick={handleRunDoctor}
-									disabled={doctorRunning || instance.status !== 'active'}
+									onclick={handleRestart}
+									disabled={restarting || restartCooloff || instance.status !== 'active'}
 									class="ml-3 shrink-0 rounded-md bg-yellow-600 px-3 py-1 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
 								>
-									{doctorRunning ? 'Checking...' : 'Health Check'}
+									{restarting ? 'Restarting...' : restartCooloff ? `Restart (${restartCooloffRemaining}s)` : 'Restart'}
 								</button>
 							{/if}
 						</div>

@@ -9,4 +9,5 @@
  */
 export const featureFlags = {
 	modelSelection: import.meta.env.VITE_FF_MODEL_SELECTION === 'true',
+	healthCheck: import.meta.env.VITE_FF_HEALTH_CHECK === 'true',
 } as const;
