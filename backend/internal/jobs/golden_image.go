@@ -194,8 +194,9 @@ func NewGoldenImageBuilder(pool *pgxpool.Pool, registry *provider.Registry, logg
 func (b *GoldenImageBuilder) Build(ctx context.Context) (*models.GoldenImage, error) {
 	imageTag := resolveImageTag(ctx, b.pool, b.openClawImageTag)
 
-	// Look up provider mapping to get server type and region
-	mapping, err := db.GetBestProviderMapping(ctx, b.pool, models.PlanStandard, "europe")
+	// Look up any available provider mapping to get server type and region.
+	// Golden images are region-scoped; we build for the first available region.
+	mapping, err := db.GetAnyAvailableProviderMapping(ctx, b.pool, models.PlanStandard)
 	if err != nil {
 		return nil, fmt.Errorf("get provider mapping: %w", err)
 	}

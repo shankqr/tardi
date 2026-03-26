@@ -379,6 +379,30 @@ func CountPendingJobsByUserID(ctx context.Context, pool *pgxpool.Pool, userID uu
 }
 
 // GetBestProviderMapping returns the cheapest available provider for a plan/region.
+// GetAnyAvailableProviderMapping returns the cheapest available mapping for a plan tier (any region).
+// Used by the golden image builder which doesn't target a specific user region.
+func GetAnyAvailableProviderMapping(ctx context.Context, pool *pgxpool.Pool, planTier models.PlanTier) (*models.ProviderPlanMapping, error) {
+	m := &models.ProviderPlanMapping{}
+	err := pool.QueryRow(ctx, `
+		SELECT id, plan_tier, provider, region, provider_server_type,
+		       provider_region, provider_image, monthly_cost_cents, is_available, created_at
+		FROM provider_plan_mappings
+		WHERE plan_tier = $1 AND is_available = true
+		ORDER BY monthly_cost_cents ASC
+		LIMIT 1
+	`, planTier).Scan(
+		&m.ID, &m.PlanTier, &m.Provider, &m.Region, &m.ProviderServerType,
+		&m.ProviderRegion, &m.ProviderImage, &m.MonthlyCostCents, &m.IsAvailable, &m.CreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get any provider mapping: %w", err)
+	}
+	return m, nil
+}
+
 func GetBestProviderMapping(ctx context.Context, pool *pgxpool.Pool, planTier models.PlanTier, region string) (*models.ProviderPlanMapping, error) {
 	m := &models.ProviderPlanMapping{}
 	err := pool.QueryRow(ctx, `
