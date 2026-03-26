@@ -17,18 +17,6 @@ Tardi is a dedicated AI agent hosting platform. Users configure an AI agent, sub
 - Adapter: Cloudflare Pages (`@sveltejs/adapter-cloudflare`)
 - TypeScript strict mode
 
-### Key Paths
-
-- `frontend/src/lib/types/index.ts` — All shared TypeScript types
-- `frontend/src/lib/api/mock.ts` — Mock data (single plan, single instance, snapshots)
-- `frontend/src/lib/api/client.ts` — API client with `USE_MOCK` flag
-- `frontend/src/lib/stores/auth.ts` — Auth store with `USE_MOCK_AUTH` flag
-- `frontend/src/lib/stores/dashboard.ts` — Dashboard state with polling
-- `frontend/src/lib/stores/onboarding.ts` — Onboarding flow state
-- `frontend/src/routes/` — SvelteKit file-based routing
-
-### Commands
-
 ```bash
 cd frontend
 npm run dev          # Dev server on :5173
@@ -36,36 +24,19 @@ npm run build        # Production build
 npm run check        # Type check
 ```
 
-Always commit and push to dev branch after any changes to code
-
 ### Conventions
 
-- UI labels say "Agent" (not "Instance") for user-facing text
-- Internal code still uses `instance`/`VpsInstance` types
-- Gray-900 is the primary brand color (buttons, text, borders)
-- No VPS specs (vCPU, RAM) shown to users — abstracted away
-- All TODO backend integrations show `alert()` placeholder or simulate with `setTimeout`
+- UI labels say "Agent" (not "Instance") — internal code uses `instance`/`VpsInstance`
+- Gray-900 is the primary brand color
+- No VPS specs shown to users — abstracted away
+- Always commit and push to dev branch after any changes to code
 
 ## Backend
 
 - Go 1.26 with `cmd/` and `internal/` layout
 - PostgreSQL via Docker Compose (local), Cloud SQL (deployed)
 - Migrations in `backend/migrations/` (Goose)
-- Dockerfile: multi-stage alpine build, exposes 8080
 - Deployed to GCP Cloud Run (`tardi-api-dev` / `tardi-api-prod`)
-
-### Key Paths
-
-- `backend/cmd/server/main.go` — Entry point
-- `backend/internal/api/` — HTTP handlers and middleware
-- `backend/internal/config/config.go` — Environment-based config
-- `backend/internal/db/` — PostgreSQL connection, queries, migrations
-- `backend/internal/provider/` — Multi-provider abstraction (Hetzner, etc.)
-- `backend/internal/jobs/` — Async provisioning worker + reconciler
-- `backend/Dockerfile` — Production container image
-- `backend/Makefile` — `make build`, `make test`, `make lint`, `make dev`
-
-### Commands
 
 ```bash
 cd backend
@@ -80,209 +51,24 @@ make db-reset        # Reset local PostgreSQL
 
 - Terraform in `infra/` targeting GCP
 - Separate root per GCP project (blast-radius isolation)
-- Dev project: `tardi-dev-488420`, Prod project: `tardi-prod-488420`
-- State backends: `tardi-dev-488420-terraform-state` / `tardi-prod-488420-terraform-state`
-- Shared reusable module: `infra/modules/backend-env/`
-
-### Key Paths
-
-- `infra/environments/dev/` — Dev root (main.tf, variables.tf, terraform.tfvars)
-- `infra/environments/prod/` — Prod root (main.tf, variables.tf, terraform.tfvars)
-- `infra/modules/backend-env/` — Reusable env module (Cloud Run, Cloud SQL, VPC, AR, Secrets, IAM, Monitoring)
-
-## OpenClaw (Agent Runtime)
-
-OpenClaw is the AI agent runtime that runs on each user's VPS inside a Docker container.
-
-### Key Behaviors
-
-- **OpenClaw owns `openclaw.json`** — it overwrites the file on startup with its internal config. Do NOT rely on editing this file externally; changes will be lost.
-- **Config changes** must go through OpenClaw's `config.patch` WebSocket RPC (see `whatsapp.go` for examples), or be set before the very first boot.
-- **`config.patch` format**: Requires `{raw: "<JSON string of patch>", baseHash: "<hash from config.get>"}`. NOT `hash` (rejected as unexpected property), NOT direct config as params (rejected as missing `raw`). Always call `config.get` first to obtain the `baseHash`.
-- **Telegram bot token** is passed via `TELEGRAM_BOT_TOKEN` env var. OpenClaw auto-detects it and configures the Telegram channel automatically.
-
-### Gateway Auth — Token Mode
-
-The gateway uses `auth.mode: "token"` with `OPENCLAW_GATEWAY_TOKEN` env var. This was chosen over two alternatives that don't work:
-
-- `auth.mode: "none"` — **crashes**: OpenClaw refuses to start with "Refusing to bind gateway to lan without auth" when `bind: "lan"` is set
-- `auth.mode: "trusted-proxy"` — **breaks internal tool calls**: requires `X-Forwarded-User` header from a reverse proxy, but when the agent calls tools internally (sessions_list, browser, etc.) the calls go directly to `ws://127.0.0.1:18789` bypassing Caddy — no header, no auth, unauthorized
-
-**Two tokens, same value:**
-- `OPENCLAW_AUTH_TOKEN` — stored in DB, sent to frontend for building the dashboard URL
-- `OPENCLAW_GATEWAY_TOKEN` — read by OpenClaw for gateway token auth. Same value as `OPENCLAW_AUTH_TOKEN`
-
-### Control UI Dashboard Auth — How It Works
-
-The Control UI is a Lit-based SPA served by OpenClaw's gateway. It authenticates via a two-layer mechanism:
-
-**Layer 1 — Token delivery via URL hash fragment:**
-The frontend opens the dashboard as `https://<domain>/#token=<OPENCLAW_AUTH_TOKEN>`. The Control UI JS reads the token from the hash fragment (NOT query string, NOT HTTP headers) and includes it in the WebSocket `connect` message's `auth.token` field. This is the ONLY way to deliver the token to the Control UI — Caddy headers, URL rewrites, and query params do NOT work because the JS ignores them.
-
-**Layer 2 — Device pairing disabled:**
-OpenClaw normally requires "device pairing" for each new browser (crypto-based device identity + admin approval). This is disabled via `gateway.controlUi.dangerouslyDisableDeviceAuth: true` in `openclaw.json`, allowing any browser with the correct token to connect without pairing.
-
-**Full auth flow:**
-```
-Browser (user clicks "Open Agent Dashboard"):
-  1. Frontend opens https://<domain>/#token=<OPENCLAW_AUTH_TOKEN>
-  2. Caddy is a transparent reverse proxy (TLS termination only, no auth logic)
-  3. OpenClaw serves the Control UI HTML/JS
-  4. Control UI JS reads token from URL hash fragment (#token=xxx)
-  5. JS creates WebSocket to wss://<domain>/ (through Caddy)
-  6. JS sends connect message with auth.token = the hash token
-  7. OpenClaw validates token against OPENCLAW_GATEWAY_TOKEN env var
-  8. Device pairing skipped (dangerouslyDisableDeviceAuth: true)
-  9. Connected — dashboard loads
-
-Backend RPC (openclawRPC in whatsapp.go):
-  1. Backend connects to wss://<ip>/?token=<token> (token in URL)
-  2. Sends connect message WITHOUT auth field
-  3. OpenClaw uses HTTP-level token from URL — no pairing needed
-  4. Connected — RPC calls proceed
-
-Internal tool calls (agent → gateway):
-  1. Agent calls ws://127.0.0.1:18789 for tool execution
-  2. OpenClaw authenticates using OPENCLAW_GATEWAY_TOKEN env var
-```
-
-**Config in `openclaw.json`:**
-```json
-{
-  "gateway": {
-    "bind": "lan",
-    "controlUi": {
-      "allowedOrigins": ["*"],
-      "dangerouslyDisableDeviceAuth": true
-    },
-    "auth": { "mode": "token" }
-  }
-}
-```
-
-**What does NOT work for Control UI auth (tried and failed):**
-- `?token=xxx` in URL query string — JS deletes it from URL but does NOT use it for auth
-- Caddy `rewrite` to inject `?token=xxx` — only affects HTTP-level auth, JS still sends empty connect message
-- Caddy `header_up Authorization "Bearer xxx"` — OpenClaw ignores this header for WebSocket auth
-- `#gatewayUrl=wss://domain/?token=xxx` — treated as "pending" URL requiring user confirmation
-- `#password=xxx` — not reliably picked up by the JS WebSocket client
-- `auth.mode: "trusted-proxy"` with `X-Forwarded-User` — breaks internal tool calls
-
-**Caddy configuration (simple transparent proxy):**
-```
-<domain> {
-    reverse_proxy openclaw-gateway:18789
-}
-```
-No auth headers, no rewrites, no cookies. Caddy only does TLS termination and proxying.
-
-**Drift guard** (`heartbeat.go`): Runs every 5 minutes. Ensures:
-- `auth.mode: "token"` in `openclaw.json`
-- `OPENCLAW_GATEWAY_TOKEN` is in `.env`
-- `dangerouslyDisableDeviceAuth: true` is set
-- Caddyfile is a clean transparent proxy (removes old auth patterns)
-
-### Telegram Config Issues — Root Causes & Fixes
-
-When OpenClaw auto-detects `TELEGRAM_BOT_TOKEN` from the env var, it creates a Telegram channel with **bad defaults** that cause two issues:
-
-1. **Double replies**: Default `streaming: "partial"` sends an initial streaming chunk as one message, then the full response as a second message.
-2. **Pairing prompt required**: Default `dmPolicy` is not `"open"`, so users see "access not configured" and must manually run a pairing command.
-
-**Required Telegram channel settings** (applied post-startup via CLI or RPC):
-```json
-{
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "dmPolicy": "open",
-      "allowFrom": ["*"],
-      "groupPolicy": "disabled",
-      "streaming": "off"
-    }
-  }
-}
-```
-
-### Telegram Config Sync Flow
-
-The config is applied through **two mechanisms** that work together:
-
-1. **SSH sync script** (`backend/internal/api/sync.go` — `configSyncScript`): Triggered when user enters bot token in dashboard. Recreates the container, waits for health, then applies config via `openclaw config set` CLI commands.
-2. **Cleanup RPC** (`backend/internal/api/telegram.go` — `patchTelegramConfig`): Called by frontend after sync completes. Uses WebSocket `config.patch` RPC as a safety net to ensure the same settings.
-
-**Critical ordering**: The sync script MUST print `"config sync complete"` only AFTER the Telegram config CLI commands have run. The frontend polls for this message to detect completion. If it appears before config is applied, the frontend shows success prematurely and the user messages the bot before `dmPolicy:"open"` is set — resulting in the pairing prompt.
-
-**Previous bug (fixed 2026-03-17)**: The sync script printed completion BEFORE waiting for health and applying config. The frontend detected early completion, called the cleanup RPC (which failed since the container wasn't ready), and showed success. The user saw "Telegram bot connected" but the bot still required pairing because `dmPolicy:"open"` was never applied.
-
-### Telegram Config — Important Notes
-
-- Do NOT include `channels.telegram` in the cloud-init `openclaw.json` template — OpenClaw auto-detects from `TELEGRAM_BOT_TOKEN` env var
-- OpenClaw's auto-detection defaults to `streaming: "partial"` and a restrictive `dmPolicy` — both must be overridden post-startup
-- `dmPolicy: "open"` requires `allowFrom: ["*"]` — omitting `allowFrom` causes a config validation error and crash loop
-- `allowFrom` must be set BEFORE `dmPolicy` when using sequential CLI commands (validation order dependency)
-- The `config.patch` RPC uses WebSocket protocol (see `openclawRPC` in `whatsapp.go`)
-- The heartbeat script (`provisioner.go`) has its own config sync section that correctly applies config before writing the version file — this was not affected by the bug
-
-### Debugging OpenClaw on VPS
-
-```bash
-# SSH into VPS
-ssh root@<ip>
-
-# Check current config (OpenClaw's actual runtime config)
-cat /opt/openclaw/data/openclaw/openclaw.json | jq .
-
-# Container logs
-docker logs openclaw-gateway 2>&1
-
-# Detailed log file (inside container)
-docker exec openclaw-gateway cat /tmp/openclaw/openclaw-$(date +%Y-%m-%d).log
-
-# Check Telegram webhook status (should be empty URL for polling)
-TG_TOKEN=$(grep "^TELEGRAM_BOT_TOKEN=" /opt/openclaw/.env | cut -d= -f2-)
-curl -sf "https://api.telegram.org/bot${TG_TOKEN}/getWebhookInfo" | jq .
-
-# Data directory structure
-ls -la /opt/openclaw/data/openclaw/
-```
+- Dev: `tardi-dev-488420`, Prod: `tardi-prod-488420`
+- Shared module: `infra/modules/backend-env/`
 
 ## CI/CD
 
-GitHub Actions with two branches as source of truth:
+- `dev` branch → dev environment, `main` branch → production
+- Deploys auto-trigger on push (path-filtered per component)
+- See `docs/cicd.md` for workflow details
 
-- **`dev` branch** → development environment
-- **`main` branch** → production environment
+## OpenClaw (Agent Runtime) — Critical Rules
 
-### Workflows (`.github/workflows/`)
+OpenClaw runs on each user's VPS inside a Docker container. See `docs/openclaw-integration.md` for full details.
 
-| File                  | Trigger                              | Purpose                                                                                |
-| --------------------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
-| `ci-gate.yml`         | PR to `dev`/`main`                   | Path-based change detection, calls reusable CI workflows, single required status check |
-| `ci-frontend.yml`     | Reusable + PR                        | `npm run check` + `npm run build`                                                      |
-| `ci-backend.yml`      | Reusable + PR                        | `golangci-lint` + `go test` + `go build` (3 parallel jobs)                             |
-| `ci-infra.yml`        | Reusable + PR                        | `terraform fmt -check` + `validate` + `plan` (posts plan as PR comment)                |
-| `deploy-frontend.yml` | Push to `dev`/`main` (frontend/\*\*) | Build + Wrangler deploy to Cloudflare Pages                                            |
-| `deploy-backend.yml`  | Push to `dev`/`main` (backend/\*\*)  | Docker build → Artifact Registry → Cloud Run deploy                                    |
-| `deploy-infra.yml`    | Push to `main` only (infra/\*\*)     | `terraform apply` (dev then prod, separate roots)                                      |
+**Must-know rules when writing code that touches OpenClaw:**
 
-### Branch-to-Environment Mapping
-
-| Branch | Frontend                | Backend        | Image Tags               |
-| ------ | ----------------------- | -------------- | ------------------------ |
-| `dev`  | dev.tardi-467.pages.dev | tardi-api-dev  | `dev-{sha7}` + `latest`  |
-| `main` | app.tardi.ai            | tardi-api-prod | `prod-{sha7}` + `stable` |
-
-### Key Design Decisions
-
-- **CI Gate pattern**: `dorny/paths-filter` detects changes, conditionally runs component CI workflows. Single `gate` job is the only required status check (solves path-filter + required-check incompatibility)
-- **Infra applies from `main` only**: Separate Terraform roots per project, applied sequentially (dev then prod)
-- **GCP auth**: Workload Identity Federation (no long-lived service account keys)
-- **Concurrency**: Per-branch groups with `cancel-in-progress: false` (running deploys finish)
-- **Runtime vars** (`COMING_SOON`, `API_URL`): Set in `wrangler.toml` per environment, can be overridden in Cloudflare dashboard
-
-### GitHub Secrets Required
-
-- `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`
-- `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
-- `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`
+- **OpenClaw owns `openclaw.json`** — it overwrites on startup. Config changes must go through `config.patch` WebSocket RPC or be set before first boot.
+- **`config.patch` format**: `{raw: "<JSON string>", baseHash: "<from config.get>"}`. NOT `hash`, NOT direct config. Always call `config.get` first.
+- **NEVER change `auth.mode` from `"token"`** — `"none"` crashes, `"trusted-proxy"` breaks internal tool calls (browser, sessions via `ws://127.0.0.1:18789`).
+- **Two tokens, same value**: `OPENCLAW_AUTH_TOKEN` (DB/frontend) and `OPENCLAW_GATEWAY_TOKEN` (OpenClaw env var).
+- **Dashboard URL**: `https://<domain>/#token=<TOKEN>` — hash fragment is the ONLY working auth delivery method.
+- **Telegram config**: Do NOT put `channels.telegram` in cloud-init template. Override post-startup with `streaming: "off"` and `dmPolicy: "open"` (requires `allowFrom: ["*"]`). Set `allowFrom` BEFORE `dmPolicy`.
