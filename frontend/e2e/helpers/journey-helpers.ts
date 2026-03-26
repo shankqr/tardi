@@ -118,7 +118,8 @@ export async function ensureInstancePage(
 
 /**
  * Delete any existing non-terminated instances for the given account.
- * Polls until all instances are terminated (max 2 minutes).
+ * Polls until all instances are terminated or only 'error'/'terminating' remain
+ * that won't block a new deploy (max 5 minutes).
  */
 export async function deleteExistingInstances(
 	email: string,
@@ -129,39 +130,48 @@ export async function deleteExistingInstances(
 		headers: { Authorization: `Bearer ${idToken}` },
 	});
 	const state = await res.json();
-	const activeInstances = (state.instances || []).filter(
-		(i: { status: string }) => i.status !== 'terminated'
+	const deletableInstances = (state.instances || []).filter(
+		(i: { status: string }) =>
+			i.status !== 'terminated' && i.status !== 'terminating'
 	);
 
-	if (!activeInstances.length) {
+	if (!deletableInstances.length) {
 		console.log('[E2E] No active instances to delete');
 		return;
 	}
 
-	for (const inst of activeInstances) {
+	for (const inst of deletableInstances) {
 		console.log(`[E2E] Deleting instance ${inst.id} (status: ${inst.status})`);
-		await fetch(`${API_URL}/api/instances/${inst.id}`, {
+		const delRes = await fetch(`${API_URL}/api/instances/${inst.id}`, {
 			method: 'DELETE',
 			headers: { Authorization: `Bearer ${idToken}` },
 		});
+		if (!delRes.ok) {
+			const body = await delRes.text().catch(() => '');
+			console.log(`[E2E] Delete returned ${delRes.status}: ${body}`);
+		}
 	}
 
+	// Poll until no instances block a new deploy (terminated/error are fine)
 	const start = Date.now();
-	while (Date.now() - start < 120_000) {
+	const timeoutMs = 300_000; // 5 minutes
+	while (Date.now() - start < timeoutMs) {
 		const token = await getIdToken(email, password);
 		const r = await fetch(`${API_URL}/api/dashboard/state`, {
 			headers: { Authorization: `Bearer ${token}` },
 		});
 		const s = await r.json();
-		const remaining = (s.instances || []).filter(
-			(i: { status: string }) => i.status !== 'terminated'
+		const blocking = (s.instances || []).filter(
+			(i: { status: string }) =>
+				i.status !== 'terminated' && i.status !== 'error'
 		);
-		if (!remaining.length) {
-			console.log('[E2E] All instances terminated');
+		if (!blocking.length) {
+			console.log('[E2E] All instances terminated or in error state');
 			return;
 		}
-		console.log(`[E2E] Waiting for ${remaining.length} instance(s) to terminate...`);
-		await new Promise((r) => setTimeout(r, 5000));
+		const elapsed = Math.round((Date.now() - start) / 1000);
+		console.log(`[E2E] Waiting for ${blocking.length} instance(s) to terminate... (${elapsed}s)`);
+		await new Promise((r) => setTimeout(r, 10000));
 	}
-	throw new Error('Instances did not terminate within 2 minutes');
+	throw new Error('Instances did not terminate within 5 minutes');
 }

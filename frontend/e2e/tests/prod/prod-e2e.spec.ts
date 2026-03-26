@@ -159,21 +159,22 @@ test('Prod E2E: delete instance → redeploy → configure → verify', async ({
 
 		console.log(`[Prod E2E] Opening dashboard: ${dashboardUrl}`);
 
-		// Wait for gateway to come back online after model change sync
+		// Use browser-based navigation instead of Node.js fetch for reachability —
+		// Cloudflare proxy SSL works in Chromium but may fail with Node.js fetch
 		const ocUrl = `${dashboardUrl}/#token=${dashboardToken}`;
 		let dashboardReady = false;
-		for (let attempt = 0; attempt < 12; attempt++) {
+		for (let attempt = 0; attempt < 6; attempt++) {
 			try {
-				const res = await fetch(dashboardUrl, { signal: AbortSignal.timeout(10_000) });
-				if (res.ok || res.status === 101 || res.status === 426) {
+				const response = await page.goto(ocUrl, { timeout: 20_000, waitUntil: 'domcontentloaded' });
+				if (response && (response.ok() || response.status() === 426)) {
 					dashboardReady = true;
 					break;
 				}
-				console.log(`[Prod E2E] Dashboard not ready (status ${res.status}), retrying...`);
+				console.log(`[Prod E2E] Dashboard returned ${response?.status()}, retrying...`);
 			} catch {
-				console.log(`[Prod E2E] Dashboard not reachable yet (attempt ${attempt + 1}/12)`);
+				console.log(`[Prod E2E] Dashboard not reachable yet (attempt ${attempt + 1}/6)`);
 			}
-			await new Promise((r) => setTimeout(r, 10_000));
+			await page.waitForTimeout(15_000);
 		}
 
 		if (!dashboardReady) {
@@ -181,8 +182,7 @@ test('Prod E2E: delete instance → redeploy → configure → verify', async ({
 			return;
 		}
 
-		await page.goto(ocUrl);
-
+		// Wait for the Control UI to load and connect via WebSocket
 		const chatInput = page.locator(
 			'textarea, input[type="text"], [contenteditable="true"]'
 		).last();
