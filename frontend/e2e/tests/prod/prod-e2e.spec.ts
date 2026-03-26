@@ -177,57 +177,55 @@ test('Prod E2E: delete instance → redeploy → configure → verify', async ({
 			await page.waitForTimeout(15_000);
 		}
 
-		if (!dashboardReady) {
-			console.log('[Prod E2E] Dashboard never became reachable, skipping OC verification');
-			return;
-		}
+		if (dashboardReady) {
+			// Wait for the Control UI to load and connect via WebSocket
+			const chatInput = page.locator(
+				'textarea, input[type="text"], [contenteditable="true"]'
+			).last();
+			await expect(chatInput).toBeVisible({ timeout: 60_000 });
+			console.log('[Prod E2E] Control UI loaded, chat input found');
 
-		// Wait for the Control UI to load and connect via WebSocket
-		const chatInput = page.locator(
-			'textarea, input[type="text"], [contenteditable="true"]'
-		).last();
-		await expect(chatInput).toBeVisible({ timeout: 60_000 });
-		console.log('[Prod E2E] Control UI loaded, chat input found');
+			await chatInput.click();
+			await chatInput.fill('what model are you using right now?');
+			await page.keyboard.press('Enter');
 
-		await chatInput.click();
-		await chatInput.fill('what model are you using right now?');
-		await page.keyboard.press('Enter');
+			// Wait for a response
+			let responseDetected = false;
+			const startTime = Date.now();
+			const initialContent = await page.textContent('body') || '';
+			const initialLength = initialContent.length;
 
-		// Wait for a response
-		let responseDetected = false;
-		const startTime = Date.now();
-		const initialContent = await page.textContent('body') || '';
-		const initialLength = initialContent.length;
-
-		while (Date.now() - startTime < 30_000) {
-			await page.waitForTimeout(3000);
-			const currentContent = await page.textContent('body') || '';
-			if (currentContent.length > initialLength + 50) {
-				responseDetected = true;
-				break;
+			while (Date.now() - startTime < 30_000) {
+				await page.waitForTimeout(3000);
+				const currentContent = await page.textContent('body') || '';
+				if (currentContent.length > initialLength + 50) {
+					responseDetected = true;
+					break;
+				}
 			}
+
+			const pageContent = await page.textContent('body');
+			console.log(`[Prod E2E] Selected model was: ${selectedModelName}`);
+
+			expect(responseDetected).toBeTruthy();
+
+			const responseLength = (pageContent?.length || 0) - initialLength;
+			expect(responseLength).toBeGreaterThan(20);
+
+			const lowerContent = pageContent?.toLowerCase() || '';
+			const hasRelevantContent =
+				lowerContent.includes('model') ||
+				lowerContent.includes('ai') ||
+				lowerContent.includes('language') ||
+				lowerContent.includes('assistant');
+			expect(hasRelevantContent).toBeTruthy();
+			console.log('[Prod E2E] Dashboard responded with relevant content');
+		} else {
+			console.log('[Prod E2E] Dashboard never became reachable, skipping OC verification');
 		}
 
-		const pageContent = await page.textContent('body');
-		console.log(`[Prod E2E] Selected model was: ${selectedModelName}`);
-
-		expect(responseDetected).toBeTruthy();
-
-		const responseLength = (pageContent?.length || 0) - initialLength;
-		expect(responseLength).toBeGreaterThan(20);
-
-		const lowerContent = pageContent?.toLowerCase() || '';
-		const hasRelevantContent =
-			lowerContent.includes('model') ||
-			lowerContent.includes('ai') ||
-			lowerContent.includes('language') ||
-			lowerContent.includes('assistant');
-		expect(hasRelevantContent).toBeTruthy();
-		console.log('[Prod E2E] Dashboard responded with relevant content');
-
-		// Navigate back to instance page
-		await page.goto(`/dashboard/instances/${instanceId}`);
-		await expect(page.locator('#openrouter-key')).toBeVisible({ timeout: 30_000 });
+		// Always navigate back to instance page for subsequent steps
+		await ensureInstancePage(page, instanceId);
 	});
 
 	// ── Step 7: Link Telegram bot (optional) ──
