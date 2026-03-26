@@ -511,8 +511,8 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		await expect(confirmBtn).toBeVisible({ timeout: 5_000 });
 		await confirmBtn.click();
 
-		const restoreSuccess = page.getByText(/restore.*success|restored|running/i);
-		const agentDetails = page.getByText('Agent Details');
+		const restoreSuccess = page.getByText(/restore.*success|restored|running/i).first();
+		const agentDetails = page.getByText('Agent Details').first();
 		await expect(restoreSuccess.or(agentDetails)).toBeVisible({ timeout: 180_000 });
 
 		const runningStatus = page.locator('dd').filter({ hasText: /Running|Active/i }).first();
