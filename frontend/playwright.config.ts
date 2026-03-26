@@ -41,7 +41,7 @@ export default defineConfig({
 		{
 			name: 'prod-e2e',
 			testDir: './e2e/tests/prod',
-			timeout: 900_000,
+			timeout: 1_500_000, // 25 min — provisioning ~7 min + multiple config syncs ~2 min each
 		},
 	],
 });
