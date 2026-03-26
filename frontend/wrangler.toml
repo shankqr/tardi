@@ -20,6 +20,7 @@ STRIPE_PUBLISHABLE_KEY = "pk_test_51T4zbdAPpIsY1S3u2sy8FJ5ehbYHGoWfqGJ7lkO5y5y8h
 GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwLtsPQeta-1SvGb0zG5aNST1NRQgqC4p3fevmt5rS5P5RbfNQfngivC6lc9pWIMtpu/exec"
 VITE_SENTRY_DSN = "https://7b373dad914fe78ef8b1a523ac29e821@o4511031391813632.ingest.us.sentry.io/4511031394893824"
 VITE_SENTRY_ENVIRONMENT = "dev"
+VITE_FF_MODEL_SELECTION = "false"
 
 # Production environment
 [env.production.vars]
@@ -38,3 +39,4 @@ STRIPE_PUBLISHABLE_KEY = "pk_live_51T4zbdAPpIsY1S3uhXUlmD6YrvqeDCaoLRlimvXNgvaIR
 GOOGLE_SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwLtsPQeta-1SvGb0zG5aNST1NRQgqC4p3fevmt5rS5P5RbfNQfngivC6lc9pWIMtpu/exec"
 VITE_SENTRY_DSN = "https://7b373dad914fe78ef8b1a523ac29e821@o4511031391813632.ingest.us.sentry.io/4511031394893824"
 VITE_SENTRY_ENVIRONMENT = "production"
+VITE_FF_MODEL_SELECTION = "false"

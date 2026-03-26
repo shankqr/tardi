@@ -68,7 +68,6 @@ OpenClaw runs on each user's VPS inside a Docker container. See `docs/openclaw-i
 
 - **OpenClaw owns `openclaw.json`** — it overwrites on startup. Config changes must go through `config.patch` WebSocket RPC or be set before first boot.
 - **`config.patch` format**: `{raw: "<JSON string>", baseHash: "<from config.get>"}`. NOT `hash`, NOT direct config. Always call `config.get` first.
-- **NEVER change `auth.mode` from `"token"`** — `"none"` crashes, `"trusted-proxy"` breaks internal tool calls (browser, sessions via `ws://127.0.0.1:18789`).
 - **Two tokens, same value**: `OPENCLAW_AUTH_TOKEN` (DB/frontend) and `OPENCLAW_GATEWAY_TOKEN` (OpenClaw env var).
 - **Dashboard URL**: `https://<domain>/#token=<TOKEN>` — hash fragment is the ONLY working auth delivery method.
 - **Telegram config**: Do NOT put `channels.telegram` in cloud-init template. Override post-startup with `streaming: "off"` and `dmPolicy: "open"` (requires `allowFrom: ["*"]`). Set `allowFrom` BEFORE `dmPolicy`.

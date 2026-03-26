@@ -3,6 +3,7 @@
 	import { getIdToken } from '$lib/stores/auth';
 	import { getAgentConfig, updateAgentConfig, syncConfig, getSyncStatus, getModels } from '$lib/api/client';
 	import type { ModelInfo } from '$lib/types';
+	import { featureFlags } from '$lib/featureFlags';
 
 	interface Props {
 		instanceId: string;
@@ -88,10 +89,9 @@
 		loading = true;
 		try {
 			const [modelsResult, configResult] = await Promise.all([
-				getModels().catch(() => {
-					modelsError = true;
-					return null;
-				}),
+				featureFlags.modelSelection
+					? getModels().catch(() => { modelsError = true; return null; })
+					: Promise.resolve(null),
 				(async () => {
 					let token = await getIdToken();
 					if (!token) {
@@ -147,7 +147,7 @@
 
 			const config: Record<string, unknown> = {
 				provider: 'openrouter',
-				model: selectedModel,
+				...(featureFlags.modelSelection ? { model: selectedModel } : {}),
 				openrouter_api_key: keyDirty ? openrouterKey : null,
 				anthropic_api_key: null,
 				openai_api_key: null
@@ -216,7 +216,7 @@
 
 <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
 	<h3 class="text-sm font-semibold text-gray-900 dark:text-white">AI Provider</h3>
-	<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Configure your OpenRouter API key and model</p>
+	<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Configure your OpenRouter API key{featureFlags.modelSelection ? ' and model' : ''}</p>
 
 	{#if loading}
 		<div class="mt-4 flex items-center justify-center py-4">
@@ -335,6 +335,7 @@
 				{/if}
 			</div>
 
+			{#if featureFlags.modelSelection}
 			<!-- Model selector -->
 			<div>
 				<label for="model-select" class="text-sm font-medium text-gray-700 dark:text-gray-300">Model</label>
@@ -406,13 +407,14 @@
 					</div>
 				</div>
 			{/if}
+			{/if}
 
 			<!-- Actions -->
 			<div class="flex items-center gap-3">
 				<button
 					type="button"
 					onclick={handleSave}
-					disabled={disabled || modelsError || (!hasExistingKey && !keyDirty) || syncPhase === 'saving' || syncPhase === 'syncing'}
+					disabled={disabled || (featureFlags.modelSelection && modelsError) || (!hasExistingKey && !keyDirty) || syncPhase === 'saving' || syncPhase === 'syncing'}
 					class="rounded-lg bg-gray-900 dark:bg-white px-4 py-2.5 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 				>
 					{syncPhase === 'saving' || syncPhase === 'syncing' ? 'Applying...' : 'Save'}
