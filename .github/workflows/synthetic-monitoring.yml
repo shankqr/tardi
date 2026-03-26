@@ -189,8 +189,8 @@ jobs:
   deep-checks:
     name: Deep Checks (Playwright)
     runs-on: ubuntu-latest
-    # Run every 30 minutes (on :00 and :30) or on manual dispatch
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && contains(fromJSON('["0","3"]'), github.run_number % 3))
+    # Run on manual dispatch or always (health checks gate frequency via cron)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v4
 
