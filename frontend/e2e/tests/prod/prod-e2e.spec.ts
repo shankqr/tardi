@@ -555,7 +555,7 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 	// ── Step 16: Settings page ──
 	await test.step('Verify settings page', async () => {
 		await page.goto('/dashboard/settings');
-		await expect(page.getByText(PROD_EMAIL)).toBeVisible({ timeout: 15_000 });
+		await expect(page.getByText(PROD_EMAIL).first()).toBeVisible({ timeout: 15_000 });
 
 		// Back to dashboard link
 		const backLink = page.getByRole('link', { name: /back|dashboard/i });
