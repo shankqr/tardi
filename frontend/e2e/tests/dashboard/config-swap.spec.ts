@@ -63,13 +63,17 @@ test.describe('Config swap: API key and Telegram token', () => {
 			return;
 		}
 
-		// Scroll to Telegram section and wait for it to load
+		// Scroll to Telegram section and wait for it to fully load its connection state
 		const telegramHeading = page.getByText('Telegram').first();
 		await telegramHeading.scrollIntoViewIfNeeded();
 
-		// Check if Telegram is already connected (give it time to load state from API)
+		// Wait for the Telegram section to finish loading from the API.
+		// The connection state loads asynchronously — wait for either the disconnect
+		// button (connected) or the connect input (not connected) to appear.
 		const disconnectBtn = page.getByRole('button', { name: /disconnect/i });
-		const isConnected = await disconnectBtn.isVisible({ timeout: 15_000 }).catch(() => false);
+		const connectInput = page.locator('input[placeholder="Paste your bot token here"]');
+		await expect(disconnectBtn.or(connectInput)).toBeVisible({ timeout: 30_000 });
+		const isConnected = await disconnectBtn.isVisible().catch(() => false);
 
 		// Step 1: Connect/update with token 2
 		console.log('[E2E] Setting Telegram token 2...');

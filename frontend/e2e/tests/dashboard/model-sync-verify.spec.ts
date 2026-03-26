@@ -71,6 +71,9 @@ async function openOcDashboard(page: Page, retries = 5): Promise<boolean> {
 }
 
 test('cycle through ALL models: FE change → VPS verify → OC dashboard chat', async ({ page }) => {
+	// Each model cycle takes ~40s (config sync + SSH verify + OC dashboard chat).
+	// With 8 models, we need ~6min. Set timeout to 10min for safety margin.
+	test.setTimeout(600_000);
 	// ── Login & navigate to instance ──
 	await login(page);
 	await page.waitForTimeout(3000);

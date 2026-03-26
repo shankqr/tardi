@@ -42,31 +42,31 @@ test.describe('Navigation and routing', () => {
 		await expect(passwordFields).toHaveCount(2);
 	});
 
-	test('auth guard: /dashboard does not show dashboard content without auth', async ({
+	test('auth guard: /dashboard redirects unauthenticated users', async ({
 		page,
 	}) => {
 		await page.goto('/dashboard');
-		// Wait for Firebase auth to initialize (shows "Loading..." then blank or redirect)
-		await page.waitForTimeout(5000);
-		// Dashboard heading only renders for authenticated users
-		await expect(page.getByRole('heading', { name: 'Dashboard' })).not.toBeVisible();
+		// Auth guard should redirect to /login or show the login form
+		await expect(page.getByRole('heading', { name: 'Dashboard' })).not.toBeVisible({ timeout: 10_000 });
+		// Verify we ended up on a public page (login or homepage)
+		await expect(page.locator('nav').getByRole('link', { name: 'Log in' })).toBeVisible({ timeout: 10_000 });
 	});
 
-	test('auth guard: /dashboard/billing does not show billing content without auth', async ({
+	test('auth guard: /dashboard/billing redirects unauthenticated users', async ({
 		page,
 	}) => {
 		await page.goto('/dashboard/billing');
-		await page.waitForTimeout(5000);
-		await expect(page.getByText('Current Plan')).not.toBeVisible();
+		await expect(page.getByText('Current Plan')).not.toBeVisible({ timeout: 10_000 });
+		await expect(page.locator('nav').getByRole('link', { name: 'Log in' })).toBeVisible({ timeout: 10_000 });
 	});
 
-	test('auth guard: /dashboard/settings does not show settings content without auth', async ({
+	test('auth guard: /dashboard/settings redirects unauthenticated users', async ({
 		page,
 	}) => {
 		await page.goto('/dashboard/settings');
-		await page.waitForTimeout(5000);
 		// The "Account" heading is in both footer and settings page, so check for the settings-specific email label
-		await expect(page.getByText('Email')).not.toBeVisible();
+		await expect(page.getByText('Email')).not.toBeVisible({ timeout: 10_000 });
+		await expect(page.locator('nav').getByRole('link', { name: 'Log in' })).toBeVisible({ timeout: 10_000 });
 	});
 
 	test('404: /nonexistent-route shows error page', async ({ page }) => {

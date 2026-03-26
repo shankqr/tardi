@@ -60,9 +60,9 @@ test.describe('Deploy validation', () => {
 
 			// The input has required attribute, so clicking deploy with empty name triggers validation
 			await deployBtn.click();
-			await page.waitForTimeout(1000);
 
-			// We should still be on the dashboard (form not submitted)
+			// Verify HTML validation prevented navigation — URL should still be /dashboard
+			// (no waitForTimeout needed since HTML validation is synchronous)
 			expect(page.url()).toContain('/dashboard');
 			console.log('[E2E] Deploy form correctly requires agent name');
 
