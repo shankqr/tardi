@@ -9,6 +9,33 @@ OpenClaw is the AI agent runtime that runs on each user's VPS inside a Docker co
 - **`config.patch` format**: Requires `{raw: "<JSON string of patch>", baseHash: "<hash from config.get>"}`. NOT `hash` (rejected as unexpected property), NOT direct config as params (rejected as missing `raw`). Always call `config.get` first to obtain the `baseHash`.
 - **Telegram bot token** is passed via `TELEGRAM_BOT_TOKEN` env var. OpenClaw auto-detects it and configures the Telegram channel automatically.
 
+## Architecture
+
+Single-container setup with Cloudflare for TLS:
+
+```
+Browser (user)
+    │
+    │  HTTPS
+    ▼
+Cloudflare (TLS termination)
+    │
+    │  HTTP
+    ▼
+Caddy (host binary, port 80)
+    │  hostname-based routing
+    ├─ preview domain → localhost:3000 (user-built apps)
+    └─ everything else → localhost:18789 (OpenClaw gateway)
+              │
+              ▼
+OpenClaw Gateway (Docker container, port 18789)
+    auth.mode: "token"
+```
+
+- **No self-signed certs** — Cloudflare handles TLS at the edge
+- **Caddy runs as a host binary** (not a Docker container) — simple HTTP reverse proxy
+- **OpenClaw is the only Docker container** (plus sandbox image for code execution)
+
 ## Gateway Auth — Token Mode
 
 The gateway uses `auth.mode: "token"` with `OPENCLAW_GATEWAY_TOKEN` env var. This was chosen over two alternatives that don't work:
@@ -20,54 +47,66 @@ The gateway uses `auth.mode: "token"` with `OPENCLAW_GATEWAY_TOKEN` env var. Thi
 - `OPENCLAW_AUTH_TOKEN` — stored in DB, sent to frontend for building the dashboard URL
 - `OPENCLAW_GATEWAY_TOKEN` — read by OpenClaw for gateway token auth. Same value as `OPENCLAW_AUTH_TOKEN`
 
-## Control UI Dashboard Auth
-
-The Control UI is a Lit-based SPA served by OpenClaw's gateway. It authenticates via a two-layer mechanism:
-
-**Layer 1 — Token delivery via URL hash fragment:**
-The frontend opens the dashboard as `https://<domain>/#token=<OPENCLAW_AUTH_TOKEN>`. The Control UI JS reads the token from the hash fragment (NOT query string, NOT HTTP headers) and includes it in the WebSocket `connect` message's `auth.token` field. This is the ONLY way to deliver the token to the Control UI — Caddy headers, URL rewrites, and query params do NOT work because the JS ignores them.
-
-**Layer 2 — Device pairing disabled:**
-OpenClaw normally requires "device pairing" for each new browser (crypto-based device identity + admin approval). This is disabled via `gateway.controlUi.dangerouslyDisableDeviceAuth: true` in `openclaw.json`, allowing any browser with the correct token to connect without pairing.
-
-### Full Auth Flow
-
-```
-Browser (user clicks "Open Agent Dashboard"):
-  1. Frontend opens https://<domain>/#token=<OPENCLAW_AUTH_TOKEN>
-  2. Caddy is a transparent reverse proxy (TLS termination only, no auth logic)
-  3. OpenClaw serves the Control UI HTML/JS
-  4. Control UI JS reads token from URL hash fragment (#token=xxx)
-  5. JS creates WebSocket to wss://<domain>/ (through Caddy)
-  6. JS sends connect message with auth.token = the hash token
-  7. OpenClaw validates token against OPENCLAW_GATEWAY_TOKEN env var
-  8. Device pairing skipped (dangerouslyDisableDeviceAuth: true)
-  9. Connected — dashboard loads
-
-Backend RPC (openclawRPC in whatsapp.go):
-  1. Backend connects to wss://<ip>/?token=<token> (token in URL)
-  2. Sends connect message WITHOUT auth field
-  3. OpenClaw uses HTTP-level token from URL — no pairing needed
-  4. Connected — RPC calls proceed
-
-Internal tool calls (agent → gateway):
-  1. Agent calls ws://127.0.0.1:18789 for tool execution
-  2. OpenClaw authenticates using OPENCLAW_GATEWAY_TOKEN env var
-```
-
 ### Config in `openclaw.json`
 
 ```json
 {
   "gateway": {
     "bind": "lan",
+    "trustedProxies": ["0.0.0.0/0"],
     "controlUi": {
       "allowedOrigins": ["*"],
-      "dangerouslyDisableDeviceAuth": true
+      "dangerouslyDisableDeviceAuth": true,
+      "allowInsecureAuth": true
     },
     "auth": { "mode": "token" }
   }
 }
+```
+
+| Key | Purpose |
+|-----|---------|
+| `bind: "lan"` | Binds to `0.0.0.0` so Caddy can reach it. Without this, only listens on loopback. |
+| `trustedProxies: ["0.0.0.0/0"]` | Tells OpenClaw to trust proxy headers from Cloudflare. Without this, "untrusted proxy" errors block operator scopes. Safe because auth is enforced via token. |
+| `allowedOrigins: ["*"]` | Allows Control UI to load from any origin (browser sees the domain via Cloudflare). |
+| `dangerouslyDisableDeviceAuth: true` | Disables device pairing — any browser with the correct token can connect. |
+| `allowInsecureAuth: true` | Required for shared token auth to grant operator scopes (OC 2026.3.22+). |
+| `auth.mode: "token"` | Authenticates all connections via `OPENCLAW_GATEWAY_TOKEN` env var. |
+
+## Control UI Dashboard Auth
+
+The Control UI is a Lit-based SPA served by OpenClaw's gateway.
+
+**Token delivery via URL hash fragment:**
+The frontend opens the dashboard as `https://<domain>/#token=<OPENCLAW_AUTH_TOKEN>`. The Control UI JS reads the token from the hash fragment and includes it in the WebSocket `connect` message's `auth.token` field. This is the ONLY way to deliver the token — query params, headers, and cookies don't work.
+
+**Device pairing disabled:**
+`dangerouslyDisableDeviceAuth: true` in `openclaw.json` allows any browser with the correct token to connect without pairing.
+
+### Auth Flows
+
+```
+Browser (user clicks "Open Agent Dashboard"):
+  1. Frontend opens https://<domain>/#token=<OPENCLAW_AUTH_TOKEN>
+  2. Cloudflare terminates TLS, forwards HTTP to Caddy on port 80
+  3. Caddy proxies to OpenClaw on localhost:18789
+  4. OpenClaw serves the Control UI HTML/JS
+  5. Control UI JS reads token from URL hash fragment (#token=xxx)
+  6. JS creates WebSocket to wss://<domain>/
+  7. JS sends connect message with auth.token = the hash token
+  8. OpenClaw validates token against OPENCLAW_GATEWAY_TOKEN env var
+  9. Device pairing skipped (dangerouslyDisableDeviceAuth: true)
+  10. Connected — dashboard loads
+
+Backend RPC (openclawRPC in whatsapp.go):
+  1. Backend connects to ws://<ip>:18789/?token=<token> (direct, no Cloudflare)
+  2. Sends connect message with auth.token
+  3. OpenClaw validates token
+  4. Connected — RPC calls proceed
+
+Internal tool calls (agent → gateway):
+  1. Agent calls ws://127.0.0.1:18789 for tool execution
+  2. OpenClaw authenticates using OPENCLAW_GATEWAY_TOKEN env var
 ```
 
 ### What Does NOT Work for Control UI Auth (Tried and Failed)
@@ -81,21 +120,31 @@ Internal tool calls (agent → gateway):
 
 ### Caddy Configuration
 
-Simple transparent proxy — no auth headers, no rewrites, no cookies. Caddy only does TLS termination and proxying.
+Caddy runs as a host binary (not Docker), listening on port 80. Cloudflare handles TLS at the edge.
 
 ```
-<domain> {
-    reverse_proxy openclaw-gateway:18789
+{PreviewDomain} {
+    reverse_proxy localhost:3000
+}
+
+http:// {
+    reverse_proxy localhost:18789
 }
 ```
+
+Custom Caddyfiles can be set per-instance via the `custom_caddyfile` DB field. The heartbeat drift guard syncs the Caddyfile from the API and replaces it if changed.
 
 ### Drift Guard
 
 `heartbeat.go` runs every 5 minutes and ensures:
 - `auth.mode: "token"` in `openclaw.json`
-- `OPENCLAW_GATEWAY_TOKEN` is in `.env`
+- `allowInsecureAuth: true` is set
+- `trustedProxies: ["0.0.0.0/0"]` is set
 - `dangerouslyDisableDeviceAuth: true` is set
-- Caddyfile is a clean transparent proxy (removes old auth patterns)
+- `OPENCLAW_GATEWAY_TOKEN` matches the running container's token
+- Caddyfile matches expected config (or custom Caddyfile from API)
+
+If the container is crash-looping because OpenClaw reverted auth.mode to `"none"`, the drift guard fixes `openclaw.json` on disk and force-recreates the container.
 
 ## Telegram Config
 
@@ -108,7 +157,7 @@ When OpenClaw auto-detects `TELEGRAM_BOT_TOKEN` from the env var, it creates a T
 
 ### Required Telegram Channel Settings
 
-Applied post-startup via CLI or RPC:
+Applied post-startup via CLI or config.patch RPC:
 
 ```json
 {
@@ -124,16 +173,17 @@ Applied post-startup via CLI or RPC:
 }
 ```
 
+Account-level overrides must also be fixed (OpenClaw auto-creates per-account entries with bad defaults).
+
+### Three Layers of Protection
+
+1. **Cloud-init** (`provisioner.go`): After container health check, runs `openclaw config set` CLI commands for each setting.
+2. **Config.patch RPC** (`telegram.go` — `patchTelegramConfig`): Called by frontend after sync completes. Atomic (no restart, <1s) — preferred over CLI (which triggers gateway restart per command, ~4-6s each).
+3. **Heartbeat drift guard** (`heartbeat.go`): Checks every 5 minutes. Reads `openclaw.json`, fixes if streaming or dmPolicy drifted. Guards against Docker auto-restarts resetting config.
+
 ### Config Sync Flow
 
-The config is applied through two mechanisms:
-
-1. **SSH sync script** (`backend/internal/api/sync.go` — `configSyncScript`): Triggered when user enters bot token in dashboard. Recreates the container, waits for health, then applies config via `openclaw config set` CLI commands.
-2. **Cleanup RPC** (`backend/internal/api/telegram.go` — `patchTelegramConfig`): Called by frontend after sync completes. Uses WebSocket `config.patch` RPC as a safety net.
-
-**Critical ordering**: The sync script MUST print `"config sync complete"` only AFTER the Telegram config CLI commands have run. The frontend polls for this message to detect completion.
-
-**Previous bug (fixed 2026-03-17)**: The sync script printed completion BEFORE waiting for health and applying config. The frontend detected early completion, called the cleanup RPC (which failed since the container wasn't ready), and showed success. The user saw "Telegram bot connected" but the bot still required pairing because `dmPolicy:"open"` was never applied.
+The sync script (`backend/internal/api/sync.go`) delegates Telegram config to the config.patch RPC rather than running CLI commands itself (avoids 20-30s downtime from 5 sequential CLI restarts). The frontend calls `POST /telegram/cleanup` after sync completes, which triggers `patchTelegramConfig()`.
 
 ### Important Notes
 
@@ -141,13 +191,12 @@ The config is applied through two mechanisms:
 - `dmPolicy: "open"` requires `allowFrom: ["*"]` — omitting `allowFrom` causes a config validation error and crash loop
 - `allowFrom` must be set BEFORE `dmPolicy` when using sequential CLI commands (validation order dependency)
 - The `config.patch` RPC uses WebSocket protocol (see `openclawRPC` in `whatsapp.go`)
-- The heartbeat script (`provisioner.go`) has its own config sync section that correctly applies config before writing the version file
 
 ## Debugging OpenClaw on VPS
 
 ```bash
 # SSH into VPS
-ssh root@<ip>
+ssh -i ~/.ssh/tardi-backend root@<ip>
 
 # Check current config (OpenClaw's actual runtime config)
 cat /opt/openclaw/data/openclaw/openclaw.json | jq .
@@ -164,4 +213,8 @@ curl -sf "https://api.telegram.org/bot${TG_TOKEN}/getWebhookInfo" | jq .
 
 # Data directory structure
 ls -la /opt/openclaw/data/openclaw/
+
+# Check heartbeat status
+systemctl status openclaw-heartbeat.timer
+journalctl -u openclaw-heartbeat.service --no-pager -n 50
 ```
