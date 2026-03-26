@@ -550,6 +550,10 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		console.log('[Prod E2E] Settings page verified');
 	});
 
-	// NO cleanup — leave instance running for persistent tests
-	console.log('[Prod E2E] All tests complete. Instance left running.');
+	// ── Cleanup: Delete instance to save Hetzner costs ──
+	await test.step('Delete instance (cleanup)', async () => {
+		console.log('[Prod E2E] Cleaning up — deleting instance to save costs...');
+		await deleteExistingInstances(PROD_EMAIL, PROD_PASSWORD);
+		console.log('[Prod E2E] Instance deleted. All tests complete.');
+	});
 });
