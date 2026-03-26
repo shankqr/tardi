@@ -801,10 +801,20 @@
 										</span>
 									{/if}
 								{:else if instance.agent_status === 'unhealthy'}
-									<span class="inline-flex items-center gap-1.5 text-yellow-700 dark:text-yellow-400">
-										<span class="h-1.5 w-1.5 rounded-full bg-yellow-500"></span>
-										Unhealthy
-									</span>
+									{#if !instance.last_heartbeat_at}
+										<span class="inline-flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
+											<svg class="h-3.5 w-3.5 animate-spin text-gray-400 dark:text-gray-500" viewBox="0 0 24 24" fill="none">
+												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+											</svg>
+											Starting
+										</span>
+									{:else}
+										<span class="inline-flex items-center gap-1.5 text-yellow-700 dark:text-yellow-400">
+											<span class="h-1.5 w-1.5 rounded-full bg-yellow-500"></span>
+											Unhealthy
+										</span>
+									{/if}
 								{:else if instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
 									<span class="inline-flex items-center gap-1.5 text-red-700 dark:text-red-400">
 										<span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
@@ -1204,7 +1214,7 @@
 						</div>
 					{/if}
 
-					{#if !isConfigSyncing && !isProvisioning && !activationCooloff && !recentlyRestarted && (instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found')}
+					{#if !isConfigSyncing && !isProvisioning && !activationCooloff && !recentlyRestarted && instance.last_heartbeat_at && (instance.agent_status === 'unhealthy' || instance.agent_status === 'stopped' || instance.agent_status === 'not_found')}
 						<div class="rounded-lg border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 p-3 text-sm text-yellow-800 dark:text-yellow-400 flex items-center justify-between">
 							{#if instance.agent_status === 'stopped' || instance.agent_status === 'not_found'}
 								<span>Your agent appears stopped. Restart to bring it back online.</span>
