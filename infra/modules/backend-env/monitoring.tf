@@ -105,3 +105,115 @@ resource "google_monitoring_alert_policy" "cloud_sql_cpu" {
     auto_close = "1800s"
   }
 }
+
+# --- Uptime Checks (synthetic monitoring) ---
+
+# API health check — pings /healthz every 5 minutes from multiple regions
+resource "google_monitoring_uptime_check_config" "api_health" {
+  count        = var.enable_monitoring ? 1 : 0
+  project      = var.project_id
+  display_name = "API Health Check (${var.environment})"
+  timeout      = "10s"
+  period       = "300s"
+
+  http_check {
+    path         = "/healthz"
+    port         = 443
+    use_ssl      = true
+    validate_ssl = true
+  }
+
+  monitored_resource {
+    type = "uptime_url"
+    labels = {
+      project_id = var.project_id
+      host       = replace(var.api_url, "https://", "")
+    }
+  }
+}
+
+# Alert when API uptime check fails
+resource "google_monitoring_alert_policy" "api_uptime" {
+  count        = var.enable_monitoring ? 1 : 0
+  project      = var.project_id
+  display_name = "API Uptime Check Failed (${var.environment})"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "API uptime check failing"
+
+    condition_threshold {
+      filter          = "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.labels.check_id = \"${google_monitoring_uptime_check_config.api_health[0].uptime_check_id}\""
+      duration        = "300s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 1
+
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_NEXT_OLDER"
+        cross_series_reducer = "REDUCE_COUNT_FALSE"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email[0].name]
+
+  alert_strategy {
+    auto_close = "1800s"
+  }
+}
+
+# Frontend availability check — pings app.tardi.ai every 5 minutes (prod only)
+resource "google_monitoring_uptime_check_config" "frontend_health" {
+  count        = var.enable_monitoring && var.environment == "prod" ? 1 : 0
+  project      = var.project_id
+  display_name = "Frontend Availability (${var.environment})"
+  timeout      = "10s"
+  period       = "300s"
+
+  http_check {
+    path         = "/"
+    port         = 443
+    use_ssl      = true
+    validate_ssl = true
+  }
+
+  monitored_resource {
+    type = "uptime_url"
+    labels = {
+      project_id = var.project_id
+      host       = replace(var.frontend_url, "https://", "")
+    }
+  }
+}
+
+# Alert when frontend uptime check fails
+resource "google_monitoring_alert_policy" "frontend_uptime" {
+  count        = var.enable_monitoring && var.environment == "prod" ? 1 : 0
+  project      = var.project_id
+  display_name = "Frontend Uptime Check Failed"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "Frontend uptime check failing"
+
+    condition_threshold {
+      filter          = "resource.type = \"uptime_url\" AND metric.type = \"monitoring.googleapis.com/uptime_check/check_passed\" AND metric.labels.check_id = \"${google_monitoring_uptime_check_config.frontend_health[0].uptime_check_id}\""
+      duration        = "300s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 1
+
+      aggregations {
+        alignment_period     = "300s"
+        per_series_aligner   = "ALIGN_NEXT_OLDER"
+        cross_series_reducer = "REDUCE_COUNT_FALSE"
+      }
+    }
+  }
+
+  notification_channels = [google_monitoring_notification_channel.email[0].name]
+
+  alert_strategy {
+    auto_close = "1800s"
+  }
+}
