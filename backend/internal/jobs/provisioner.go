@@ -451,25 +451,36 @@ log_status "STARTED_FROM_GOLDEN_IMAGE"
 echo "root:{{.RootPassword}}" | chpasswd
 {{- end}}
 
-# --- SSH key injection ---
+# --- SSH key-based auth ---
 {{- if .SSHPublicKey}}
 mkdir -p /root/.ssh
 chmod 700 /root/.ssh
 echo "{{.SSHPublicKey}}" >> /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
 {{- end}}
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+mkdir -p /etc/ssh/sshd_config.d
+printf 'PasswordAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/60-tardi.conf
+systemctl restart sshd || systemctl restart ssh || true
 
-# --- Per-user firewall rules (base CF rules already in golden image) ---
+# --- Firewall (full setup — golden image leaves UFW disabled) ---
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 80/tcp
+CF_IPS=$(curl -sf https://www.cloudflare.com/ips-v4 2>/dev/null || echo "")
+for cidr in $CF_IPS; do
+    ufw allow from $cidr to any port 18789 2>/dev/null || true
+done
 {{- if .BackendEgressCIDRs}}
 for cidr in $(echo "{{.BackendEgressCIDRs}}" | tr ',' ' '); do
     ufw allow from $cidr to any port 18789
     ufw allow from $cidr to any port 22
 done
-ufw reload
 {{- else}}
 ufw allow 22/tcp
-ufw reload
 {{- end}}
+ufw --force enable
 log_status "FIREWALL_CONFIGURED"
 
 # --- OpenClaw config ---

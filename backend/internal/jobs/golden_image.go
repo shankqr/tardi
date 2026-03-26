@@ -42,23 +42,14 @@ for i in 1 2 3; do
 done
 apt-get install -y -qq ca-certificates curl jq ufw
 
-# --- Base firewall rules (per-user rules added at boot) ---
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 80/tcp
-# Whitelist Cloudflare IPs for port 18789
-CF_IPS=$(curl -sf https://www.cloudflare.com/ips-v4 2>/dev/null || echo "")
-for cidr in $CF_IPS; do
-    ufw allow from $cidr to any port 18789 2>/dev/null || true
-done
-ufw --force enable
+# --- Firewall: leave DISABLED in golden image ---
+# UFW rules are set up by the per-user minimal cloud-init on first boot.
+# If we enable UFW here, the snapshot boots locked out (no SSH, no ports).
+ufw --force disable
 
-# --- SSH hardening (keys injected per-user at boot) ---
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
-sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-mkdir -p /etc/ssh/sshd_config.d
-printf 'PasswordAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin prohibit-password\n' > /etc/ssh/sshd_config.d/60-tardi.conf
-systemctl restart sshd || systemctl restart ssh || true
+# --- SSH: leave password auth ON for golden image ---
+# The per-user cloud-init injects SSH keys and hardens SSH config.
+# If we disable password auth here, the snapshot boots with no access.
 
 # --- Install Docker from official repository ---
 install -m 0755 -d /etc/apt/keyrings
@@ -156,12 +147,21 @@ systemctl daemon-reload
 # --- Clean up for snapshot ---
 # Stop Docker to ensure clean snapshot
 docker compose -f /opt/openclaw/docker-compose.yml down 2>/dev/null || true
-# Clear cloud-init state so it runs again on next boot
+
+# Clear cloud-init state so it re-runs with new user-data on next boot.
+# Hetzner assigns a new instance-id on server creation from snapshot,
+# which triggers cloud-init to treat it as a new instance.
 cloud-init clean --logs 2>/dev/null || true
+rm -rf /var/lib/cloud/instances /var/lib/cloud/data /var/lib/cloud/sem
+rm -f /var/log/cloud-init*.log
+
 # Remove machine-specific state
 rm -f /etc/machine-id
 rm -f /var/lib/dbus/machine-id
 truncate -s 0 /etc/hostname
+
+# Ensure cloud-init runs on next boot
+systemctl enable cloud-init cloud-init-local cloud-config cloud-final 2>/dev/null || true
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) GOLDEN_IMAGE_BUILD_COMPLETED"
 # Write marker file for polling
