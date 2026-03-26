@@ -197,4 +197,12 @@
 			{/each}
 		</div>
 
+		{#if previewUrl}
+			<p class="mt-3 text-xs text-gray-400 dark:text-gray-500 text-center">
+				After your agent finishes, visit
+				<a href={previewUrl} target="_blank" rel="noopener noreferrer" class="font-mono text-gray-500 dark:text-gray-400 underline hover:text-gray-700 dark:hover:text-gray-300">{previewUrl}</a>
+				to see what it built
+			</p>
+		{/if}
+
 </div>
