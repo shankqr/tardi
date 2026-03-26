@@ -217,6 +217,17 @@
 <div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
 	<h3 class="text-sm font-semibold text-gray-900 dark:text-white">AI Provider</h3>
 	<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Configure your OpenRouter API key{featureFlags.modelSelection ? ' and model' : ''}</p>
+	<p class="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+		You can also change the AI model from the dropdown at the top of the chat in your
+		<span class="font-medium text-gray-500 dark:text-gray-400">Agent Dashboard</span>.
+		Paid models require credits —
+		<a
+			href="https://openrouter.ai/credits"
+			target="_blank"
+			rel="noopener noreferrer"
+			class="font-medium text-gray-600 dark:text-gray-300 underline hover:text-gray-900 dark:hover:text-gray-100"
+		>top up your OpenRouter account</a>.
+	</p>
 
 	{#if loading}
 		<div class="mt-4 flex items-center justify-center py-4">
