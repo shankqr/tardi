@@ -144,13 +144,13 @@
 		}
 	});
 
-	// Post-activation cooling-off: suppress health status for 5 minutes
+	// Post-activation cooling-off: suppress health status for 8 minutes
 	// after creation if the agent hasn't reported healthy yet.
 	// Derived from server data so it survives page navigation.
 	const activationCooloff = $derived(
 		instance?.status === 'active' &&
 			instance.agent_status !== 'running' &&
-			Date.now() - new Date(instance.created_at).getTime() < 5 * 60 * 1000
+			Date.now() - new Date(instance.created_at).getTime() < 8 * 60 * 1000
 	);
 
 	// Gate: show a dedicated "Setting Up" view until the VPS is healthy
@@ -178,11 +178,14 @@
 	// Config-sync grace: if agent is unhealthy but had a heartbeat within
 	// the last 5 min, it's likely mid-restart from a config change. Derived
 	// from server data so it survives page navigation.
+	// Guard: only for instances older than 10 min to avoid false "Applying Config"
+	// on freshly provisioned agents that haven't finished starting up yet.
 	const recentlyRestarted = $derived(
 		instance?.status === 'active' &&
 			instance.agent_status !== 'running' &&
 			instance.agent_status !== null &&
 			instance.last_heartbeat_at !== null &&
+			Date.now() - new Date(instance.created_at).getTime() > 10 * 60 * 1000 &&
 			Date.now() - new Date(instance.last_heartbeat_at).getTime() < 300_000
 	);
 
