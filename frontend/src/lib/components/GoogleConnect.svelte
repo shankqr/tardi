@@ -144,9 +144,13 @@
 			syncTimer = setInterval(() => { syncElapsed += 1; }, 1000);
 			onSyncStart();
 
-			const result = await syncConfig(token, instanceId);
-			if (!result.synced) {
-				throw new Error(result.error || 'Sync failed');
+			try {
+				const result = await syncConfig(token, instanceId);
+				if (!result.synced) {
+					throw new Error(result.error || 'Sync failed');
+				}
+			} catch {
+				// Agent not reachable — config is saved, poll until it applies.
 			}
 
 			// Poll for completion

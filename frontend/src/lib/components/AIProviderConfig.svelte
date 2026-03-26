@@ -160,35 +160,41 @@
 			// Trigger sync — the backend applies the model via RPC immediately
 			// and launches a background script for env updates, model catalog, etc.
 			syncPhase = 'syncing';
+			let syncSucceeded = false;
 			try {
 				const result = await syncConfig(token, instanceId);
 				if (result.synced) {
-					if (envChanged) {
-						// API key changed → container will restart. Poll for completion.
-						startSyncTimer();
-						pollTimer = setInterval(() => {
-							if (syncElapsed > 300) {
-								stopSyncTimer();
-								stopPollTimer();
-								syncError = 'Sync is taking longer than expected — it will apply automatically within a few minutes';
-								syncPhase = 'failed';
-								return;
-							}
-							pollSyncStatus();
-						}, 5000);
-					} else {
-						// Model-only change → already applied via RPC, instant success.
-						syncPhase = 'success';
-						onsaved?.();
-						setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 5000);
-					}
+					syncSucceeded = true;
 				} else {
 					syncError = result.error || 'Failed to apply configuration';
 					syncPhase = 'failed';
 				}
 			} catch {
-				syncError = 'Could not reach your agent — changes will apply within 5 minutes';
-				syncPhase = 'failed';
+				// Agent not reachable right now — config is saved, poll until it applies.
+				syncSucceeded = true;
+				envChanged = true; // Force poll mode since we couldn't confirm via RPC
+			}
+
+			if (syncSucceeded) {
+				if (envChanged) {
+					// API key changed or agent unreachable → poll for completion.
+					startSyncTimer();
+					pollTimer = setInterval(() => {
+						if (syncElapsed > 300) {
+							stopSyncTimer();
+							stopPollTimer();
+							syncError = 'Sync is taking longer than expected — it will apply automatically within a few minutes';
+							syncPhase = 'failed';
+							return;
+						}
+						pollSyncStatus();
+					}, 5000);
+				} else {
+					// Model-only change → already applied via RPC, instant success.
+					syncPhase = 'success';
+					onsaved?.();
+					setTimeout(() => { if (syncPhase === 'success') syncPhase = 'idle'; }, 5000);
+				}
 			}
 		} catch (err) {
 			syncError = err instanceof Error ? err.message : 'Failed to save';
@@ -287,7 +293,7 @@
 								</svg>
 								<div>
 									<p class="text-sm font-medium text-amber-800 dark:text-amber-400">{syncError}</p>
-									<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Your settings were saved. They will apply automatically within a few minutes.</p>
+									<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Your settings were saved and will apply shortly.</p>
 									<button
 										onclick={dismissSync}
 										class="mt-2 rounded-md border border-amber-300 dark:border-amber-700 px-3 py-1 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30"

@@ -393,33 +393,36 @@
 		telegramSyncPhase = 'syncing';
 		telegramError = null;
 		startTelegramSyncTimer();
+		let syncSucceeded = false;
 		try {
 			const token = await getIdToken();
 			if (!token) throw new Error('Not authenticated');
 			const result = await syncConfig(token, instance.id);
 			if (result.synced) {
-				stopTelegramPollTimer();
-				telegramPollTimer = setInterval(() => {
-					if (telegramSyncElapsed > 300) {
-						stopTelegramSyncTimer();
-						stopTelegramPollTimer();
-						telegramError =
-							'Sync is taking longer than expected — it will apply automatically within a few minutes';
-						telegramSyncPhase = 'failed';
-						return;
-					}
-					pollTelegramSyncStatus();
-				}, 5000);
+				syncSucceeded = true;
 			} else {
 				stopTelegramSyncTimer();
 				telegramError = result.error || 'Sync failed — click Retry to try again';
 				telegramSyncPhase = 'failed';
 			}
 		} catch {
-			stopTelegramSyncTimer();
-			telegramError =
-				'Could not reach your agent — changes will apply within 5 minutes';
-			telegramSyncPhase = 'failed';
+			// Agent not reachable right now — config is saved, poll until it applies.
+			syncSucceeded = true;
+		}
+
+		if (syncSucceeded) {
+			stopTelegramPollTimer();
+			telegramPollTimer = setInterval(() => {
+				if (telegramSyncElapsed > 300) {
+					stopTelegramSyncTimer();
+					stopTelegramPollTimer();
+					telegramError =
+						'Sync is taking longer than expected — it will apply automatically within a few minutes';
+					telegramSyncPhase = 'failed';
+					return;
+				}
+				pollTelegramSyncStatus();
+			}, 5000);
 		}
 	}
 
