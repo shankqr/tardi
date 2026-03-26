@@ -9,123 +9,13 @@ import {
 	deleteStripeCustomer,
 } from '../../helpers/stripe';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
-
-const API_URL = process.env.E2E_API_URL || 'https://tardi-api-dev-lckw22k4gq-uc.a.run.app';
-
-/** Get a Firebase ID token for API calls */
-async function getIdToken(email: string, password: string): Promise<string> {
-	const res = await fetch(
-		`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${process.env.FIREBASE_API_KEY}`,
-		{
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ email, password, returnSecureToken: true }),
-		}
-	);
-	const data = await res.json();
-	return data.idToken;
-}
-
-/**
- * Wait for config sync to complete by polling the API directly.
- * The UI can lose the instance during sync (dashboard polling restarts),
- * so we poll the backend sync status endpoint instead.
- */
-async function waitForSyncComplete(
-	email: string,
-	password: string,
-	instId: string,
-	timeoutMs = 180_000
-) {
-	const idToken = await getIdToken(email, password);
-	const start = Date.now();
-	while (Date.now() - start < timeoutMs) {
-		try {
-			const res = await fetch(
-				`${API_URL}/api/instances/${instId}/sync-status`,
-				{ headers: { Authorization: `Bearer ${idToken}` } }
-			);
-			if (res.ok) {
-				const data = await res.json();
-				if (data.status === 'completed') {
-					console.log(`[E2E] Sync completed (${Math.round((Date.now() - start) / 1000)}s)`);
-					return;
-				}
-				if (data.status === 'failed') {
-					throw new Error(`Sync failed: ${data.message || 'unknown'}`);
-				}
-			}
-		} catch (err) {
-			if (err instanceof Error && err.message.startsWith('Sync failed')) throw err;
-		}
-		await new Promise((r) => setTimeout(r, 5000));
-	}
-	throw new Error(`Sync did not complete within ${timeoutMs / 1000}s`);
-}
-
-/**
- * Wait for the instance to become fully active with healthy agent.
- * Polls dashboard state API until instance.status === 'active' and
- * agent_status === 'running'.
- */
-async function waitForInstanceActive(
-	email: string,
-	password: string,
-	instId: string,
-	timeoutMs = 300_000
-) {
-	const idToken = await getIdToken(email, password);
-	const start = Date.now();
-	while (Date.now() - start < timeoutMs) {
-		try {
-			const res = await fetch(`${API_URL}/api/dashboard/state`, {
-				headers: { Authorization: `Bearer ${idToken}` },
-			});
-			if (res.ok) {
-				const state = await res.json();
-				const inst = state.instances?.find((i: { id: string }) => i.id === instId);
-				if (inst) {
-					const elapsed = Math.round((Date.now() - start) / 1000);
-					if (inst.status === 'error' || inst.status === 'terminated') {
-						throw new Error(`Instance entered ${inst.status} state`);
-					}
-					// Only log every 30s to avoid noise
-					if (elapsed % 30 < 10) {
-						console.log(`[E2E] Instance status: ${inst.status}, agent: ${inst.agent_status} (${elapsed}s)`);
-					}
-					if (inst.status === 'active' && (inst.agent_status === 'running' || inst.agent_status === 'healthy')) {
-						console.log(`[E2E] Instance fully active (${elapsed}s)`);
-						return;
-					}
-				} else {
-					console.log('[E2E] Instance not in dashboard state yet');
-				}
-			}
-		} catch {
-			// Ignore fetch errors, keep polling
-		}
-		await new Promise((r) => setTimeout(r, 10000));
-	}
-	// If still active but agent unhealthy, proceed anyway — the UI may still work
-	console.log('[E2E] Warning: Instance did not reach healthy state, proceeding anyway');
-}
-
-/**
- * Ensure the instance page is showing the config form.
- * If "Agent not found" is displayed, navigate back to the instance page.
- */
-async function ensureInstancePage(
-	page: import('@playwright/test').Page,
-	instId: string
-) {
-	// Always navigate fresh — after sync the dashboard store may have stale state
-	// that causes "Agent not found" or a stale AIProviderConfig mount
-	await page.goto(`/dashboard/instances/${instId}`);
-	// Wait for dashboard polling to load instance data and AIProviderConfig to render
-	await expect(page.locator('#openrouter-key')).toBeVisible({ timeout: 60_000 });
-	// Extra wait for AIProviderConfig to fetch config and enable model dropdown
-	await page.waitForTimeout(5000);
-}
+import {
+	API_URL,
+	getIdToken,
+	waitForSyncComplete,
+	waitForInstanceActive,
+	ensureInstancePage,
+} from '../../helpers/journey-helpers';
 
 async function cleanup(email: string, password: string, instanceId: string) {
 	console.log('[E2E] Cleaning up test resources...');

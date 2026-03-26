@@ -1,7 +1,8 @@
 import { defineConfig } from '@playwright/test';
 import { config } from 'dotenv';
 
-config({ path: '.env.e2e' });
+const envFile = process.env.E2E_ENV === 'prod' ? '.env.e2e.prod' : '.env.e2e';
+config({ path: envFile });
 
 export default defineConfig({
 	testDir: './e2e/tests',
@@ -36,6 +37,11 @@ export default defineConfig({
 		{
 			name: 'journey',
 			testDir: './e2e/tests/journey',
+		},
+		{
+			name: 'prod-e2e',
+			testDir: './e2e/tests/prod',
+			timeout: 900_000,
 		},
 	],
 });

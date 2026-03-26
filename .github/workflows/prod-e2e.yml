@@ -1,0 +1,56 @@
+name: "Production E2E"
+
+on:
+  schedule:
+    - cron: "0 6,18 * * *" # Twice daily at 6AM and 6PM UTC
+  workflow_dispatch:
+
+concurrency:
+  group: prod-e2e
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  prod-e2e:
+    name: Production E2E Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright (chromium only)
+        working-directory: frontend
+        run: npx playwright install chromium --with-deps
+
+      - name: Run prod E2E test
+        working-directory: frontend
+        run: npx playwright test --project=prod-e2e
+        env:
+          E2E_ENV: prod
+          E2E_BASE_URL: https://app.tardi.ai
+          E2E_API_URL: https://tardi-api-prod-vyqbffpjya-uc.a.run.app
+          FIREBASE_API_KEY: AIzaSyBseyK0nQ9xiS0K7uL_x84AzTjBpUtyKoI
+          E2E_PROD_EMAIL: ${{ secrets.E2E_PROD_EMAIL }}
+          E2E_PROD_PASSWORD: ${{ secrets.E2E_PROD_PASSWORD }}
+          E2E_OPENROUTER_API_KEY: ${{ secrets.E2E_OPENROUTER_API_KEY }}
+          E2E_TELEGRAM_BOT_TOKEN: ${{ secrets.E2E_PROD_TELEGRAM_BOT_TOKEN }}
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prod-e2e-report
+          path: frontend/playwright-report/
+          retention-days: 7
