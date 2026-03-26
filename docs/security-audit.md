@@ -1,21 +1,23 @@
-# Security Audit — Tardi VPS Single-Container Architecture
+# Security Audit — Tardi VPS Platform
 
-> **Date:** 2026-03-24 (updated)
-> **Scope:** Full security analysis of the single-container VPS architecture with host networking and Cloudflare Proxy TLS termination.
-> **Codebase state:** Post-SSH hardening (commit `0aba4d7` — SSH key-based auth only, password auth disabled, port 18789 restricted to Cloudflare IPs, port 22 restricted to backend egress CIDRs).
+> **Date:** 2026-03-26 (full re-audit)
+> **Scope:** Full security analysis of the single-container VPS architecture with Caddy host binary, Cloudflare Proxy TLS, and token-based gateway auth.
+> **Previous audit:** 2026-03-24 (single-container migration, SSH hardening)
 
 ---
 
 ## Architecture Overview
 
 ```
-Internet → Cloudflare (TLS) → VPS:80 (HTTP) → iptables NAT → 0.0.0.0:18789 (OpenClaw)
-                                VPS:22 (SSH) ← Backend (Cloud Run) for config sync
-                                VPS:18789 ← Backend (WebSocket RPC, direct IP, restricted by UFW)
+Internet → Cloudflare (TLS termination) → VPS:80 (Caddy, HTTP) → localhost:18789 (OpenClaw)
+                                           VPS:22 (SSH) ← Backend (Cloud Run) for config sync
+                                           VPS:18789 ← Backend (WebSocket RPC, restricted by UFW)
 ```
 
-**Container:** `network_mode: host`, UID 1000, Docker socket mounted, no resource limits.
-**Firewall:** UFW default deny. Port 80 open. Port 18789 restricted to Cloudflare + backend egress CIDRs. Port 22 restricted to backend egress CIDRs (falls back to open when not configured).
+**Container:** Single `openclaw-gateway`, `network_mode: host`, UID 1000, Docker socket mounted, no resource limits.
+**Reverse proxy:** Caddy runs as host binary (systemd service, port 80, runs as root). Hostname-based routing: preview domain → :3000, all else → :18789.
+**Firewall:** UFW default deny. Port 80 open to all. Port 18789 restricted to Cloudflare + backend egress CIDRs. Port 22 restricted to backend egress CIDRs (falls back to open if not configured).
+**TLS:** Cloudflare edge only. No self-signed certs. Caddy receives plaintext HTTP from Cloudflare.
 
 ---
 
@@ -23,9 +25,9 @@ Internet → Cloudflare (TLS) → VPS:80 (HTTP) → iptables NAT → 0.0.0.0:187
 
 | Entry Point | Auth | Encryption | Exposed To | Status |
 |---|---|---|---|---|
-| VPS :80 (HTTP via Cloudflare) | OpenClaw token (hash fragment) | Cloudflare edge TLS | Internet via Cloudflare | **OK** — protected by Cloudflare proxy |
-| VPS :18789 (WebSocket direct) | OpenClaw token in URL query | **None (plaintext ws://)** | Cloudflare IPs + backend egress CIDRs | **HARDENED** — no longer open to all |
-| VPS :22 (SSH) | Ed25519 key (backend only) | SSH encryption | Backend egress CIDRs (or all if unconfigured) | **HARDENED** — key-only auth, password disabled |
+| VPS :80 (Caddy → OpenClaw) | OpenClaw token (hash fragment → WebSocket) | Cloudflare edge TLS | Internet via Cloudflare | **OK** |
+| VPS :18789 (WebSocket direct) | OpenClaw token in URL query | **None (plaintext ws://)** | Cloudflare IPs + backend egress CIDRs | **HARDENED** |
+| VPS :22 (SSH) | Ed25519 key only | SSH encryption | Backend egress CIDRs (or all if unconfigured) | **HARDENED** |
 | Backend API (Cloud Run) | Firebase JWT | Cloud Run TLS | Internet | **OK** |
 | Backend → VPS RPC | Token in `ws://` URL | **None** | Cloud Run → internet → VPS | **RISK** — plaintext token on wire |
 | Agent → Backend heartbeat | Agent token Bearer | HTTPS | VPS → Cloud Run | **OK** |
@@ -35,53 +37,53 @@ Internet → Cloudflare (TLS) → VPS:80 (HTTP) → iptables NAT → 0.0.0.0:187
 
 ## 2. Firewall & Network Security
 
-### 2a. Current UFW Rules (post-hardening)
+### 2a. Current UFW Rules
 
 | Port | Rule | Source Restriction | Purpose |
 |---|---|---|---|
-| 80/tcp | ALLOW | Anywhere | Receives Cloudflare Proxy traffic (HTTP Flexible SSL) |
-| 18789 | ALLOW | Cloudflare IPv4 CIDRs | NAT'd port-80 traffic (PREROUTING rewrites dest to 18789 before UFW INPUT) |
+| 80/tcp | ALLOW | Anywhere | Caddy HTTP reverse proxy (Cloudflare origin traffic) |
+| 18789 | ALLOW | Cloudflare IPv4 CIDRs | Backend WebSocket RPC (direct to VPS IP) |
 | 18789 | ALLOW | `BACKEND_EGRESS_CIDRS` | Backend WebSocket RPC (direct to VPS IP) |
-| 22/tcp | ALLOW | `BACKEND_EGRESS_CIDRS` | SSH config sync (when CIDRs configured). Key-based auth only — password disabled at sshd level |
-| 22/tcp | ALLOW | Anywhere | SSH fallback (when `BACKEND_EGRESS_CIDRS` not set). Still key-only — password brute force not possible |
+| 22/tcp | ALLOW | `BACKEND_EGRESS_CIDRS` | SSH config sync (when CIDRs configured). Key-only auth. |
+| 22/tcp | ALLOW | Anywhere | SSH fallback (when `BACKEND_EGRESS_CIDRS` not set). Key-only. |
 | All others | DENY | — | Default deny incoming |
 
 **Files:**
-- Cloud-init: `backend/internal/jobs/provisioner.go` lines 96-117
-- Heartbeat drift guard: `backend/internal/scripts/heartbeat.go` lines 161-211
+- Cloud-init: `backend/internal/jobs/provisioner.go` lines 95-117
+- Heartbeat drift guard: `backend/internal/scripts/heartbeat.go` lines 328-377
 
-### 2b. iptables NAT
+### 2b. iptables NAT — Decommissioned
 
-```
-iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789
-```
+The old `iptables -t nat PREROUTING :80 → :18789` redirect has been **removed** and replaced with Caddy reverse proxy. The heartbeat actively removes any lingering NAT rules (`heartbeat.go` lines 252-255).
 
-- Applied in cloud-init and enforced every 5 minutes by heartbeat
-- Persisted via `iptables-persistent`
-- PREROUTING runs before UFW INPUT chain — UFW must allow 18789 for NAT'd traffic to pass
+### 2c. Caddy as Host Binary
 
-### 2c. Host Networking Implications
+Caddy runs as a systemd service (`caddy.service`) with **root** privileges on port 80. It performs hostname-based routing:
+- Preview domain (e.g., `abc12345-b.tardi.ai`) → `localhost:3000` (user-built apps)
+- All other traffic → `localhost:18789` (OpenClaw gateway)
+
+**Custom Caddyfile support:** Per-instance custom Caddyfiles can be set via the `custom_caddyfile` DB field. The heartbeat syncs it from the API and replaces the local file if changed.
+
+**Risk:** Caddy runs as root. A Caddy vulnerability could lead to full host compromise. Acceptable trade-off for binding port 80 without iptables NAT.
+
+### 2d. Host Networking
 
 - Container shares host network namespace — can bind any port, see all interfaces
 - Container runs as UID 1000 (cannot bind ports < 1024 without NAT)
 - No network isolation between container and host processes
-- Loopback traffic (127.0.0.1:18789) is indistinguishable from external traffic at the application level
+- OpenClaw listens on `0.0.0.0:18789` — exposed on all interfaces, restricted by UFW
 
-### 2d. Cloudflare IP Refresh
+### 2e. Cloudflare IP Refresh
 
-- Fetched from `https://www.cloudflare.com/ips-v4` during cloud-init
-- Refreshed daily by heartbeat via marker file `/opt/openclaw/.cf_ufw_updated`
-- If Cloudflare adds new IP ranges, UFW rules update within 24 hours
-- If fetch fails (network issue), existing rules remain — no data loss
+- Fetched from `https://www.cloudflare.com/ips-v4` during cloud-init and heartbeat
+- Refreshed daily via marker file `/opt/openclaw/.cf_ufw_updated` (1440-minute check)
+- If fetch fails, existing rules remain
 
-### 2e. Remaining Network Risk: Port 80 Open to All
+### 2f. Remaining Network Risk: Port 80 Open to All
 
-Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker connecting directly to `:80` gets NAT'd to `:18789` (OpenClaw), bypassing Cloudflare. This is a lower risk than the old blanket `:18789` rule because:
-- Cloudflare's `proxied: true` DNS hides the VPS IP from DNS lookups
-- Attacker would need to discover the IP through other means (scan, leak)
-- OpenClaw still requires token auth on WebSocket connect
+Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker connecting directly to `:80` reaches Caddy, which proxies to OpenClaw. OpenClaw still requires token auth, and Cloudflare's `proxied: true` DNS hides the VPS IP from DNS lookups.
 
-**Recommendation:** Restrict port 80 to Cloudflare IPs as well (same approach as 18789). This would fully close the direct-IP bypass path. Not yet implemented because port 80 is the lower-risk entry (token still required) and was not in the original scope.
+**Recommendation:** Restrict port 80 to Cloudflare IPs (same approach as 18789) for full defense-in-depth.
 
 ---
 
@@ -91,25 +93,25 @@ Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker co
 
 | Token | Generation | Storage | Rotation | Expiry |
 |---|---|---|---|---|
-| AGENT_TOKEN (64-char hex) | `crypto/rand` at provisioning | DB: `agent_token_secret_name` (plaintext) | None | Never |
-| OPENCLAW_AUTH_TOKEN (64-char hex) | `crypto/rand` at provisioning | DB: `openclaw_auth_token` (plaintext) | None | Never |
+| AGENT_TOKEN (64-char hex) | `crypto/rand` at provisioning | DB: plaintext | None | Never |
+| OPENCLAW_AUTH_TOKEN (64-char hex) | `crypto/rand` at provisioning | DB: plaintext | None | Never |
 | OPENCLAW_GATEWAY_TOKEN | Same value as OPENCLAW_AUTH_TOKEN | VPS: `/opt/openclaw/.env` (chmod 600) | None | Never |
-| Root Password (24-char hex) | `crypto/rand` at provisioning | DB: `root_password` (plaintext) | None | Never — **no longer used for SSH** (password auth disabled) |
+| Root Password (24-char hex) | `crypto/rand` at provisioning | DB: plaintext | None | Never — **unused** (password auth disabled) |
 | SSH Private Key (Ed25519) | One-time manual generation | GCP Secret Manager (base64 PEM) | Manual | Never |
 | Firebase JWT | Firebase Auth SDK | Client-side (browser) | Automatic | ~1 hour |
 | Google OAuth tokens | OAuth2 flow | DB: AES-256-GCM encrypted | Auto-refresh by token_refresh job | Access: 1 hour, Refresh: long-lived |
 | Admin API token | Manual configuration | Environment variable | Manual | Never |
 
 **Files:**
-- Token generation: `backend/internal/jobs/provisioner.go` (`GenerateAgentToken()`)
+- Token generation: `backend/internal/jobs/provisioner.go` lines 1004-1019
 - Firebase auth: `backend/internal/api/middleware/auth.go`
 - Google OAuth encryption: `backend/internal/crypto/tokens.go`
-- Admin auth: `backend/internal/api/router.go` line 111
+- Admin auth: `backend/internal/api/router.go` lines 104-120
 
 ### 3b. Frontend → Backend (Firebase JWT)
 
 - Production: `auth.Client.VerifyIDToken()` validates JWT signature and expiry
-- Dev mode with `mock-token`: bypasses all auth (returns mock user)
+- Dev mode with `mock-token`: bypasses all auth (returns mock user `mock-uid-12345`)
 - Dev mode without Firebase: treats bearer token string as UID (no validation)
 - **Risk:** Dev mode must never be active in production. Gated on `cfg.IsDev()`.
 
@@ -120,20 +122,17 @@ Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker co
 - Bearer token in Authorization header over HTTPS
 - Looked up via `db.GetInstanceByAgentToken()` — maps token to instance
 - No Firebase involved — separate auth path
-- Used by: heartbeat, config fetch
 
-**File:** `backend/internal/api/agent.go` lines 21-65
+**File:** `backend/internal/api/agent.go`
 
 ### 3d. Backend → VPS (SSH + WebSocket RPC)
 
 **SSH:**
 - Root user, Ed25519 key-based auth (password auth disabled on VPS)
 - Private key stored in GCP Secret Manager, mounted as `SSH_PRIVATE_KEY` env var on Cloud Run
-- Public key injected into `/root/.ssh/authorized_keys` via cloud-init (new VPSes) and ScriptPusher (existing)
+- Public key injected into `/root/.ssh/authorized_keys` via cloud-init
 - `PermitRootLogin prohibit-password` + `PasswordAuthentication no` enforced by heartbeat drift guard
 - `InsecureIgnoreHostKey()` — no host key pinning (MITM-able on network path)
-- Password fallback still in code for transition safety, but VPS sshd rejects password auth
-- Used for: config sync, script push, dashboard token generation, status checks
 
 **WebSocket RPC:**
 - Plain `ws://` (no TLS) to VPS IP on port 18789
@@ -142,8 +141,8 @@ Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker co
 - Used for: `config.patch`, `config.get`, `channels.status`, `web.login.start`
 
 **Files:**
-- SSH: `backend/internal/sshexec/exec.go`
-- WebSocket: `backend/internal/api/whatsapp.go` lines 186-316
+- SSH: `backend/internal/sshexec/exec.go` line 40
+- WebSocket: `backend/internal/api/whatsapp.go` line 191
 
 ### 3e. Browser → OpenClaw Control UI
 
@@ -151,18 +150,19 @@ Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker co
 - Hash fragment is client-side only (not sent to server, not logged)
 - Control UI JS reads token and includes in WebSocket `connect` message
 - Device pairing disabled: `dangerouslyDisableDeviceAuth: true`
-- `allowInsecureAuth: true` grants operator scopes via token auth
+- `allowInsecureAuth: true` grants operator scopes via shared token auth (required since OC 2026.3.22+)
 
 **Risk:** If token URL leaks (browser history, screen share, referrer), anyone can access the dashboard. Mitigated by 64-char hex entropy and hash-fragment delivery.
 
 ### 3f. Admin API
 
-- `X-Admin-Token` header, simple string comparison
-- No rate limiting on admin endpoints
+- `X-Admin-Token` header, simple string comparison (`router.go` lines 104-120)
+- Empty token disables admin API entirely (returns 403)
+- Admin endpoints: version management, password reset by IP
+- No dedicated rate limiting (inherits global 60 req/min)
 - No audit logging of admin actions
-- Empty token disables admin API entirely
 
-**File:** `backend/internal/api/router.go` line 111
+**File:** `backend/internal/api/router.go` lines 76-120
 
 ---
 
@@ -174,31 +174,30 @@ Port 80 accepts traffic from **any source**, not just Cloudflare. An attacker co
 |---|---|---|
 | `/opt/openclaw/.env` | 600 (owner-only) | AGENT_TOKEN, OPENCLAW_AUTH_TOKEN, OPENCLAW_GATEWAY_TOKEN, API keys, TELEGRAM_BOT_TOKEN, BACKEND_EGRESS_CIDRS |
 | `/root/.ssh/authorized_keys` | 600 (root-only) | Backend Ed25519 public key (same key across all VPSes) |
-| `/opt/openclaw/data/openclaw/openclaw.json` | 1000:1000 | Gateway auth token (written by OpenClaw), auth mode, Control UI settings |
-| `/opt/openclaw/data/openclaw/.config/gogcli/` | 600 | Google OAuth credentials.json and refresh tokens (base64-decoded) |
+| `/opt/openclaw/data/openclaw/openclaw.json` | 1000:1000 | Gateway config, auth mode (token value read from env, not stored here) |
+| `/opt/openclaw/data/gogcli/` | 600 | Google OAuth credentials.json and refresh tokens |
 
 ### 4b. Database Secrets (plaintext)
 
-These are stored **unencrypted** in PostgreSQL:
-- `root_password` — root password set during provisioning. **No longer grants SSH access** (password auth disabled on VPS sshd). Kept in DB for Hetzner API compatibility but unused operationally.
-- `openclaw_auth_token` — OpenClaw gateway auth token
-- `agent_token_secret_name` — VPS heartbeat auth token (field name is misleading — stores plaintext, not a secret manager reference)
+Stored **unencrypted** in PostgreSQL:
+- `root_password` — **no longer grants SSH** (password auth disabled). Kept for Hetzner API compatibility.
+- `openclaw_auth_token` — grants OpenClaw dashboard access
+- `agent_token_secret_name` — VPS heartbeat auth token (name is misleading — stores plaintext token, not a secret manager reference)
 
-**Risk (reduced):** A database breach no longer exposes SSH access (key is in Secret Manager, not DB). However, `openclaw_auth_token` still grants OpenClaw dashboard access.
-**Recommendation:** Encrypt tokens with GCP KMS envelope encryption. Decrypt only when needed.
+**Risk:** Database breach exposes dashboard access tokens.
+**Recommendation:** Encrypt with GCP KMS envelope encryption.
 
 ### 4c. Google OAuth Token Encryption
 
-- Encrypted at rest with AES-256-GCM
+- Encrypted at rest with AES-256-GCM (random nonce prepended)
 - Key: 32-byte hex from `TOKEN_ENCRYPTION_KEY` env var
-- Random nonce prepended to ciphertext
 - Decrypted only during token refresh and config sync
 
 **Files:** `backend/internal/crypto/tokens.go`, `backend/internal/jobs/token_refresh.go`
 
 ### 4d. Cloud-Init Secret Exposure
 
-- Root password, agent token, and API keys embedded in cloud-init script
+- Root password, agent token, API keys, and provider tokens embedded in cloud-init script
 - Stored in Hetzner instance metadata (accessible via provider API)
 - Logged to `/var/log/cloud-init-output.log` (world-readable by default)
 
@@ -210,7 +209,7 @@ These are stored **unencrypted** in PostgreSQL:
 
 ### 5a. Docker Socket Mount (CRITICAL)
 
-`/var/run/docker.sock` is mounted into the OpenClaw container. Combined with host networking, this grants **root-equivalent access** to the host:
+`/var/run/docker.sock` is mounted into the OpenClaw container. Combined with host networking and Docker group membership, this grants **root-equivalent access** to the host:
 - Spawn privileged containers
 - Mount host filesystem (`-v /:/host`)
 - Read all secrets from `/opt/openclaw/.env`
@@ -218,13 +217,13 @@ These are stored **unencrypted** in PostgreSQL:
 
 **Why it exists:** OpenClaw spawns sandboxed tool-execution containers via Docker API.
 
-**Recommendation:** Use Docker socket proxy (e.g., `tecnativa/docker-socket-proxy`) to restrict API calls to `containers` and `images` endpoints only.
+**Recommendation:** Docker socket proxy (e.g., `tecnativa/docker-socket-proxy`) to restrict API calls to `containers` and `images` endpoints only.
 
-**File:** `backend/internal/jobs/provisioner.go` line 228
+**File:** `backend/internal/jobs/provisioner.go` line 296
 
 ### 5b. No Resource Limits
 
-Docker Compose has no `mem_limit`, `cpus`, `pids_limit`, or `ulimits`. A runaway AI agent or malicious tool can consume all host resources.
+Docker Compose has no `mem_limit`, `cpus`, `pids_limit`, or `ulimits`. A runaway agent or malicious tool can consume all host resources.
 
 **Recommendation:** Add to docker-compose template:
 ```yaml
@@ -237,26 +236,27 @@ pids_limit: 512
 
 - Non-root user (good)
 - Docker group membership grants Docker API access (negates non-root benefit for container escape)
-- Cannot bind ports < 1024 (requires iptables NAT for port 80)
+- Cannot bind ports < 1024 (Caddy host binary handles port 80)
+
+### 5d. `trustedProxies: ["0.0.0.0/0"]`
+
+OpenClaw is configured to trust proxy headers from **any source IP**. This is safe because auth is enforced via token mode (not trusted-proxy mode), but it means OpenClaw will trust any `X-Forwarded-For` header for logging/display purposes. Not exploitable for auth bypass in token mode.
 
 ---
 
 ## 6. Backend API Security
 
-### 6a. Rate Limiting (BROKEN)
+### 6a. Rate Limiting — FIXED
 
-Rate limiter uses `r.RemoteAddr` which, behind Cloud Run's load balancer, returns the **proxy IP** — not the client IP. All requests from a single ingress point share the same bucket.
+Rate limiter now correctly uses `X-Forwarded-For` header for client IP extraction (`ratelimit.go` lines 14-27). Falls back to `RemoteAddr` only if header is absent.
 
-- Global: 60 req/min per IP — effectively per-proxy, not per-client
+- General: 60 req/min per client IP
 - Provisioning: 10 req/min for POST/DELETE on `/api/instances`
-- In-memory storage — lost on restart, grows unbounded (memory leak)
+- Health endpoints exempt (`/healthz`, `/readyz`)
 
-**Files:** `backend/internal/api/middleware/ratelimit.go`
+**Remaining issue:** In-memory storage — limiter map grows unbounded. No periodic cleanup goroutine.
 
-**Recommendation:**
-1. Use `X-Forwarded-For` header (Cloud Run sets this reliably) for client IP
-2. Add periodic cleanup goroutine for stale limiter entries
-3. Consider per-user rate limiting (via Firebase UID) instead of per-IP
+**File:** `backend/internal/api/middleware/ratelimit.go`
 
 ### 6b. CORS Configuration
 
@@ -268,27 +268,21 @@ Rate limiter uses `r.RemoteAddr` which, behind Cloud Run's load balancer, return
 
 **File:** `backend/internal/api/middleware/cors.go`
 
-### 6c. SQL Injection
+### 6c. SQL Injection — SAFE
 
-All database queries use parameterized queries with `$1, $2` placeholders. No raw SQL concatenation with user input found.
-
-**File:** `backend/internal/db/queries.go`
+All database queries use parameterized queries with `$1, $2` placeholders. No raw SQL concatenation found.
 
 ### 6d. Missing Security Headers
 
-No `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, or `Content-Security-Policy` headers. Partially mitigated by Cloud Run (forces HTTPS) and Cloudflare (adds some headers at edge).
+No `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, or `Content-Security-Policy` headers. Partially mitigated by Cloud Run (forces HTTPS) and Cloudflare (can add headers at edge).
 
 ### 6e. OAuth State Store (Multi-Instance CSRF Risk)
 
-OAuth CSRF state tokens are stored **in-memory** with `sync.Mutex`. Cloud Run can scale to multiple instances — state generated on instance A won't be found on instance B.
+OAuth CSRF state tokens stored **in-memory** with `sync.Mutex` (`google_oauth.go` lines 36-80). Cleanup of expired entries happens on each `Set()` call. One-time use enforced.
 
-Code acknowledges this: *"consider using the DB or a signed JWT"*.
-
-**Impact:** OAuth flow may fail intermittently. If state validation is bypassed, CSRF attacks on OAuth become possible.
+**Risk:** Cloud Run can scale to multiple instances — state from instance A won't be found on instance B. Comment acknowledges this, assumes 10-min TTL means "almost certainly hit the same instance."
 
 **Recommendation:** Use HMAC-signed state tokens (stateless validation) or move to database.
-
-**File:** `backend/internal/api/google_oauth.go` lines 36-52
 
 ### 6f. OAuth postMessage Wildcard Origin
 
@@ -296,53 +290,34 @@ Code acknowledges this: *"consider using the DB or a signed JWT"*.
 window.opener.postMessage(msg, '*');
 ```
 
-OAuth callback sends result to **any opener window**. A malicious page that opens the OAuth popup could intercept the result.
+OAuth callback sends result to **any opener window** (`google_oauth.go` line 395). A malicious page that opens the OAuth popup could intercept the result.
 
-**Recommendation:** Replace `'*'` with the specific frontend origin from config.
-
-**File:** `backend/internal/api/google_oauth.go` line 395
+**Recommendation:** Replace `'*'` with the specific frontend origin.
 
 ---
 
 ## 7. SSH Security
 
-### 7a. Key-Based Auth Only (password auth disabled)
+### 7a. Key-Based Auth Only
 
 - `PermitRootLogin prohibit-password` + `PasswordAuthentication no` in sshd_config
 - Ed25519 public key injected into `/root/.ssh/authorized_keys` during cloud-init
 - Private key stored in GCP Secret Manager (`SSH_PRIVATE_KEY`), mounted on Cloud Run
-- Single key pair for all VPSes (blast radius equivalent to backend compromise)
-- Root password still set via `chpasswd` (Hetzner API compat) but **sshd rejects password auth**
-- No `fail2ban` needed — password brute force not possible with key-only auth
-
-**Files:**
-- Cloud-init: `backend/internal/jobs/provisioner.go` (SSH key injection + sshd config)
-- Config: `backend/internal/config/config.go` (key loading + public key derivation)
-- SSH client: `backend/internal/sshexec/exec.go` (key auth first, password fallback)
+- Single key pair for all VPSes (blast radius: backend compromise = all VPS access)
+- Root password still set via `chpasswd` (Hetzner API compat) but sshd rejects password auth
 
 ### 7b. SSH Key Drift Guard
 
 - Heartbeat checks if old `PasswordAuthentication yes` config exists
-- Only flips to `no` if `/root/.ssh/authorized_keys` has content (safety check to avoid lockout)
-- ScriptPusher injects public key + disables password auth when pushing heartbeat scripts to existing VPSes
+- Only flips to `no` if `/root/.ssh/authorized_keys` has content (safety check)
 
 **File:** `backend/internal/scripts/heartbeat.go` lines 14-25
 
 ### 7c. InsecureIgnoreHostKey
 
-`ssh.InsecureIgnoreHostKey()` — no host key verification. MITM on the Cloud Run → VPS path could intercept the SSH session. Risk is **reduced** with key-based auth (attacker cannot steal a reusable password) but session hijacking is still possible.
+`ssh.InsecureIgnoreHostKey()` — no host key verification (`sshexec/exec.go` line 40). MITM on the Cloud Run → VPS path could hijack the SSH session. Risk reduced with key-based auth (no password to steal), but session content is interceptable.
 
-**Recommendation:** Record host key at provisioning time (first SSH connection or Hetzner API) and verify on subsequent connections.
-
-**File:** `backend/internal/sshexec/exec.go` line 20
-
-### 7d. SSH Access Control (current state)
-
-- **With `BACKEND_EGRESS_CIDRS` set:** UFW restricts port 22 to backend egress IPs only
-- **Without `BACKEND_EGRESS_CIDRS`:** Port 22 open to all sources — but only key auth accepted, so brute force is not feasible
-- **Defense in depth:** Even without CIDR restriction, an attacker needs the Ed25519 private key (stored only in GCP Secret Manager)
-
-**Recommended improvement:** Configure Cloud NAT with static egress IP and set `BACKEND_EGRESS_CIDRS` to restrict port 22 at the firewall level as well.
+**Recommendation:** Record host key at provisioning, verify on subsequent connections.
 
 ---
 
@@ -352,19 +327,23 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 
 | Guard | What it checks | What it fixes |
 |---|---|---|
-| SSH key-only auth | `PasswordAuthentication yes` in `60-tardi.conf` (old config) | Flips to `no` + `prohibit-password` if authorized_keys has content |
-| iptables NAT | `PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789` | Adds rule and saves |
-| UFW hardening | Blanket `18789/tcp ALLOW Anywhere` exists | Replaces with per-Cloudflare-CIDR rules |
-| Cloudflare IPs | Marker file older than 24 hours | Fetches and adds new CIDRs |
+| SSH key-only auth | `PasswordAuthentication yes` in sshd config | Flips to `no` + `prohibit-password` if authorized_keys has content |
+| iptables NAT removal | Old `PREROUTING :80 → :18789` rule | Removes rule (replaced by Caddy) |
+| Caddy binary | `/usr/local/bin/caddy` missing | Downloads and installs Caddy |
+| Caddy service | Not running or Caddyfile drifted | Creates systemd service, starts/reloads |
+| Custom Caddyfile | API returns `custom_caddyfile` | Replaces local Caddyfile with custom version |
+| UFW hardening | Blanket `18789/tcp ALLOW Anywhere` | Replaces with per-Cloudflare-CIDR rules |
+| Cloudflare IPs | Marker file older than 24 hours | Fetches fresh Cloudflare IP list |
 | Backend egress CIDRs | `BACKEND_EGRESS_CIDRS` in `.env` | Applies to UFW for 18789 + 22 |
-| Gateway auth mode | `auth.mode != "token"` in openclaw.json | Rewrites to `token` mode |
+| Gateway auth mode | `auth.mode != "token"` in openclaw.json | Rewrites to `token` mode, force-recreates if crash-looping |
 | `allowInsecureAuth` | `controlUi.allowInsecureAuth != true` | Sets to `true` |
-| `dangerouslyDisableDeviceAuth` | Not set in openclaw.json | Sets to `true`, restarts container |
-| OPENCLAW_GATEWAY_TOKEN sync | `.env` token != `openclaw.json` token | Updates `.env` |
+| `trustedProxies` | Missing in openclaw.json | Sets to `["0.0.0.0/0"]` |
+| `dangerouslyDisableDeviceAuth` | Not set in openclaw.json | Sets to `true` |
+| OPENCLAW_GATEWAY_TOKEN sync | `.env` token != running container token | Updates `.env` |
 | Telegram config | `streaming != "off"` or `enabled != true` | Applies correct settings via CLI |
+| Telegram account overrides | Per-account dmPolicy/streaming drifted | Fixes account-level settings |
 | Model drift | No model set after restart | Re-applies from backend API |
-| Orphaned Caddy | `openclaw-caddy` container exists | Removes container + image |
-| 2-container migration | `docker-compose.yml` has caddy/bridge | Rewrites to single container + host networking |
+| Orphaned Caddy container | `openclaw-caddy` Docker container exists | Removes container + image (migration cleanup) |
 
 **File:** `backend/internal/scripts/heartbeat.go`
 
@@ -376,16 +355,13 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 |---|---|---|---|---|
 | AGENT_TOKEN | Provisioning | Never | Instance deletion | Never |
 | OPENCLAW_AUTH_TOKEN | Provisioning | Never | Instance deletion | Never |
-| Root Password | Provisioning | Never | Instance deletion | Never — **unused** (password auth disabled) |
+| Root Password | Provisioning | Never | Instance deletion | Never — **unused** |
 | SSH Private Key | One-time manual | Manual | Secret Manager version delete | Never |
-| Dashboard Device Token | On-demand (`/dashboard-token`) | Each request generates new | Previous stays valid | Never |
-| Firebase JWT | User login | Automatic (Firebase SDK) | User logout / Firebase admin | ~1 hour |
-| Google OAuth Access | OAuth flow | `token_refresh` job | User disconnects Google | 1 hour |
+| Firebase JWT | User login | Automatic (Firebase SDK) | User logout / admin | ~1 hour |
+| Google OAuth Access | OAuth flow | `token_refresh` job (5-min interval) | User disconnects Google | 1 hour |
 | Google OAuth Refresh | OAuth flow | Never (until revoked) | User disconnects Google | Long-lived |
 
-**Gap:** No rotation for VPS tokens (AGENT_TOKEN, OPENCLAW_AUTH_TOKEN, root password). A leaked token remains valid for the lifetime of the VPS.
-
-**Recommendation:** Implement periodic rotation (e.g., on each config sync or monthly). Add token versioning in DB to support revocation.
+**Gap:** No rotation for VPS tokens. A leaked token remains valid for the lifetime of the VPS.
 
 ---
 
@@ -400,26 +376,26 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 | Docker images | Multi-stage Alpine build, `CGO_ENABLED=0` | Minimal attack surface |
 | Dependency scanning | Not configured | No Dependabot or Snyk |
 
-**Recommendation:** Add manual approval step for production Terraform applies. Enable dependency vulnerability scanning.
-
 ---
 
 ## 11. Findings Summary
 
-### Mitigated (by recent hardening)
+### Mitigated (by previous hardening)
 
 | # | Finding | Status |
 |---|---|---|
 | ~~1~~ | ~~Port 18789 open to all sources~~ | **FIXED** — Restricted to Cloudflare + backend egress CIDRs |
-| ~~2~~ | ~~SSH open to all sources with password auth~~ | **FIXED** — Key-based auth only (Ed25519), password auth disabled. UFW restricts to backend CIDRs when configured. |
-| ~~3~~ | ~~Root passwords in DB grant SSH access~~ | **FIXED** — Passwords still in DB but sshd rejects password auth. SSH key in Secret Manager only. |
-| ~~4~~ | ~~SSH password/IP exposed in frontend UI~~ | **FIXED** — SSH access section removed from dashboard |
+| ~~2~~ | ~~SSH open to all with password auth~~ | **FIXED** — Key-only auth, password disabled |
+| ~~3~~ | ~~Root passwords in DB grant SSH access~~ | **FIXED** — sshd rejects password auth |
+| ~~4~~ | ~~SSH password/IP exposed in frontend UI~~ | **FIXED** — Removed from dashboard |
+| ~~5~~ | ~~iptables NAT complexity~~ | **FIXED** — Replaced with Caddy reverse proxy |
+| ~~6~~ | ~~Rate limiter uses RemoteAddr~~ | **FIXED** — Now uses X-Forwarded-For correctly |
 
 ### CRITICAL (requires immediate action)
 
 | # | Finding | File | Recommendation |
 |---|---|---|---|
-| 1 | Docker socket mount = root-equivalent container escape | `provisioner.go:228` | Docker socket proxy to restrict API calls |
+| 1 | Docker socket mount = root-equivalent container escape | `provisioner.go:296` | Docker socket proxy to restrict API calls |
 | 2 | No token rotation — leaked tokens valid forever | `provisioner.go` | Periodic rotation + DB versioning |
 
 ### HIGH (address within 1-2 weeks)
@@ -427,74 +403,87 @@ The heartbeat script runs every 5 minutes via systemd timer and enforces:
 | # | Finding | File | Recommendation |
 |---|---|---|---|
 | 3 | Backend→VPS RPC over plaintext `ws://` (token on wire) | `whatsapp.go:191` | Route through Cloudflare domain (`wss://`) or WireGuard tunnel |
-| 4 | SSH `InsecureIgnoreHostKey()` enables MITM | `exec.go:20` | Pin host key at provisioning time (risk reduced — key auth means no password to steal, but session hijack still possible) |
-| 5 | OpenClaw tokens stored plaintext in DB | DB schema | KMS envelope encryption (root password risk eliminated — no longer grants SSH) |
+| 4 | SSH `InsecureIgnoreHostKey()` enables MITM | `exec.go:40` | Pin host key at provisioning |
+| 5 | OpenClaw tokens stored plaintext in DB | DB schema | KMS envelope encryption |
 | 6 | OAuth state in-memory (multi-instance CSRF) | `google_oauth.go:36-52` | HMAC-signed state tokens or DB |
-| 7 | Rate limiter uses `RemoteAddr` (broken behind proxy) | `ratelimit.go:18` | Use `X-Forwarded-For` |
-| 8 | No container resource limits | `provisioner.go` compose template | Add `mem_limit`, `cpus`, `pids_limit` |
-| 9 | UFW SSH restriction needs `BACKEND_EGRESS_CIDRS` | UFW rules | Configure Cloud NAT + set `BACKEND_EGRESS_CIDRS` (defense-in-depth — key auth already prevents unauthorized access) |
-| 10 | Port 80 still open to all sources (direct IP bypass possible) | `provisioner.go:99` | Restrict to Cloudflare IPs (same as 18789) |
+| 7 | No container resource limits | `provisioner.go` compose template | Add `mem_limit`, `cpus`, `pids_limit` |
+| 8 | Admin API: no audit logging, no dedicated rate limit | `admin.go`, `router.go` | Audit log for password resets + version changes; dedicated rate limit |
+| 9 | Port 80 open to all sources (direct IP bypass) | `provisioner.go:98` | Restrict to Cloudflare IPs |
 
 ### MEDIUM (address within 1 month)
 
 | # | Finding | File | Recommendation |
 |---|---|---|---|
-| 11 | OAuth `postMessage(msg, '*')` | `google_oauth.go:395` | Use specific frontend origin |
-| 12 | Cloud-init secrets in metadata/logs | `provisioner.go` | Restrict log perms, clear metadata |
-| 13 | `dangerouslyDisableDeviceAuth: true` | `provisioner.go:158` | Acceptable trade-off; add session expiry |
-| 14 | Admin API no rate limit/audit logging | `router.go:111` | Rate limit + audit log |
-| 15 | No centralized audit logging | — | Log auth failures, SSH, RPC, admin actions |
-| 16 | Rate limiter memory leak | `ratelimit.go` | Periodic cleanup goroutine |
+| 10 | OAuth `postMessage(msg, '*')` | `google_oauth.go:395` | Use specific frontend origin |
+| 11 | Cloud-init secrets in metadata/logs | `provisioner.go` | Restrict log perms, clear metadata |
+| 12 | `dangerouslyDisableDeviceAuth: true` | `provisioner.go:185` | Acceptable trade-off; add session expiry |
+| 13 | Rate limiter memory leak (no cleanup goroutine) | `ratelimit.go` | Periodic cleanup of stale entries |
+| 14 | No centralized audit logging | — | Log auth failures, SSH, RPC, admin actions |
+| 15 | Caddy runs as root | `heartbeat.go:307` | Acceptable for port 80 binding; no alternative without NAT |
 
 ### LOW (backlog)
 
 | # | Finding | File | Recommendation |
 |---|---|---|---|
-| 17 | `allowedOrigins: ["*"]` in OpenClaw | `provisioner.go:157` | Mitigated by token requirement |
-| 18 | Heartbeat JSON via `printf` (injection risk) | `heartbeat.go` | Use `jq` for safe JSON construction |
-| 19 | No HTTP security headers | — | Add HSTS, X-Content-Type-Options, CSP |
-| 20 | Terraform auto-apply without review | `deploy-infra.yml` | Add approval gate |
-| 21 | No dependency vulnerability scanning | CI/CD | Enable Dependabot or Snyk |
+| 16 | `allowedOrigins: ["*"]` in OpenClaw | `provisioner.go:184` | Mitigated by token requirement |
+| 17 | `trustedProxies: ["0.0.0.0/0"]` | `provisioner.go:182` | Safe in token mode; would matter in trusted-proxy mode |
+| 18 | No HTTP security headers | — | Add HSTS, X-Content-Type-Options, CSP (partially covered by Cloudflare) |
+| 19 | Terraform auto-apply without review | `deploy-infra.yml` | Add approval gate |
+| 20 | No dependency vulnerability scanning | CI/CD | Enable Dependabot or Snyk |
+| 21 | Single SSH key for all VPSes | `config.go` | Per-VPS keys or key rotation mechanism |
 
 ---
 
 ## 12. Recommended Remediation Order
 
 ### Phase 1 — Immediate (before next user onboarding)
-1. ~~Configure SSH key-based auth~~ — **DONE** (Ed25519 key auth, password disabled)
-2. Restrict port 80 to Cloudflare IPs (same approach as 18789)
-3. Fix rate limiter to use `X-Forwarded-For`
+1. Restrict port 80 to Cloudflare IPs (same approach as 18789)
+2. Add container resource limits (`mem_limit: 3g`, `cpus: 3`, `pids_limit: 512`)
 
 ### Phase 2 — Short-term (1-2 weeks)
-4. Add container resource limits (`mem_limit: 3g`, `cpus: 3`, `pids_limit: 512`)
-5. Encrypt OpenClaw tokens in DB with KMS (root password no longer security-critical)
-6. Fix OAuth state store (HMAC-signed tokens)
-7. Pin SSH host keys at provisioning
-8. Fix `postMessage('*')` in OAuth callback
-9. Add rate limiter cleanup goroutine
-10. Configure Cloud NAT with static egress IP → set `BACKEND_EGRESS_CIDRS` (defense-in-depth for SSH + 18789)
+3. Encrypt OpenClaw tokens in DB with KMS
+4. Fix OAuth state store (HMAC-signed tokens)
+5. Pin SSH host keys at provisioning
+6. Fix `postMessage('*')` in OAuth callback
+7. Add audit logging for admin actions
+8. Add rate limiter cleanup goroutine
 
 ### Phase 3 — Medium-term (1 month)
-11. Docker socket proxy to restrict container API access
-12. Backend→VPS RPC over `wss://` through Cloudflare or WireGuard
-13. Token rotation mechanism
-14. Centralized audit logging
-15. Security headers middleware
-16. Dependency vulnerability scanning
+9. Docker socket proxy to restrict container API access
+10. Backend→VPS RPC over `wss://` through Cloudflare or WireGuard
+11. Token rotation mechanism
+12. Centralized audit logging
+13. Security headers middleware
+14. Dependency vulnerability scanning
 
 ---
 
-## 13. Verification Checklist
+## 13. Changes Since Last Audit (2026-03-24)
 
-- [x] **SSH password auth rejected** — `ssh -o PreferredAuthentications=password root@<ip>` returns `Permission denied (publickey,password)`
-- [x] **SSH key auth works** — `ssh -i <private-key> root@<ip>` succeeds
-- [x] **sshd config enforced** — `/etc/ssh/sshd_config.d/60-tardi.conf` contains `PasswordAuthentication no`, `PubkeyAuthentication yes`, `PermitRootLogin prohibit-password`
-- [x] **authorized_keys populated** — `/root/.ssh/authorized_keys` contains the Ed25519 public key
-- [ ] **Port scan** a VPS from external IP — only 80 should respond from arbitrary IPs
+| Change | Security Impact |
+|---|---|
+| iptables NAT removed, replaced with Caddy host binary | **Positive** — simpler, less fragile than kernel NAT rules |
+| Heartbeat removes legacy NAT rules | **Positive** — migration cleanup |
+| Custom Caddyfile support added | **Neutral** — new feature, no new attack surface (admin-controlled) |
+| Rate limiter fixed to use X-Forwarded-For | **Positive** — per-client limiting now works correctly |
+| `allowInsecureAuth: true` added | **Neutral** — required for OC 2026.3.22+ shared token auth to grant operator scopes |
+| `trustedProxies: ["0.0.0.0/0"]` added | **Low risk** — safe in token mode (only affects proxy header trust, not auth) |
+| Caddy drift guard in heartbeat | **Positive** — ensures Caddy binary + config stay correct |
+
+---
+
+## 14. Verification Checklist
+
+- [x] **SSH password auth rejected** — `ssh -o PreferredAuthentications=password root@<ip>` returns `Permission denied`
+- [x] **SSH key auth works** — `ssh -i ~/.ssh/tardi-backend root@<ip>` succeeds
+- [x] **sshd config enforced** — `60-tardi.conf` contains `PasswordAuthentication no`, `PermitRootLogin prohibit-password`
+- [x] **authorized_keys populated** — `/root/.ssh/authorized_keys` contains Ed25519 public key
+- [x] **Rate limiter uses X-Forwarded-For** — `ratelimit.go` clientIP() checks header first
+- [x] **iptables NAT removed** — heartbeat removes legacy rules
+- [x] **Caddy running as systemd service** — `systemctl status caddy` active
+- [ ] **Port scan** from external IP — only 80 should respond from arbitrary IPs
 - [ ] **Direct WebSocket** to `ws://<vps-ip>:18789/health` from non-Cloudflare IP — should be blocked by UFW
-- [ ] **Direct WebSocket** from Cloudflare IP range — should succeed (for NAT'd traffic)
-- [ ] **SSH from non-backend IP** — should be blocked when `BACKEND_EGRESS_CIDRS` is set (even without it, key auth prevents unauthorized access)
-- [ ] **Rate limiter test** — verify different clients get independent rate limit buckets
+- [ ] **SSH from non-backend IP** — should be blocked when `BACKEND_EGRESS_CIDRS` is set
 - [ ] **Cloud-init logs** — check `/var/log/cloud-init-output.log` permissions
-- [ ] **Cloudflare IP refresh** — verify `find /opt/openclaw/.cf_ufw_updated -mmin +1440` triggers refresh
-- [ ] **Token in DB** — verify `openclaw_auth_token` columns contain plaintext (confirms encryption needed)
+- [ ] **Cloudflare IP refresh** — verify daily refresh via marker file
+- [ ] **Port 80 Cloudflare restriction** — not yet implemented (recommended)
