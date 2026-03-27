@@ -85,7 +85,9 @@ async function checkInstance(
 
 		if (!res.ok) return null;
 		const state = await res.json();
-		const instances = state.instances || [];
+		const instances = (state.instances || []).filter(
+			(i: { status: string }) => i.status !== 'terminated' && i.status !== 'terminating'
+		);
 		if (instances.length === 0) return null;
 
 		const instance = instances[0];
@@ -133,18 +135,69 @@ async function setup() {
 
 	if (!idToken) {
 		console.log('   Could not obtain Firebase ID token. Skipping instance check.');
-	} else {
-		const instance = await checkInstance(idToken);
+		console.log('\nSetup check complete.');
+		return;
+	}
 
-		if (instance) {
-			console.log(`   Instance found: ${instance.id} (status: ${instance.status}, name: ${instance.name})`);
-		} else {
-			console.log('   No active instance found.');
-			console.log('   -> Please deploy an instance via the dashboard or run the journey test first.');
+	const instance = await checkInstance(idToken);
+
+	if (instance) {
+		console.log(`   Instance found: ${instance.id} (status: ${instance.status}, name: ${instance.name})`);
+		console.log('\nSetup check complete.');
+		return;
+	}
+
+	// No active instance — deploy one
+	console.log('   No active instance found. Deploying...');
+	const apiUrl =
+		process.env.E2E_API_URL || 'https://tardi-api-dev-lckw22k4gq-uc.a.run.app';
+
+	const createRes = await fetch(`${apiUrl}/api/instances`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${idToken}`,
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({ name: 'e2e-persistent', region: 'nbg1' }),
+	});
+
+	if (!createRes.ok) {
+		const body = await createRes.text().catch(() => '');
+		console.error(`   Deploy failed (${createRes.status}): ${body}`);
+		process.exit(1);
+	}
+
+	const created = await createRes.json();
+	console.log(`   Instance created: ${created.id} (status: ${created.status})`);
+
+	// Poll until active (up to 10 minutes)
+	console.log('\n4. Waiting for instance to become active...');
+	const timeoutMs = 600_000;
+	const start = Date.now();
+	while (Date.now() - start < timeoutMs) {
+		await new Promise((r) => setTimeout(r, 10_000));
+		const token = await getFirebaseIdToken(email, password!);
+		if (!token) continue;
+
+		const inst = await checkInstance(token);
+		if (inst) {
+			const elapsed = Math.round((Date.now() - start) / 1000);
+			console.log(`   Status: ${inst.status} (${elapsed}s)`);
+
+			if (inst.status === 'active') {
+				console.log(`   Instance active: ${inst.id}`);
+				console.log('\nSetup complete — persistent instance is ready.');
+				return;
+			}
+			if (inst.status === 'error' || inst.status === 'terminated') {
+				console.error(`   Instance entered ${inst.status} state.`);
+				process.exit(1);
+			}
 		}
 	}
 
-	console.log('\nSetup check complete.');
+	console.error('   Timed out waiting for instance to become active.');
+	process.exit(1);
 }
 
 setup().catch((err) => {
