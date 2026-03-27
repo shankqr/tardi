@@ -1069,14 +1069,6 @@
 										</li>
 									</ol>
 
-									<div class="mt-3 border-t border-gray-200 dark:border-gray-700 pt-3">
-										<p class="font-semibold text-gray-900 dark:text-white">Optional: Customize your bot</p>
-										<ul class="mt-1.5 space-y-1 text-gray-600 dark:text-gray-400">
-											<li>&bull; Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/setdescription</code> to BotFather to set a bio</li>
-											<li>&bull; Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/setuserpic</code> to BotFather to set a profile picture</li>
-											<li>&bull; Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/setabouttext</code> to set the "About" section</li>
-										</ul>
-									</div>
 								</div>
 
 								{#if telegramError}
