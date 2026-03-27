@@ -1041,7 +1041,7 @@
 								{:else}
 									<div class="mt-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
 										<h4 class="text-sm font-semibold text-green-900 dark:text-green-400">Your Telegram bot is live!</h4>
-										<p class="mt-1 text-xs text-green-800 dark:text-green-400">Anyone who messages your bot on Telegram will get a response from your AI agent.</p>
+										<p class="mt-1 text-xs text-green-800 dark:text-green-400">Anyone who messages your bot on Telegram will get a response from your AI agent. It may take some time for the bot to reply after first-time setup.</p>
 									</div>
 								{/if}
 							{:else}
