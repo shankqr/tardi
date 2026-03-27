@@ -61,6 +61,7 @@
 	let saving = $state(false);
 
 	// Snapshot state
+	let telegramOpen = $state(false);
 	let powerUserOpen = $state(false);
 	let showSnapshotForm = $state(false);
 	let snapshotName = $state('');
@@ -887,16 +888,33 @@
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
 					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsaved={recheckConfig} onsyncchange={(s) => aiConfigSyncing = s} />
 
-					<div class="rounded-xl border border-gray-200 dark:border-gray-700 p-5">
-						<div class="flex items-center gap-2">
-							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5 text-[#2AABEE]">
-								<path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+					<div class="rounded-xl border border-gray-200 dark:border-gray-700">
+						<button
+							onclick={() => (telegramOpen = !telegramOpen)}
+							class="flex w-full items-center justify-between p-5"
+						>
+							<div class="flex items-center gap-2">
+								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5 text-[#2AABEE]">
+									<path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+								</svg>
+								<div class="text-left">
+									<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Telegram</h3>
+									<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Link a Telegram bot to enable messaging through your agent</p>
+								</div>
+							</div>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 20 20"
+								fill="currentColor"
+								class="h-5 w-5 text-gray-400 dark:text-gray-500 transition-transform {telegramOpen ? 'rotate-180' : ''}"
+							>
+								<path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
 							</svg>
-							<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Telegram</h3>
-						</div>
-						<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Link a Telegram bot to enable messaging through your agent</p>
+						</button>
 
-						<div class="mt-4">
+						{#if telegramOpen}
+						<div class="border-t border-gray-200 dark:border-gray-700 p-5">
+						<div>
 							{#if !hasApiKey && !telegramConnected}
 								<div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3">
 									<p class="text-xs text-gray-500 dark:text-gray-400">Set up your AI provider key above before connecting Telegram.</p>
@@ -1103,6 +1121,8 @@
 								{/if}
 							{/if}
 						</div>
+						</div>
+						{/if}
 					</div>
 
 					<!-- Google Account -->
