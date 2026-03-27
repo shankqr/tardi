@@ -34,9 +34,3 @@ func TestHeartbeatScript_ContainsSSHDriftGuard(t *testing.T) {
 		t.Error("HeartbeatScript should contain SSH drift guard for PasswordAuthentication")
 	}
 }
-
-func TestHeartbeatScript_ContainsMigrationLogic(t *testing.T) {
-	if !strings.Contains(HeartbeatScript, "openclaw-net") {
-		t.Error("HeartbeatScript should contain migration logic for old 2-container setup")
-	}
-}

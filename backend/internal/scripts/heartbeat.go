@@ -24,58 +24,6 @@ if [ -f /etc/ssh/sshd_config.d/60-tardi.conf ] && grep -q "PasswordAuthenticatio
     fi
 fi
 
-# --- Migrate from old 2-container Caddy setup to single container host networking ---
-# If docker-compose.yml still has the caddy service or bridge network, rewrite it.
-if grep -q 'openclaw-net\|caddy:' /opt/openclaw/docker-compose.yml 2>/dev/null; then
-    CURRENT_IMAGE=$(grep 'image:.*openclaw/openclaw' /opt/openclaw/docker-compose.yml | sed 's/.*image: *//' | tr -d ' ')
-    [ -z "$CURRENT_IMAGE" ] && CURRENT_IMAGE="ghcr.io/openclaw/openclaw:latest"
-    DOCKER_GID=$(getent group docker | cut -d: -f3)
-    cat > /opt/openclaw/docker-compose.yml <<MIGRATEEOF
-services:
-  openclaw-gateway:
-    image: ${CURRENT_IMAGE}
-    container_name: openclaw-gateway
-    restart: unless-stopped
-    network_mode: host
-    user: "1000:1000"
-    group_add:
-      - "${DOCKER_GID}"
-    volumes:
-      - ./data/openclaw:/home/node/.openclaw:rw
-      - ./data/gogcli:/home/node/.config/gogcli:rw
-      - /var/run/docker.sock:/var/run/docker.sock
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:18789/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-MIGRATEEOF
-    # UFW 18789 rules will be set by the hardening section below (per-CIDR, not blanket allow)
-    # Caddy will be installed by the Caddy drift guard section below
-    # Ensure trustedProxies is set (Cloudflare adds proxy headers; without this
-    # OpenClaw treats connections as untrusted and won't grant operator scopes)
-    python3 -c "
-import json
-with open('/opt/openclaw/data/openclaw/openclaw.json') as f:
-    cfg = json.load(f)
-cfg.setdefault('gateway', {})['trustedProxies'] = ['0.0.0.0/0']
-with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
-    json.dump(cfg, f, indent=2)
-" 2>/dev/null || true
-    # Force-remove orphaned Caddy container (may not be in new compose file)
-    docker rm -f openclaw-caddy 2>/dev/null || true
-    # Stop old stack and start new single-container stack
-    cd /opt/openclaw && docker compose down --remove-orphans 2>/dev/null; docker compose up -d 2>/dev/null || true
-    # Clean up old Caddy files and image
-    rm -f /opt/openclaw/Caddyfile
-    rm -rf /opt/openclaw/certs /opt/openclaw/caddy
-    docker image rm caddy:2-alpine 2>/dev/null || true
-fi
-
 # --- Migrate: add gogcli volume mount if missing ---
 if ! grep -q 'data/gogcli' /opt/openclaw/docker-compose.yml 2>/dev/null; then
     mkdir -p /opt/openclaw/data/gogcli
@@ -200,12 +148,6 @@ if [ "$STATUS" = "running" ]; then
     if [ -n "$EXPECTED_PRIMARY" ] && [ "$CURRENT_PRIMARY" != "$EXPECTED_PRIMARY" ]; then
         docker exec openclaw-gateway openclaw config set agents.defaults.model.primary "$EXPECTED_PRIMARY" 2>/dev/null || true
     fi
-fi
-
-# --- Remove orphaned Caddy container if still running ---
-if docker ps -q -f name=openclaw-caddy 2>/dev/null | grep -q .; then
-    docker rm -f openclaw-caddy 2>/dev/null || true
-    docker image rm caddy:2-alpine 2>/dev/null || true
 fi
 
 # --- Caddy reverse proxy drift guard (runs every heartbeat) ---
