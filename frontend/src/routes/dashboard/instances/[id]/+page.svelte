@@ -57,9 +57,6 @@
 	let editName = $state('');
 	let saving = $state(false);
 
-	// Telegram guide (collapsible)
-	let telegramOpen = $state(false);
-
 	// Snapshot state
 	let powerUserOpen = $state(false);
 	let showSnapshotForm = $state(false);
@@ -728,63 +725,6 @@
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
 					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsaved={recheckConfig} onsyncchange={(s) => aiConfigSyncing = s} />
-
-					<div class="rounded-xl border border-gray-200 dark:border-gray-700">
-						<button
-							onclick={() => (telegramOpen = !telegramOpen)}
-							class="flex w-full items-center justify-between p-5"
-						>
-							<div class="flex items-center gap-2">
-								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5 text-[#2AABEE]">
-									<path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
-								</svg>
-								<div class="text-left">
-									<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Telegram</h3>
-									<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Link a Telegram bot to enable messaging through your agent</p>
-								</div>
-							</div>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								viewBox="0 0 20 20"
-								fill="currentColor"
-								class="h-5 w-5 text-gray-400 dark:text-gray-500 transition-transform {telegramOpen ? 'rotate-180' : ''}"
-							>
-								<path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-							</svg>
-						</button>
-
-						{#if telegramOpen}
-						<div class="border-t border-gray-200 dark:border-gray-700 p-5">
-							<div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-xs text-gray-700 dark:text-gray-300">
-								<p class="font-semibold text-gray-900 dark:text-white">How to set up your Telegram bot:</p>
-								<ol class="mt-2 space-y-2.5">
-									<li>
-										<span class="font-semibold">1.</span> Open Telegram and search for
-										<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#2AABEE] underline hover:text-blue-700 dark:hover:text-blue-400">@BotFather</a>
-									</li>
-									<li>
-										<span class="font-semibold">2.</span> Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/newbot</code> to create a new bot
-									</li>
-									<li>
-										<span class="font-semibold">3.</span> Choose a <span class="font-semibold">display name</span> for your bot (e.g. "My AI Agent")
-									</li>
-									<li>
-										<span class="font-semibold">4.</span> Choose a <span class="font-semibold">username</span> ending in <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">bot</code> (e.g. <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">my_ai_agent_bot</code>)
-									</li>
-									<li>
-										<span class="font-semibold">5.</span> BotFather will send you an <span class="font-semibold">API token</span> &mdash; copy it (looks like <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">123456:ABC-DEF1234...</code>)
-									</li>
-									<li>
-										<span class="font-semibold">6.</span> Open your <span class="font-semibold">Agent Dashboard</span>, then in the OpenClaw chat interface, type <span class="font-semibold">&ldquo;Let's set up Telegram&rdquo;</span> or navigate to <span class="font-semibold">Channel Settings</span> in the dashboard.
-									</li>
-									<li>
-										<span class="font-semibold">7.</span> Paste the API Token you copied from BotFather when prompted.
-									</li>
-								</ol>
-							</div>
-						</div>
-						{/if}
-					</div>
 
 					<!-- Google Account -->
 					{#if featureFlags.googleWorkspace}

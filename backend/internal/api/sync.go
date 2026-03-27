@@ -12,11 +12,152 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/db"
 	"github.com/shanq/tardi/internal/sshexec"
 )
+
+// openclawRPC connects to an OpenClaw gateway via WebSocket (direct to port 18789),
+// handles the connect handshake, sends an RPC method, and returns the result.
+// OpenClaw uses a custom protocol: requests are {"type":"req","id":"...","method":"...","params":{...}}
+// and responses are {"type":"res","id":"...","ok":true/false,"payload":{...},"error":{...}}.
+func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any) (json.RawMessage, error) {
+	url := fmt.Sprintf("ws://%s:18789/?token=%s", ipv4, authToken)
+
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+
+	// Origin header is required for admin RPC methods (config.get, config.patch).
+	// OpenClaw checks it against gateway.controlUi.allowedOrigins which includes "*".
+	// We send the gateway's own address as origin to satisfy the check.
+	headers := http.Header{}
+	headers.Set("Origin", fmt.Sprintf("http://%s:18789", ipv4))
+	conn, _, err := dialer.DialContext(ctx, url, headers)
+	if err != nil {
+		return nil, fmt.Errorf("websocket dial: %w", err)
+	}
+	defer conn.Close()
+
+	// Step 1: Read connect.challenge event
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return nil, fmt.Errorf("set read deadline: %w", err)
+	}
+
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		return nil, fmt.Errorf("read challenge: %w", err)
+	}
+
+	var event struct {
+		Type  string `json:"type"`
+		Event string `json:"event"`
+	}
+	if err := json.Unmarshal(msg, &event); err != nil {
+		return nil, fmt.Errorf("parse challenge: %w", err)
+	}
+	if event.Type != "event" || event.Event != "connect.challenge" {
+		return nil, fmt.Errorf("expected connect.challenge, got %s/%s", event.Type, event.Event)
+	}
+
+	// Step 2: Send connect request (OpenClaw native protocol)
+	connectReq := map[string]any{
+		"type":   "req",
+		"id":     "connect",
+		"method": "connect",
+		"params": map[string]any{
+			"minProtocol": 3,
+			"maxProtocol": 3,
+			"client": map[string]any{
+				"id":       "openclaw-control-ui",
+				"version":  "1.0",
+				"platform": "linux",
+				"mode":     "webchat",
+			},
+			"auth": map[string]any{
+				"token": authToken,
+			},
+			"role":   "operator",
+			"scopes": []string{"operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.pairing"},
+			"caps":   []string{"tool-events"},
+		},
+	}
+	if err := conn.WriteJSON(connectReq); err != nil {
+		return nil, fmt.Errorf("send connect: %w", err)
+	}
+
+	// Step 3: Read connect response
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return nil, fmt.Errorf("set read deadline: %w", err)
+	}
+
+	_, msg, err = conn.ReadMessage()
+	if err != nil {
+		return nil, fmt.Errorf("read connect response: %w", err)
+	}
+
+	var connectResp struct {
+		Type    string          `json:"type"`
+		ID      string          `json:"id"`
+		OK      bool            `json:"ok"`
+		Error   json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(msg, &connectResp); err != nil {
+		return nil, fmt.Errorf("parse connect response: %w", err)
+	}
+	if !connectResp.OK {
+		return nil, fmt.Errorf("connect error: %s", string(connectResp.Error))
+	}
+
+	// Step 4: Send the actual RPC method
+	rpcID := uuid.New().String()
+	rpcReq := map[string]any{
+		"type":   "req",
+		"id":     rpcID,
+		"method": method,
+		"params": params,
+	}
+	if err := conn.WriteJSON(rpcReq); err != nil {
+		return nil, fmt.Errorf("send rpc: %w", err)
+	}
+
+	// Step 5: Read RPC response (skip events)
+	deadline := time.Now().Add(35 * time.Second)
+	if err := conn.SetReadDeadline(deadline); err != nil {
+		return nil, fmt.Errorf("set read deadline: %w", err)
+	}
+
+	for {
+		_, msg, err = conn.ReadMessage()
+		if err != nil {
+			return nil, fmt.Errorf("read rpc response: %w", err)
+		}
+
+		var resp struct {
+			Type    string          `json:"type"`
+			ID      string          `json:"id"`
+			OK      bool            `json:"ok"`
+			Payload json.RawMessage `json:"payload"`
+			Error   json.RawMessage `json:"error"`
+		}
+		if err := json.Unmarshal(msg, &resp); err != nil {
+			continue // skip malformed messages
+		}
+
+		// Skip events, wait for our response
+		if resp.Type == "event" {
+			continue
+		}
+		if resp.Type == "res" && resp.ID == rpcID {
+			if !resp.OK {
+				return nil, fmt.Errorf("rpc error: %s", string(resp.Error))
+			}
+			return resp.Payload, nil
+		}
+	}
+}
 
 // buildConfigSyncScript returns the inline config-sync script run via SSH.
 // It downloads the latest heartbeat script from the backend API so that
@@ -73,8 +214,7 @@ rm -f /opt/openclaw/.env.bak
 if [ "$ENV_CHANGED" = true ]; then
     # Recreate container to pick up new env
     # NOTE: Do NOT edit openclaw.json — OpenClaw owns that file and overwrites it
-    # on startup. Config changes must go through config.patch RPC (the /telegram/cleanup
-    # endpoint does this after the container is healthy).
+    # on startup. Config changes must go through config.patch RPC.
     cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
 
     # Wait for healthy, then apply post-startup config before reporting completion.

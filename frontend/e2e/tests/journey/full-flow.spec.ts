@@ -48,7 +48,7 @@ async function cleanup(email: string, password: string, instanceId: string) {
 	}
 }
 
-test('Full user journey: signup → deploy → configure → telegram', async ({
+test('Full user journey: signup → deploy → configure', async ({
 	page,
 }) => {
 	const runNumber = Math.floor(Date.now() / 1000) % 100000;
@@ -406,43 +406,6 @@ test('Full user journey: signup → deploy → configure → telegram', async ({
 		await expect(page.locator('#openrouter-key')).toBeVisible({
 			timeout: 30_000,
 		});
-	});
-
-	// ── Step 8: Link Telegram bot ──
-	await test.step('Link Telegram bot', async () => {
-		const botToken = process.env.E2E_TELEGRAM_BOT_TOKEN;
-		if (!botToken) {
-			console.log('[E2E] Skipping: E2E_TELEGRAM_BOT_TOKEN not set');
-			return;
-		}
-
-		// Wait a bit for the agent to settle after the API key sync
-		// The VPS may still be restarting from the previous config change
-		await page.waitForTimeout(5000);
-
-		// Scroll to and fill bot token
-		const tokenInput = page.locator(
-			'input[placeholder="Paste your bot token here"]'
-		);
-		await tokenInput.scrollIntoViewIfNeeded();
-		await expect(tokenInput).toBeVisible({ timeout: 30_000 });
-		await expect(tokenInput).toBeEnabled({ timeout: 30_000 });
-		await tokenInput.fill(botToken);
-
-		// Click Connect
-		await tokenInput
-			.locator('..')
-			.getByRole('button', { name: 'Connect' })
-			.click();
-
-		// Wait for sync to complete — the sync can take 2-3 min after recent config changes
-		await expect(page.getByText('Telegram bot connected')).toBeVisible({
-			timeout: 300_000, // 5 minutes
-		});
-
-		// Verify OpenClaw is Running after Telegram config (must be < 1 min)
-		await waitForOpenClawRunning(page);
-		console.log('[E2E] Telegram bot linked successfully');
 	});
 
 	} finally {

@@ -139,7 +139,7 @@ test('cycle through ALL models: FE change → VPS verify → OC dashboard chat',
 		console.log(`  ✓ VPS model matches`);
 
 		// ── Wait for gateway to settle after SSH script's config set reloads ──
-		// The SSH script runs Telegram config set CLIs which trigger gateway reloads.
+		// The SSH script runs config set CLIs which trigger gateway reloads.
 		// Wait up to 60s for the gateway to come back healthy.
 		const healthy = await waitForGatewayHealthy(60_000);
 		if (!healthy) {

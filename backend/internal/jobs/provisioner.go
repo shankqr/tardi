@@ -186,13 +186,6 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
     "auth": {
       "mode": "token"
     }
-  },
-  "channels": {
-    "whatsapp": {
-      "enabled": true,
-      "dmPolicy": "pairing",
-      "groupPolicy": "disabled"
-    }
   }
 }
 CFGEOF

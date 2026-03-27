@@ -136,37 +136,6 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		}
 	});
 
-	// ── Step 6: Link Telegram bot ──
-	await test.step('Link Telegram bot', async () => {
-		const botToken = process.env.E2E_TELEGRAM_BOT_TOKEN;
-		if (!botToken) {
-			console.log('[Prod E2E] Skipping: E2E_TELEGRAM_BOT_TOKEN not set');
-			return;
-		}
-
-		await page.waitForTimeout(5000);
-
-		const tokenInput = page.locator(
-			'input[placeholder="Paste your bot token here"]'
-		);
-		await tokenInput.scrollIntoViewIfNeeded();
-		await expect(tokenInput).toBeVisible({ timeout: 30_000 });
-		await expect(tokenInput).toBeEnabled({ timeout: 30_000 });
-		await tokenInput.fill(botToken);
-
-		await tokenInput
-			.locator('..')
-			.getByRole('button', { name: 'Connect' })
-			.click();
-
-		await expect(page.getByText('Telegram bot connected')).toBeVisible({
-			timeout: 300_000,
-		});
-
-		await waitForOpenClawRunning(page);
-		console.log('[Prod E2E] Telegram bot linked successfully');
-	});
-
 	// ═══════════════════════════════════════════════
 	// PHASE 3: Verify (post-deploy dashboard tests)
 	// ═══════════════════════════════════════════════
@@ -282,28 +251,7 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		}
 	});
 
-	// ── Step 9: Telegram section verification ──
-	await test.step('Verify Telegram section', async () => {
-		const telegramHeading = page.getByText('Telegram').first();
-		await telegramHeading.scrollIntoViewIfNeeded();
-
-		const disconnectBtn = page.getByRole('button', { name: /disconnect/i });
-		const connectInput = page.locator('input[placeholder="Paste your bot token here"]');
-		await expect(disconnectBtn.or(connectInput)).toBeVisible({ timeout: 30_000 });
-
-		const isConnected = await disconnectBtn.isVisible().catch(() => false);
-		if (isConnected) {
-			console.log('[Prod E2E] Telegram bot is connected, disconnect button visible');
-			// Verify masked token is displayed
-			const maskedToken = page.getByText(/\d{3}\.{3}\w+/);
-			const hasMasked = await maskedToken.isVisible({ timeout: 5_000 }).catch(() => false);
-			if (hasMasked) console.log('[Prod E2E] Masked bot token displayed');
-		} else {
-			console.log('[Prod E2E] Telegram not connected (connect form visible)');
-		}
-	});
-
-	// ── Step 10: Instance rename and restore ──
+	// ── Step 9: Instance rename and restore ──
 	await test.step('Rename instance and restore', async () => {
 		const editButton = page.locator('button[title="Rename agent"]');
 		await editButton.scrollIntoViewIfNeeded();
@@ -417,63 +365,7 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		console.log('[Prod E2E] API key 1 restored — swap complete');
 	});
 
-	// ── Step 13: Swap Telegram bot token and restore ──
-	await test.step('Swap Telegram bot token and restore', async () => {
-		const tgToken1 = process.env.E2E_TELEGRAM_BOT_TOKEN || '';
-		const tgToken2 = process.env.E2E_TELEGRAM_BOT_TOKEN_2 || '';
-		if (!tgToken1 || !tgToken2) {
-			console.log('[Prod E2E] Skipping: need both E2E_TELEGRAM_BOT_TOKEN and _2');
-			return;
-		}
-
-		// Scroll to Telegram section
-		const telegramHeading = page.getByText('Telegram').first();
-		await telegramHeading.scrollIntoViewIfNeeded();
-
-		const disconnectBtn = page.getByRole('button', { name: /disconnect/i });
-		await expect(disconnectBtn).toBeVisible({ timeout: 30_000 });
-
-		// Swap to token 2
-		console.log('[Prod E2E] Setting Telegram token 2...');
-		const updateTokenBtn = page.getByRole('button', { name: /update token/i });
-		if (await updateTokenBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-			await updateTokenBtn.click();
-		}
-		const updateInput = page.locator('input[placeholder="Paste new bot token"]');
-		await expect(updateInput).toBeVisible({ timeout: 10_000 });
-		await updateInput.click();
-		await updateInput.pressSequentially(tgToken2, { delay: 10 });
-		await page.getByRole('button', { name: /^update$/i }).click();
-
-		await expect(page.getByRole('button', { name: /disconnect/i })).toBeVisible({ timeout: 120_000 });
-		await waitForOpenClawRunning(page);
-		console.log('[Prod E2E] Telegram token 2 connected');
-
-		// Swap back to token 1
-		console.log('[Prod E2E] Restoring Telegram token 1...');
-		await page.reload();
-		await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
-
-		const telegramHeading2 = page.getByText('Telegram').first();
-		await telegramHeading2.scrollIntoViewIfNeeded();
-		await expect(page.getByRole('button', { name: /disconnect/i })).toBeVisible({ timeout: 15_000 });
-
-		const updateTokenBtn2 = page.getByRole('button', { name: /update token/i });
-		if (await updateTokenBtn2.isVisible({ timeout: 5_000 }).catch(() => false)) {
-			await updateTokenBtn2.click();
-		}
-		const restoreInput = page.locator('input[placeholder="Paste new bot token"]');
-		await expect(restoreInput).toBeVisible({ timeout: 10_000 });
-		await restoreInput.click();
-		await restoreInput.pressSequentially(tgToken1, { delay: 10 });
-		await page.getByRole('button', { name: /^update$/i }).click();
-
-		await expect(page.getByRole('button', { name: /disconnect/i })).toBeVisible({ timeout: 120_000 });
-		await waitForOpenClawRunning(page);
-		console.log('[Prod E2E] Telegram token 1 restored — swap complete');
-	});
-
-	// ── Step 14: Snapshot create, restore, and delete ──
+	// ── Step 13: Snapshot create, restore, and delete ──
 	await test.step('Snapshot lifecycle', async () => {
 		await ensureInstancePage(page, instanceId);
 

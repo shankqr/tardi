@@ -104,16 +104,16 @@ func TestConcurrentConfigUpdates(t *testing.T) {
 	}
 }
 
-// TestTelegramAndModelConfigRace verifies that concurrent updates to different
+// TestConcurrentFieldConfigRace verifies that concurrent updates to different
 // config fields don't lose each other's changes.
 //
 // BUG: UpdateAgentConfigHandler reads existing config to preserve null fields,
-// then writes the merged result. Two concurrent updates (one setting telegram_bot_token,
+// then writes the merged result. Two concurrent updates (one setting custom_field,
 // one setting model) will both read the pre-update config. The second write
 // will overwrite the first's changes.
 //
-// Run with: go test -race -count=10 -run TestTelegramAndModelConfigRace
-func TestTelegramAndModelConfigRace(t *testing.T) {
+// Run with: go test -race -count=10 -run TestConcurrentFieldConfigRace
+func TestConcurrentFieldConfigRace(t *testing.T) {
 	pool := getTestPool(t)
 	cleanupTables(t, pool)
 	t.Cleanup(func() { cleanupTables(t, pool) })
@@ -128,7 +128,7 @@ func TestTelegramAndModelConfigRace(t *testing.T) {
 		VpsInstanceID: inst.ID,
 		Config: map[string]any{
 			"model":              "old-model",
-			"telegram_bot_token": "old-token",
+			"custom_field": "old-value",
 			"openrouter_api_key": "existing-key",
 		},
 		Version: 1,
@@ -158,12 +158,12 @@ func TestTelegramAndModelConfigRace(t *testing.T) {
 	_ = runConcurrent(2, func(i int) result {
 		var config map[string]any
 		if i == 0 {
-			// Goroutine 1: Update telegram_bot_token (leave model as nil to preserve)
+			// Goroutine 1: Update custom_field (leave model as nil to preserve)
 			config = map[string]any{
-				"telegram_bot_token": "new-telegram-token",
+				"custom_field": "new-custom-value",
 			}
 		} else {
-			// Goroutine 2: Update model (leave telegram_bot_token as nil to preserve)
+			// Goroutine 2: Update model (leave custom_field as nil to preserve)
 			config = map[string]any{
 				"model": "new-model",
 			}
@@ -187,16 +187,16 @@ func TestTelegramAndModelConfigRace(t *testing.T) {
 		t.Fatalf("get final config: %v", err)
 	}
 
-	telegramToken, _ := finalConfig.Config["telegram_bot_token"].(string)
+	customField, _ := finalConfig.Config["custom_field"].(string)
 	model, _ := finalConfig.Config["model"].(string)
 
 	// At least one of these will be wrong due to the race
-	if telegramToken != "new-telegram-token" || model != "new-model" {
+	if customField != "new-custom-value" || model != "new-model" {
 		t.Errorf("RACE CONDITION: config field was overwritten\n"+
-			"  telegram_bot_token: got %q, want %q\n"+
+			"  custom_field: got %q, want %q\n"+
 			"  model: got %q, want %q\n"+
 			"  Full config: %v",
-			telegramToken, "new-telegram-token",
+			customField, "new-custom-value",
 			model, "new-model",
 			finalConfig.Config,
 		)
