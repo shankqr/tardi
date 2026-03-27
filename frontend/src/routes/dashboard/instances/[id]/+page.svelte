@@ -1126,6 +1126,7 @@
 					</div>
 
 					<!-- Google Account -->
+					{#if featureFlags.googleWorkspace}
 					<GoogleConnect
 						instanceId={instance.id}
 						instanceStatus={instance.status}
@@ -1134,6 +1135,7 @@
 						onStatusChange={(connected) => { googleConnected = connected; }}
 						connectRequestCount={googleConnectRequests}
 					/>
+					{/if}
 
 					{#if instance.ipv4}
 						<div class="rounded-xl border border-gray-200 dark:border-gray-700">
@@ -1318,6 +1320,7 @@
 						previewUrl={instance.preview_url}
 						googleConnected={googleConnected}
 						onConnectGoogle={() => { googleConnectRequests++; }}
+						showGoogle={featureFlags.googleWorkspace}
 					/>
 				{/if}
 
