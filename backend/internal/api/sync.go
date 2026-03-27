@@ -20,7 +20,7 @@ import (
 
 // buildConfigSyncScript returns the inline config-sync script run via SSH.
 // It downloads the latest heartbeat script from the backend API so that
-// old VPSes get updated heartbeat code (with Telegram drift guard) on every sync.
+// old VPSes get updated heartbeat code on every sync.
 func buildConfigSyncScript() string {
 	return `#!/bin/bash
 set -euo pipefail
@@ -43,7 +43,6 @@ fi
 NEW_OR_KEY=$(echo "$CONFIG" | jq -r '.config.openrouter_api_key // empty')
 NEW_AN_KEY=$(echo "$CONFIG" | jq -r '.config.anthropic_api_key // empty')
 NEW_OA_KEY=$(echo "$CONFIG" | jq -r '.config.openai_api_key // empty')
-NEW_TG_TOKEN=$(echo "$CONFIG" | jq -r '.config.telegram_bot_token // empty')
 NEW_PROVIDER=$(echo "$CONFIG" | jq -r '.config.provider // empty')
 NEW_MODEL=$(echo "$CONFIG" | jq -r '.config.model // empty')
 NEW_GOOGLE_CLIENT=$(echo "$CONFIG" | jq -r '.config.google_client_b64 // empty')
@@ -56,11 +55,10 @@ ALL_MODEL_IDS=$(echo "$CONFIG" | jq -r '.model_ids // [] | .[]' 2>/dev/null)
 cp /opt/openclaw/.env /opt/openclaw/.env.bak
 
 # Rebuild .env preserving non-key/token vars
-grep -v -E '_API_KEY=|TELEGRAM_BOT_TOKEN=' /opt/openclaw/.env > /opt/openclaw/.env.tmp
+grep -v -E '_API_KEY=' /opt/openclaw/.env > /opt/openclaw/.env.tmp
 [ -n "$NEW_OR_KEY" ] && echo "OPENROUTER_API_KEY=$NEW_OR_KEY" >> /opt/openclaw/.env.tmp
 [ -n "$NEW_AN_KEY" ] && echo "ANTHROPIC_API_KEY=$NEW_AN_KEY" >> /opt/openclaw/.env.tmp
 [ -n "$NEW_OA_KEY" ] && echo "OPENAI_API_KEY=$NEW_OA_KEY" >> /opt/openclaw/.env.tmp
-[ -n "$NEW_TG_TOKEN" ] && echo "TELEGRAM_BOT_TOKEN=$NEW_TG_TOKEN" >> /opt/openclaw/.env.tmp
 mv /opt/openclaw/.env.tmp /opt/openclaw/.env
 chmod 600 /opt/openclaw/.env
 
@@ -96,12 +94,6 @@ else
 fi
 
 if [ "$HEALTHY" = true ]; then
-    # Telegram config (streaming:off, dmPolicy:open, etc.) is applied by the
-    # backend's config.patch RPC (called by the frontend after sync completes).
-    # Previously this script ran 5 sequential "openclaw config set" CLI commands,
-    # but each one triggers a gateway restart (~4-6s each = 20-30s total downtime).
-    # The single config.patch RPC is atomic (no restart) and takes <1s.
-
     # Model primary is set by config.patch RPC from the backend (atomic, no
     # restart). As a fallback in case the RPC failed, also set it here via CLI.
     # Only "config set" (not "models set") — avoids the primary flip-flop side
@@ -144,8 +136,6 @@ if [ "$HEALTHY" = true ]; then
     # "running" right away instead of waiting up to 5 minutes for the timer.
     bash /opt/openclaw/heartbeat.sh >/dev/null 2>&1 &
 
-    # Report completion AFTER all config patches are applied so the frontend
-    # does not show success before Telegram dmPolicy/streaming are set
     echo "config sync complete (version=$REMOTE_VERSION)"
 else
     echo "ERROR: container did not become healthy after recreate"
@@ -160,9 +150,8 @@ fi
 // effect of each registration, causing race conditions with the RPC.
 // config.patch applies live (no restart) and persists to the JSON file.
 //
-// Retries up to 3 times with backoff because a previous sync's SSH script
-// may still be running Telegram `config set` CLI commands which cause the
-// gateway to reload, briefly making port 18789 unreachable.
+// Retries up to 3 times with backoff because the gateway may be briefly
+// unreachable during a reload.
 func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model string, allModelIDs []string) error {
 	fullModel := model
 	if provider == "openrouter" {
@@ -284,9 +273,9 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 		// BEFORE launching the SSH script. This is critical for two reasons:
 		// 1. The SSH script may restart the container (if env vars changed),
 		//    which kills our RPC connection mid-flight.
-		// 2. The SSH script's Telegram `config set` CLI commands change the
-		//    config hash, causing baseHash mismatches if they run between
-		//    our config.get and config.patch.
+		// 2. CLI commands in the SSH script change the config hash, causing
+		//    baseHash mismatches if they run between our config.get and
+		//    config.patch.
 		// config.patch persists to openclaw.json, so even if the container
 		// restarts afterwards, OC reads the patched model on startup.
 		if inst.OpenClawAuthToken != nil && *inst.OpenClawAuthToken != "" {

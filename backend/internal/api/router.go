@@ -49,9 +49,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("DELETE /api/snapshots/{snapshot_id}", DeleteSnapshotHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/whatsapp/qr", WhatsAppQRHandler(deps))
 	authedMux.HandleFunc("GET /api/instances/{id}/whatsapp/status", WhatsAppStatusHandler(deps))
-	authedMux.HandleFunc("POST /api/instances/{id}/telegram/connect", TelegramConnectHandler(deps))
-	authedMux.HandleFunc("POST /api/instances/{id}/telegram/disconnect", TelegramDisconnectHandler(deps))
-	authedMux.HandleFunc("POST /api/instances/{id}/telegram/cleanup", TelegramCleanupHandler(deps))
+
 	authedMux.HandleFunc("GET /api/instances/{id}/diagnostics", DiagnosticsHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/dashboard-token", DashboardTokenHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/doctor", DoctorHandler(deps))

@@ -15,8 +15,7 @@ import (
 )
 
 // healthCheckScript runs targeted checks for issues we've actually seen
-// in production: Telegram double replies, pairing prompts, config drift,
-// container crash loops, and resource exhaustion.
+// in production: config drift, container crash loops, and resource exhaustion.
 const healthCheckScript = `#!/bin/bash
 set -o pipefail
 
@@ -51,69 +50,7 @@ else
     fi
 fi
 
-# ── 2. Telegram config (the checks that actually matter) ────────────
-TG_TOKEN=$(grep '^TELEGRAM_BOT_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
-if [ -n "$TG_TOKEN" ]; then
-    OC_CONFIG=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null)
-    if [ -n "$OC_CONFIG" ]; then
-        TG_STREAMING=$(echo "$OC_CONFIG" | jq -r '.channels.telegram.streaming // "not set"')
-        TG_DM_POLICY=$(echo "$OC_CONFIG" | jq -r '.channels.telegram.dmPolicy // "not set"')
-        TG_ALLOW=$(echo "$OC_CONFIG" | jq -c '.channels.telegram.allowFrom // "not set"')
-        TG_GROUP=$(echo "$OC_CONFIG" | jq -r '.channels.telegram.groupPolicy // "not set"')
-        TG_ENABLED=$(echo "$OC_CONFIG" | jq -r '.channels.telegram.enabled // "not set"')
-
-        # Streaming: must be "off" to prevent double replies
-        if [ "$TG_STREAMING" = "off" ]; then
-            add "Telegram: Double Replies" "pass" "Streaming is off" "Messages won't be sent twice"
-        elif [ "$TG_STREAMING" = "partial" ]; then
-            add "Telegram: Double Replies" "fail" "Streaming is 'partial' — causes double replies" "OpenClaw sends a streaming chunk then the full response as a second message. Fix: streaming must be 'off'"
-        else
-            add "Telegram: Double Replies" "warn" "Streaming: ${TG_STREAMING}" "Expected 'off'. Current value may cause duplicate messages."
-        fi
-
-        # DM Policy: must be "open" to avoid pairing prompt
-        if [ "$TG_DM_POLICY" = "open" ]; then
-            add "Telegram: Pairing" "pass" "DM policy is open" "Users can message the bot without pairing"
-        else
-            add "Telegram: Pairing" "fail" "DM policy is '${TG_DM_POLICY}' — users must pair first" "New users will see 'access not configured' and need to run a pairing command. Fix: dmPolicy must be 'open'"
-        fi
-
-        # allowFrom: must include "*" (required for dmPolicy:open to work)
-        if echo "$TG_ALLOW" | grep -q '"\*"'; then
-            add "Telegram: Allow From" "pass" "Accepting messages from all users" ""
-        else
-            add "Telegram: Allow From" "fail" "Restricted to: ${TG_ALLOW}" "Without allowFrom:[\"*\"], dmPolicy:open won't work and may crash. Fix: set allowFrom to [\"*\"]"
-        fi
-
-        # groupPolicy: should be "disabled"
-        if [ "$TG_GROUP" = "disabled" ]; then
-            add "Telegram: Groups" "pass" "Group messages disabled" ""
-        else
-            add "Telegram: Groups" "warn" "Group policy: ${TG_GROUP}" "Expected 'disabled' — bot may respond in group chats"
-        fi
-
-        # Channel enabled
-        if [ "$TG_ENABLED" = "true" ]; then
-            add "Telegram: Channel" "pass" "Telegram channel enabled" ""
-        else
-            add "Telegram: Channel" "fail" "Telegram channel not enabled" "Bot token is set but the channel is disabled in config"
-        fi
-    else
-        add "Telegram: Config" "fail" "Cannot read openclaw.json" "Config file missing or unreadable"
-    fi
-
-    # Webhook check (should be empty — Tardi uses polling)
-    WEBHOOK_URL=$(curl -sf --max-time 5 "https://api.telegram.org/bot${TG_TOKEN}/getWebhookInfo" 2>/dev/null | jq -r '.result.url // ""')
-    if [ -z "$WEBHOOK_URL" ]; then
-        add "Telegram: Webhook" "pass" "No webhook set (using polling)" ""
-    else
-        add "Telegram: Webhook" "warn" "Webhook active: ${WEBHOOK_URL}" "Tardi uses polling mode. An active webhook may cause missed or duplicate messages."
-    fi
-else
-    add "Telegram" "info" "Not configured" "No Telegram bot token set in environment"
-fi
-
-# ── 3. API Keys (require non-empty values) ─────────────────────────
+# ── 2. API Keys (require non-empty values) ──────────────────────────
 HAS_OR=$(grep -c '^OPENROUTER_API_KEY=.\+' /opt/openclaw/.env 2>/dev/null) || HAS_OR=0
 HAS_AN=$(grep -c '^ANTHROPIC_API_KEY=.\+' /opt/openclaw/.env 2>/dev/null) || HAS_AN=0
 HAS_OA=$(grep -c '^OPENAI_API_KEY=.\+' /opt/openclaw/.env 2>/dev/null) || HAS_OA=0
@@ -128,7 +65,7 @@ else
     add "API Keys" "fail" "No API keys configured" "Your agent cannot make AI calls without at least one API key. Set one in the AI Provider section."
 fi
 
-# ── 3b. Model Configuration ───────────────────────────────────────
+# ── 2b. Model Configuration ───────────────────────────────────────
 if [ "$C_STATUS" = "running" ] 2>/dev/null; then
     MODEL_OUT=$(docker exec openclaw-gateway openclaw models list 2>&1 || echo "")
     # Check that output has at least 2 lines (header + model row) and no errors
@@ -148,7 +85,7 @@ if [ "$C_STATUS" = "running" ] 2>/dev/null; then
     fi
 fi
 
-# ── 4. Config Version Sync ──────────────────────────────────────────
+# ── 3. Config Version Sync ──────────────────────────────────────────
 LOCAL_VER=$(cat /opt/openclaw/.config_version 2>/dev/null || echo "0")
 AGENT_TOKEN=$(grep '^AGENT_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
 API_URL=$(grep '^API_URL=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2-)
@@ -168,7 +105,7 @@ else
     add "Config Sync" "warn" "Agent token or API URL missing" "Heartbeat and config sync may not be working"
 fi
 
-# ── 5. Recent Errors ────────────────────────────────────────────────
+# ── 4. Recent Errors ────────────────────────────────────────────────
 if [ "$C_STATUS" = "running" ] 2>/dev/null; then
     RECENT_ERRORS=$(docker logs openclaw-gateway --tail 50 2>&1 | grep -i 'error\|fatal\|panic\|crash\|ECONNREFUSED' | grep -v 'node_modules' | tail -5)
     if [ -z "$RECENT_ERRORS" ]; then
@@ -178,7 +115,7 @@ if [ "$C_STATUS" = "running" ] 2>/dev/null; then
     fi
 fi
 
-# ── 6. Disk Space ───────────────────────────────────────────────────
+# ── 5. Disk Space ───────────────────────────────────────────────────
 DISK_PCT=$(df / 2>/dev/null | awk 'NR==2{gsub(/%/,""); print $5}')
 DISK_AVAIL=$(df -h / 2>/dev/null | awk 'NR==2{print $4}')
 if [ -n "$DISK_PCT" ]; then
@@ -191,7 +128,7 @@ if [ -n "$DISK_PCT" ]; then
     fi
 fi
 
-# ── 7. Memory ───────────────────────────────────────────────────────
+# ── 6. Memory ───────────────────────────────────────────────────────
 MEM_TOTAL=$(free -m 2>/dev/null | awk '/Mem:/{print $2}')
 MEM_AVAIL=$(free -m 2>/dev/null | awk '/Mem:/{print $7}')
 if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ] && [ "$MEM_TOTAL" -gt 0 ]; then
@@ -206,7 +143,7 @@ if [ -n "$MEM_TOTAL" ] && [ -n "$MEM_AVAIL" ] && [ "$MEM_TOTAL" -gt 0 ]; then
     fi
 fi
 
-# ── 8. iptables NAT ────────────────────────────────────────────────
+# ── 7. iptables NAT ────────────────────────────────────────────────
 # Cloudflare Proxy connects to origin on port 80. iptables NAT redirects
 # port 80 → 18789 since OpenClaw runs as UID 1000 and can't bind port 80.
 if iptables -t nat -C PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789 2>/dev/null; then
@@ -215,7 +152,7 @@ else
     add "iptables NAT" "fail" "Missing port 80 → 18789 redirect" "Run: iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 18789 && netfilter-persistent save"
 fi
 
-# ── 9. Host networking ────────────────────────────────────────────
+# ── 8. Host networking ────────────────────────────────────────────
 # Verify OpenClaw is using host networking (not bridge)
 OC_NET=$(docker inspect -f '{{.HostConfig.NetworkMode}}' openclaw-gateway 2>/dev/null)
 if [ "$OC_NET" = "host" ]; then
@@ -229,8 +166,7 @@ rm -f /tmp/tardi-health.json
 `
 
 // DoctorHandler runs a smart health check on the VPS that detects real
-// production issues: Telegram double replies, pairing prompts, config
-// drift, crash loops, and resource exhaustion.
+// production issues: config drift, crash loops, and resource exhaustion.
 // POST /api/instances/{id}/doctor
 func DoctorHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

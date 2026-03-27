@@ -9,9 +9,6 @@
 		restoreSnapshot,
 		deleteSnapshot,
 		getAgentConfig,
-		connectTelegram,
-		disconnectTelegram,
-		cleanupTelegramConfig,
 		syncConfig,
 		getSyncStatus,
 		runDoctor,
@@ -60,8 +57,10 @@
 	let editName = $state('');
 	let saving = $state(false);
 
-	// Snapshot state
+	// Telegram guide (collapsible)
 	let telegramOpen = $state(false);
+
+	// Snapshot state
 	let powerUserOpen = $state(false);
 	let showSnapshotForm = $state(false);
 	let snapshotName = $state('');
@@ -76,22 +75,6 @@
 	let hasApiKey = $state(false);
 	let dashboardBtnLoading = $state(false);
 
-	// Telegram state
-	function maskToken(t: string): string {
-		return t.length > 7 ? t.slice(0, 3) + '...' + t.slice(-4) : t;
-	}
-	let telegramToken = $state('');
-	let telegramLoading = $state(false);
-	let telegramError = $state<string | null>(null);
-	let telegramConnected = $state(false);
-	let telegramCurrentToken = $state('');
-	let showUpdateToken = $state(false);
-	type TelegramSyncPhase = 'idle' | 'syncing' | 'finishing' | 'success' | 'failed';
-	let telegramSyncPhase = $state<TelegramSyncPhase>('idle');
-	let telegramSyncElapsed = $state(0);
-	let telegramSyncTimer: ReturnType<typeof setInterval> | null = null;
-	let telegramPollTimer: ReturnType<typeof setInterval> | null = null;
-
 	// Config sync tracking — when any component is actively syncing config
 	// Grace period: keep showing "Applying Config" after sync ends (90s max,
 	// 60s minimum) because config.patch causes OpenClaw to briefly restart.
@@ -102,11 +85,7 @@
 	let syncGraceTimer: ReturnType<typeof setTimeout> | null = null;
 	let syncGraceStartedAt = $state(0); // timestamp when grace started
 
-	const isAnySyncing = $derived(
-		aiConfigSyncing ||
-			telegramSyncPhase === 'syncing' ||
-			telegramSyncPhase === 'finishing'
-	);
+	const isAnySyncing = $derived(aiConfigSyncing);
 	const isConfigSyncing = $derived(isAnySyncing || syncGraceActive);
 
 	// Watch for sync ending → start grace period (max 90s).
@@ -195,59 +174,6 @@
 	let doctorChecks = $state<HealthCheck[] | null>(null);
 	let doctorRaw = $state<string | null>(null);
 	let doctorError = $state<string | null>(null);
-
-	function startTelegramSyncTimer() {
-		telegramSyncElapsed = 0;
-		telegramSyncTimer = setInterval(() => {
-			telegramSyncElapsed += 1;
-		}, 1000);
-	}
-	function stopTelegramSyncTimer() {
-		if (telegramSyncTimer) {
-			clearInterval(telegramSyncTimer);
-			telegramSyncTimer = null;
-		}
-	}
-	function stopTelegramPollTimer() {
-		if (telegramPollTimer) {
-			clearInterval(telegramPollTimer);
-			telegramPollTimer = null;
-		}
-	}
-
-	async function pollTelegramSyncStatus() {
-		if (!instance) return;
-		try {
-			const token = await getIdToken();
-			if (!token) return;
-			const result = await getSyncStatus(token, instance.id);
-			if (result.status === 'completed') {
-				stopTelegramSyncTimer();
-				stopTelegramPollTimer();
-				// Remove channels.telegram from OpenClaw's internal config to prevent
-				// duplicate handlers (internal config + env var auto-detection = double replies)
-				try {
-					await cleanupTelegramConfig(token, instance.id);
-				} catch {
-					/* non-critical, env var handler still works */
-				}
-				telegramSyncPhase = 'finishing';
-				setTimeout(() => {
-					telegramSyncPhase = 'success';
-					setTimeout(() => {
-						if (telegramSyncPhase === 'success') telegramSyncPhase = 'idle';
-					}, 8000);
-				}, 15000);
-			} else if (result.status === 'failed') {
-				stopTelegramSyncTimer();
-				stopTelegramPollTimer();
-				telegramError = result.message || 'Config sync failed on your agent';
-				telegramSyncPhase = 'failed';
-			}
-		} catch {
-			// Ignore poll errors, keep trying
-		}
-	}
 
 	// Busy state — disables all actions during non-active statuses
 	const isBusy = $derived(instance != null && instance.status !== 'active');
@@ -392,83 +318,6 @@
 		}
 	}
 
-	async function triggerTelegramSync() {
-		if (!instance) return;
-		telegramSyncPhase = 'syncing';
-		telegramError = null;
-		startTelegramSyncTimer();
-		let syncSucceeded = false;
-		try {
-			const token = await getIdToken();
-			if (!token) throw new Error('Not authenticated');
-			const result = await syncConfig(token, instance.id);
-			if (result.synced) {
-				syncSucceeded = true;
-			} else {
-				stopTelegramSyncTimer();
-				telegramError = result.error || 'Sync failed — click Retry to try again';
-				telegramSyncPhase = 'failed';
-			}
-		} catch {
-			// Agent not reachable right now — config is saved, poll until it applies.
-			syncSucceeded = true;
-		}
-
-		if (syncSucceeded) {
-			stopTelegramPollTimer();
-			telegramPollTimer = setInterval(() => {
-				if (telegramSyncElapsed > 300) {
-					stopTelegramSyncTimer();
-					stopTelegramPollTimer();
-					telegramError =
-						'Sync is taking longer than expected — it will apply automatically within a few minutes';
-					telegramSyncPhase = 'failed';
-					return;
-				}
-				pollTelegramSyncStatus();
-			}, 5000);
-		}
-	}
-
-	async function handleTelegramConnect() {
-		if (!instance || !telegramToken.trim()) return;
-		telegramLoading = true;
-		telegramError = null;
-		try {
-			const token = await getIdToken();
-			if (!token) throw new Error('Not authenticated');
-			await connectTelegram(token, instance.id, telegramToken.trim());
-			telegramCurrentToken = maskToken(telegramToken.trim());
-			telegramConnected = true;
-			telegramToken = '';
-			showUpdateToken = false;
-			telegramLoading = false;
-			await triggerTelegramSync();
-		} catch (err) {
-			telegramError =
-				err instanceof Error ? err.message : 'Failed to connect Telegram';
-			telegramLoading = false;
-		}
-	}
-
-	async function handleTelegramDisconnect() {
-		if (!instance) return;
-		telegramLoading = true;
-		telegramError = null;
-		try {
-			const token = await getIdToken();
-			if (!token) throw new Error('Not authenticated');
-			await disconnectTelegram(token, instance.id);
-			telegramConnected = false;
-			telegramLoading = false;
-			await triggerTelegramSync();
-		} catch (err) {
-			telegramError =
-				err instanceof Error ? err.message : 'Failed to disconnect Telegram';
-			telegramLoading = false;
-		}
-	}
-
 	async function handleRunDoctor() {
 		if (!instance) return;
 		doctorRunning = true;
@@ -542,8 +391,7 @@
 		};
 	});
 
-	// Check Telegram status on load (token exists in config = connected)
-	// Uses a plain flag (not $state) to avoid re-triggering the effect.
+	// Check API key status on load
 	let configChecked = false;
 	$effect(() => {
 		if (instance?.status === 'active' && !configChecked) {
@@ -556,13 +404,6 @@
 						return;
 					}
 					const cfg = await getAgentConfig(token, instance.id);
-					telegramConnected = !!(
-						cfg.config.telegram_bot_token &&
-						typeof cfg.config.telegram_bot_token === 'string' &&
-						cfg.config.telegram_bot_token.length > 0
-					);
-					if (telegramConnected)
-						telegramCurrentToken = cfg.config.telegram_bot_token as string;
 					const hasKey = (k: string): boolean =>
 						!!(
 							cfg.config[k] &&
@@ -914,213 +755,33 @@
 
 						{#if telegramOpen}
 						<div class="border-t border-gray-200 dark:border-gray-700 p-5">
-						<div>
-							{#if !hasApiKey && !telegramConnected}
-								<div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3">
-									<p class="text-xs text-gray-500 dark:text-gray-400">Set up your AI provider key above before connecting Telegram.</p>
-								</div>
-							{:else if telegramConnected}
-								<div class="flex items-center justify-between">
-									<div class="flex items-center gap-2 text-sm {telegramSyncPhase === 'syncing' || telegramSyncPhase === 'finishing' ? 'text-amber-700 dark:text-amber-400' : 'text-green-700 dark:text-green-400'}">
-										{#if telegramSyncPhase === 'syncing'}
-											<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-											</svg>
-											Deploying to your agent...
-										{:else if telegramSyncPhase === 'finishing'}
-											<svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-												<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-												<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-											</svg>
-											Finalizing setup...
-										{:else}
-											<span class="h-2 w-2 rounded-full bg-green-500"></span>
-											Telegram bot connected
-										{/if}
-									</div>
-									{#if telegramSyncPhase !== 'syncing' && telegramSyncPhase !== 'finishing'}
-										<div class="flex items-center gap-3">
-											<button
-												onclick={() => { showUpdateToken = !showUpdateToken; telegramError = null; }}
-												class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-											>
-												{showUpdateToken ? 'Cancel' : 'Update Token'}
-											</button>
-											<button
-												onclick={handleTelegramDisconnect}
-												disabled={telegramLoading}
-												class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 disabled:opacity-50"
-											>
-												{telegramLoading ? 'Disconnecting...' : 'Disconnect'}
-											</button>
-										</div>
-									{/if}
-								</div>
-								{#if telegramCurrentToken && telegramSyncPhase !== 'syncing' && telegramSyncPhase !== 'finishing'}
-									<p class="mt-1 font-mono text-xs text-gray-400 dark:text-gray-500 break-all">{telegramCurrentToken}</p>
-								{/if}
-								{#if showUpdateToken && telegramSyncPhase === 'idle'}
-									<div class="mt-3 flex items-center gap-2">
-										<input
-											type="text"
-											bind:value={telegramToken}
-											placeholder="Paste new bot token"
-											disabled={telegramLoading || instance.status !== 'active'}
-											class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 focus:border-gray-500 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-500 dark:focus:ring-gray-400 disabled:opacity-50"
-										/>
-										<button
-											onclick={handleTelegramConnect}
-											disabled={telegramLoading || !telegramToken.trim() || instance.status !== 'active'}
-											class="inline-flex items-center rounded-lg bg-gray-900 dark:bg-white px-4 py-2 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
-										>
-											{telegramLoading ? 'Updating...' : 'Update'}
-										</button>
-									</div>
-								{/if}
-								{#if telegramSyncPhase === 'syncing'}
-									<div class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
-										<div class="space-y-3">
-											<div class="flex items-center gap-3">
-												<svg class="h-4 w-4 animate-spin text-gray-600 dark:text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none">
-													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-												</svg>
-												<div class="flex-1">
-													<p class="text-sm font-medium text-gray-900 dark:text-white">Deploying Telegram bot to your agent...</p>
-													<p class="text-xs text-gray-500 dark:text-gray-400">
-														{#if telegramSyncElapsed < 10}
-															Connecting to your agent
-														{:else if telegramSyncElapsed < 30}
-															Updating configuration
-														{:else if telegramSyncElapsed < 60}
-															Restarting with new settings
-														{:else}
-															Waiting for health check
-														{/if}
-														<span class="ml-1 tabular-nums text-gray-400 dark:text-gray-500">{telegramSyncElapsed}s</span>
-													</p>
-												</div>
-											</div>
-											<div class="h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-												<div
-													class="h-full rounded-full bg-gray-600 dark:bg-gray-400 transition-all duration-1000 ease-linear"
-													style="width: {Math.min(telegramSyncElapsed / 80 * 100, 95)}%"
-												></div>
-											</div>
-											<p class="text-xs text-gray-400 dark:text-gray-500">This usually takes about a minute. Please wait before messaging the bot.</p>
-										</div>
-									</div>
-								{:else if telegramSyncPhase === 'finishing'}
-									<div class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4">
-										<div class="space-y-3">
-											<div class="flex items-center gap-3">
-												<svg class="h-4 w-4 animate-spin text-gray-600 dark:text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none">
-													<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-												</svg>
-												<div class="flex-1">
-													<p class="text-sm font-medium text-gray-900 dark:text-white">Finalizing Telegram bot setup...</p>
-													<p class="text-xs text-gray-500 dark:text-gray-400">Almost ready</p>
-												</div>
-											</div>
-											<div class="h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-												<div
-													class="h-full rounded-full bg-gray-600 dark:bg-gray-400 transition-all duration-1000 ease-linear"
-													style="width: 95%"
-												></div>
-											</div>
-											<p class="text-xs text-gray-400 dark:text-gray-500">Please wait before messaging the bot.</p>
-										</div>
-									</div>
-								{:else if telegramSyncPhase === 'success'}
-									<div class="mt-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
-										<div class="flex items-center gap-3">
-											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5 text-green-600 dark:text-green-400 shrink-0">
-												<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
-											</svg>
-											<div>
-												<p class="text-sm font-medium text-green-800 dark:text-green-400">Telegram bot deployed successfully</p>
-												<p class="text-xs text-green-600 dark:text-green-400">Anyone who messages your bot will get a response from your AI agent</p>
-											</div>
-										</div>
-									</div>
-								{:else if telegramError}
-									<div class="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
-										<p class="text-xs font-medium text-amber-800 dark:text-amber-400">{telegramError}</p>
-										<p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Your token was saved. It will apply automatically within a few minutes.</p>
-										<button
-											onclick={() => { telegramSyncPhase = 'idle'; telegramError = null; }}
-											class="mt-2 rounded-md border border-amber-300 dark:border-amber-700 px-3 py-1 text-xs text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30"
-										>
-											Dismiss
-										</button>
-									</div>
-								{:else}
-									<div class="mt-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-4">
-										<h4 class="text-sm font-semibold text-green-900 dark:text-green-400">Your Telegram bot is live!</h4>
-										<p class="mt-1 text-xs text-green-800 dark:text-green-400">Anyone who messages your bot on Telegram will get a response from your AI agent. It may take some time for the bot to reply after first-time setup.</p>
-									</div>
-								{/if}
-							{:else}
-								<div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-xs text-gray-700 dark:text-gray-300">
-									<p class="font-semibold text-gray-900 dark:text-white">How to set up your Telegram bot:</p>
-									<ol class="mt-2 space-y-2.5">
-										<li>
-											<span class="font-semibold">1.</span> Open Telegram and search for
-											<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#2AABEE] underline hover:text-blue-700 dark:hover:text-blue-400">@BotFather</a>
-										</li>
-										<li>
-											<span class="font-semibold">2.</span> Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/newbot</code> to create a new bot
-										</li>
-										<li>
-											<span class="font-semibold">3.</span> Choose a <span class="font-semibold">display name</span> for your bot (e.g. "My AI Agent")
-										</li>
-										<li>
-											<span class="font-semibold">4.</span> Choose a <span class="font-semibold">username</span> ending in <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">bot</code> (e.g. <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">my_ai_agent_bot</code>)
-										</li>
-										<li>
-											<span class="font-semibold">5.</span> BotFather will send you an <span class="font-semibold">API token</span> &mdash; copy it (looks like <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">123456:ABC-DEF1234...</code>)
-										</li>
-										{#if featureFlags.telegramTokenSetup}
-										<li>
-											<span class="font-semibold">6.</span> Paste the token below and click <span class="font-semibold">Connect</span>
-										</li>
-									{:else}
-										<li>
-											<span class="font-semibold">6.</span> Open your <span class="font-semibold">Agent Dashboard</span>, then in the OpenClaw chat interface, type <span class="font-semibold">&ldquo;Let's set up Telegram&rdquo;</span> or navigate to <span class="font-semibold">Channel Settings</span> in the dashboard.
-										</li>
-										<li>
-											<span class="font-semibold">7.</span> Paste the API Token you copied from BotFather when prompted.
-										</li>
-									{/if}
-									</ol>
-
-								</div>
-
-								{#if featureFlags.telegramTokenSetup}
-								{#if telegramError}
-									<p class="mt-3 text-xs text-red-600 dark:text-red-400">{telegramError}</p>
-								{/if}
-								<div class="mt-4 flex items-center gap-2">
-									<input
-										type="text"
-										bind:value={telegramToken}
-										placeholder="Paste your bot token here"
-										disabled={telegramLoading || instance.status !== 'active'}
-										class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-white dark:bg-gray-800 placeholder-gray-400 dark:placeholder-gray-500 focus:border-gray-500 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-500 dark:focus:ring-gray-400 disabled:opacity-50"
-									/>
-									<button
-										onclick={handleTelegramConnect}
-										disabled={telegramLoading || !telegramToken.trim() || instance.status !== 'active'}
-										class="inline-flex items-center gap-2 rounded-lg bg-gray-900 dark:bg-white px-4 py-2 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
-									>
-										{telegramLoading ? 'Connecting...' : 'Connect'}
-									</button>
-								</div>
-								{/if}
-							{/if}
-						</div>
+							<div class="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-4 py-3 text-xs text-gray-700 dark:text-gray-300">
+								<p class="font-semibold text-gray-900 dark:text-white">How to set up your Telegram bot:</p>
+								<ol class="mt-2 space-y-2.5">
+									<li>
+										<span class="font-semibold">1.</span> Open Telegram and search for
+										<a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#2AABEE] underline hover:text-blue-700 dark:hover:text-blue-400">@BotFather</a>
+									</li>
+									<li>
+										<span class="font-semibold">2.</span> Send <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">/newbot</code> to create a new bot
+									</li>
+									<li>
+										<span class="font-semibold">3.</span> Choose a <span class="font-semibold">display name</span> for your bot (e.g. "My AI Agent")
+									</li>
+									<li>
+										<span class="font-semibold">4.</span> Choose a <span class="font-semibold">username</span> ending in <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">bot</code> (e.g. <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">my_ai_agent_bot</code>)
+									</li>
+									<li>
+										<span class="font-semibold">5.</span> BotFather will send you an <span class="font-semibold">API token</span> &mdash; copy it (looks like <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">123456:ABC-DEF1234...</code>)
+									</li>
+									<li>
+										<span class="font-semibold">6.</span> Open your <span class="font-semibold">Agent Dashboard</span>, then in the OpenClaw chat interface, type <span class="font-semibold">&ldquo;Let's set up Telegram&rdquo;</span> or navigate to <span class="font-semibold">Channel Settings</span> in the dashboard.
+									</li>
+									<li>
+										<span class="font-semibold">7.</span> Paste the API Token you copied from BotFather when prompted.
+									</li>
+								</ol>
+							</div>
 						</div>
 						{/if}
 					</div>

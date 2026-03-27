@@ -54,7 +54,6 @@ type CloudInitData struct {
 	ConfigVersion     int    // Initial config version to prevent redundant first sync
 	RootPassword      string // Explicitly set root password (overrides Hetzner's auto-generated one)
 	SSHPublicKey       string // Ed25519 public key for key-based SSH auth (injected into authorized_keys)
-	TelegramBotToken   string // Optional Telegram bot token
 	Domain             string // Optional domain for Cloudflare Proxy (e.g. "abc12345.tardi.ai"); empty = IP-only access
 	PreviewDomain      string // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
 	BackendEgressCIDRs string // Comma-separated CIDRs for backend egress IPs (restricts UFW SSH + OpenClaw access)
@@ -222,9 +221,6 @@ echo "ANTHROPIC_API_KEY={{.AnthropicAPIKey}}" >> /opt/openclaw/.env
 {{- end}}
 {{- if .OpenAIAPIKey}}
 echo "OPENAI_API_KEY={{.OpenAIAPIKey}}" >> /opt/openclaw/.env
-{{- end}}
-{{- if .TelegramBotToken}}
-echo "TELEGRAM_BOT_TOKEN={{.TelegramBotToken}}" >> /opt/openclaw/.env
 {{- end}}
 chmod 600 /opt/openclaw/.env
 {{- if .ConfigVersion}}
@@ -407,27 +403,6 @@ if [ "$HEALTHY" = true ]; then
 {{- end}}
 {{- end}}
 
-    # Fix Telegram config if bot token is set:
-    # - streaming:"off" prevents double replies (OpenClaw defaults to "partial")
-    # - dmPolicy:"open" + allowFrom:["*"] allows anyone to message the bot
-    # - groupPolicy:"disabled" ignores group messages
-    # Must set allowFrom before dmPolicy (validation requires it)
-    # Also fix account-level overrides that OpenClaw auto-creates with bad defaults.
-    if grep -q '^TELEGRAM_BOT_TOKEN=.' /opt/openclaw/.env 2>/dev/null; then
-        docker exec openclaw-gateway openclaw config set channels.telegram.enabled true 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.streaming off 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.allowFrom '["*"]' 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.dmPolicy open 2>/dev/null
-        docker exec openclaw-gateway openclaw config set channels.telegram.groupPolicy disabled 2>/dev/null
-
-        # Fix account-level overrides
-        PROV_TG_ACCOUNTS=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.channels.telegram.accounts // {} | keys[]' 2>/dev/null)
-        for ACCT in $PROV_TG_ACCOUNTS; do
-            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.dmPolicy" open 2>/dev/null
-            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.streaming" off 2>/dev/null
-            docker exec openclaw-gateway openclaw config set "channels.telegram.accounts.${ACCT}.allowFrom" '["*"]' 2>/dev/null
-        done
-    fi
 fi
 
 log_status "COMPLETED"
@@ -671,9 +646,6 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		}
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			ciData.OpenAIAPIKey = v
-		}
-		if v, ok := agentCfg.Config["telegram_bot_token"].(string); ok {
-			ciData.TelegramBotToken = v
 		}
 		if v, ok := agentCfg.Config["provider"].(string); ok && v != "" {
 			ciData.Provider = v

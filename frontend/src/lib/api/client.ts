@@ -413,56 +413,6 @@ export async function getWhatsAppStatus(
 	return res.json();
 }
 
-export async function connectTelegram(
-	token: string,
-	instanceId: string,
-	botToken: string
-): Promise<{ connected: boolean }> {
-	if (USE_MOCK) {
-		return { connected: true };
-	}
-
-	return apiFetch(
-		`${getApiUrl()}/api/instances/${instanceId}/telegram/connect`,
-		{
-			method: 'POST',
-			headers: authJsonHeaders(token),
-			body: JSON.stringify({ bot_token: botToken })
-		},
-		'connectTelegram'
-	);
-}
-
-export async function cleanupTelegramConfig(
-	token: string,
-	instanceId: string
-): Promise<{ cleaned: boolean; error?: string }> {
-	if (USE_MOCK) {
-		return { cleaned: true };
-	}
-
-	return apiFetch(
-		`${getApiUrl()}/api/instances/${instanceId}/telegram/cleanup`,
-		{ method: 'POST', headers: authHeaders(token) },
-		'cleanupTelegramConfig'
-	);
-}
-
-export async function disconnectTelegram(
-	token: string,
-	instanceId: string
-): Promise<{ connected: boolean }> {
-	if (USE_MOCK) {
-		return { connected: false };
-	}
-
-	return apiFetch(
-		`${getApiUrl()}/api/instances/${instanceId}/telegram/disconnect`,
-		{ method: 'POST', headers: authHeaders(token) },
-		'disconnectTelegram'
-	);
-}
-
 export interface HealthCheck {
 	name: string;
 	status: 'pass' | 'fail' | 'warn' | 'info';
@@ -482,18 +432,6 @@ export async function runDoctor(token: string, instanceId: string): Promise<Doct
 		return {
 			checks: [
 				{ name: 'Container', status: 'pass', message: 'Running and healthy', detail: 'Restarts: 0' },
-				{
-					name: 'Telegram: Double Replies',
-					status: 'pass',
-					message: 'Streaming is off',
-					detail: "Messages won't be sent twice"
-				},
-				{
-					name: 'Telegram: Pairing',
-					status: 'pass',
-					message: 'DM policy is open',
-					detail: 'Users can message the bot without pairing'
-				},
 				{ name: 'API Keys', status: 'pass', message: 'OpenRouter', detail: '' },
 				{ name: 'Config Sync', status: 'pass', message: 'In sync (version 3)', detail: '' },
 				{ name: 'Recent Logs', status: 'pass', message: 'No errors in last 50 log lines', detail: '' },

@@ -146,9 +146,6 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			ciData.OpenAIAPIKey = v
 		}
-		if v, ok := agentCfg.Config["telegram_bot_token"].(string); ok {
-			ciData.TelegramBotToken = v
-		}
 	}
 
 	// Fetch all enabled model IDs for OC dashboard dropdown

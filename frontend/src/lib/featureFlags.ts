@@ -10,6 +10,5 @@
 export const featureFlags = {
 	modelSelection: import.meta.env.VITE_FF_MODEL_SELECTION === 'true',
 	healthCheck: import.meta.env.VITE_FF_HEALTH_CHECK === 'true',
-	telegramTokenSetup: import.meta.env.VITE_FF_TELEGRAM_TOKEN_SETUP === 'true',
 	googleWorkspace: import.meta.env.VITE_FF_GOOGLE_WORKSPACE === 'true',
 } as const;

@@ -193,9 +193,6 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			ciData.OpenAIAPIKey = v
 		}
-		if v, ok := agentCfg.Config["telegram_bot_token"].(string); ok {
-			ciData.TelegramBotToken = v
-		}
 		if v, ok := agentCfg.Config["provider"].(string); ok {
 			ciData.Provider = v
 		}
