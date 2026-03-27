@@ -1064,13 +1064,23 @@
 										<li>
 											<span class="font-semibold">5.</span> BotFather will send you an <span class="font-semibold">API token</span> &mdash; copy it (looks like <code class="rounded bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 font-mono text-gray-800 dark:text-gray-200">123456:ABC-DEF1234...</code>)
 										</li>
+										{#if featureFlags.telegramTokenSetup}
 										<li>
 											<span class="font-semibold">6.</span> Paste the token below and click <span class="font-semibold">Connect</span>
 										</li>
+									{:else}
+										<li>
+											<span class="font-semibold">6.</span> Open your <span class="font-semibold">Agent Dashboard</span>, then in the OpenClaw chat interface, type <span class="font-semibold">&ldquo;Let's set up Telegram&rdquo;</span> or navigate to <span class="font-semibold">Channel Settings</span> in the dashboard.
+										</li>
+										<li>
+											<span class="font-semibold">7.</span> Paste the API Token you copied from BotFather when prompted.
+										</li>
+									{/if}
 									</ol>
 
 								</div>
 
+								{#if featureFlags.telegramTokenSetup}
 								{#if telegramError}
 									<p class="mt-3 text-xs text-red-600 dark:text-red-400">{telegramError}</p>
 								{/if}
@@ -1090,6 +1100,7 @@
 										{telegramLoading ? 'Connecting...' : 'Connect'}
 									</button>
 								</div>
+								{/if}
 							{/if}
 						</div>
 					</div>
