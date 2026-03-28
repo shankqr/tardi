@@ -68,11 +68,11 @@
 			requiresGoogle: true
 		},
 		{
-			icon: '📝',
-			title: 'Write a meeting notes template',
-			description: 'Create a reusable meeting notes doc in Google Docs',
+			icon: '📈',
+			title: 'Research top NASDAQ stocks',
+			description: 'Research top 10 NASDAQ stocks and predict price movements in Google Sheets',
 			prompt:
-				'Create a Google Doc titled "Meeting Notes Template" with sections for: Date, Attendees, Agenda Items, Discussion Notes, Action Items (with owner and due date columns as a table), and Next Meeting. Format it cleanly with headers. Share the Google Doc URL with me so I can bookmark it.',
+				'Research the latest top 10 stocks of the NASDAQ index by market cap. For each stock, find the current price, 52-week high/low, and recent performance. Create a Google Sheets spreadsheet titled "NASDAQ Top 10 — Stock Research" with columns for: Rank, Ticker, Company Name, Current Price, 52-Week High, 52-Week Low, YTD Performance (%), and a Short-Term Price Prediction column with a brief bullish/bearish/neutral outlook and reasoning. Add a summary section at the top with overall market sentiment. Return the Google Sheets URL so I can review the analysis.',
 			requiresGoogle: true
 		},
 		{
