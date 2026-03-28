@@ -76,11 +76,11 @@
 			requiresGoogle: true
 		},
 		{
-			icon: '📊',
-			title: 'Build a budget tracker',
-			description: 'Set up a personal budget spreadsheet in Google Sheets',
+			icon: '🛒',
+			title: 'Research top Amazon products',
+			description: 'Research top 10 trending Amazon products and summarize in Google Docs',
 			prompt:
-				'Create a Google Sheets personal budget tracker for this month. Include columns for Date, Category (groceries, dining, transport, entertainment, bills), Description, and Amount. Add a summary section at the top with totals per category using SUMIF formulas, and a remaining budget calculation assuming a $3,000 monthly budget. Return the Google Sheets URL so I can start logging expenses.',
+				'Research the latest top 10 trending or best-selling products on Amazon right now. For each product, find the product name, category, price, average rating, and number of reviews. Create a Google Doc titled "Top 10 Amazon Products — Research Summary" with a section for each product that includes: product name, category, price, rating, a brief summary of what the product is, key features, and why it\'s trending. Add an overview section at the top with general trends you noticed. Format it cleanly with headers and bullet points. Share the Google Doc URL with me so I can review the research.',
 			requiresGoogle: true
 		},
 		{
