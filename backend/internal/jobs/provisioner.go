@@ -860,6 +860,11 @@ func (p *Provisioner) stepActivate(ctx context.Context, job *models.Provisioning
 	if err := db.UpdateInstanceStatus(ctx, p.pool, job.VpsInstanceID, models.VpsStatusActive); err != nil {
 		return fmt.Errorf("activate instance: %w", err)
 	}
+	// Set agent_status=running immediately — the health check just passed in the
+	// previous step, so we know the agent is live. Without this, the frontend
+	// shows "Setting up..." until the first heartbeat fires (up to 5 min later).
+	running := "running"
+	_ = db.UpdateInstanceHeartbeat(ctx, p.pool, job.VpsInstanceID, &running, nil)
 	// Record the initial OpenClaw version (use resolved tag, not static env var)
 	_ = db.UpdateInstanceOpenClawVersion(ctx, p.pool, job.VpsInstanceID, resolveImageTag(ctx, p.pool, p.openClawImageTag), nil, nil)
 	return nil
