@@ -69,7 +69,7 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 		url := fmt.Sprintf("https://%s", *inst.Domain)
 		r.DashboardURL = &url
 	} else if inst.IPv4 != nil && *inst.IPv4 != "" {
-		url := fmt.Sprintf("https://%s", *inst.IPv4)
+		url := fmt.Sprintf("http://%s", *inst.IPv4)
 		r.DashboardURL = &url
 	}
 	if inst.PreviewDomain != nil && *inst.PreviewDomain != "" {

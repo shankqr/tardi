@@ -152,8 +152,8 @@ func TestToInstanceResponse_IPv4FallbackForDashboardURL(t *testing.T) {
 	if r.DashboardURL == nil {
 		t.Fatal("DashboardURL should not be nil when IPv4 is set")
 	}
-	if *r.DashboardURL != "https://5.6.7.8" {
-		t.Errorf("DashboardURL = %q, want %q", *r.DashboardURL, "https://5.6.7.8")
+	if *r.DashboardURL != "http://5.6.7.8" {
+		t.Errorf("DashboardURL = %q, want %q", *r.DashboardURL, "http://5.6.7.8")
 	}
 }
 
@@ -198,7 +198,7 @@ func TestToInstanceResponse_EmptyDomainFallsBackToIPv4(t *testing.T) {
 	if r.DashboardURL == nil {
 		t.Fatal("DashboardURL should not be nil when IPv4 is set")
 	}
-	if *r.DashboardURL != "https://9.8.7.6" {
+	if *r.DashboardURL != "http://9.8.7.6" {
 		t.Errorf("DashboardURL = %q, want IPv4 fallback", *r.DashboardURL)
 	}
 }
