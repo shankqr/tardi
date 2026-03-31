@@ -158,7 +158,7 @@ async function setup() {
 			Authorization: `Bearer ${idToken}`,
 			'Content-Type': 'application/json',
 		},
-		body: JSON.stringify({ name: 'e2e-persistent', region: 'nbg1' }),
+		body: JSON.stringify({ name: 'e2e-persistent', region: 'eu-central' }),
 	});
 
 	if (!createRes.ok) {
