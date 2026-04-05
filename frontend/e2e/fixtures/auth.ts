@@ -80,7 +80,7 @@ export const test = base.extend<{ authedPage: Page }>({
 		const loading = page.getByText('Loading dashboard...');
 		await loading.waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => {});
 		await expect(
-			page.getByRole('heading', { name: 'Your Agent' }).or(page.getByText('Deploy your agent').first())
+			page.getByRole('heading', { name: 'Your Agent' }).or(page.getByText('Deploy your agent').first()).first()
 		).toBeVisible({ timeout: 15_000 });
 		await use(page);
 	},

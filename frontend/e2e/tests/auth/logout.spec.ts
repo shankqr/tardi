@@ -14,7 +14,6 @@ test.describe('Logout', () => {
 
 		// Verify we're logged out — navigating to /dashboard should not show dashboard content
 		await page.goto('/dashboard');
-		await page.waitForTimeout(5000);
-		await expect(page.getByRole('heading', { name: 'Dashboard' })).not.toBeVisible();
+		await expect(page.getByRole('button', { name: 'Sign out' })).not.toBeVisible({ timeout: 15_000 });
 	});
 });
