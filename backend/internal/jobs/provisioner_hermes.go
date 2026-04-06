@@ -163,29 +163,51 @@ echo "{{.ConfigVersion}}" > /opt/hermes/.config_version
 chown hermes:hermes /opt/hermes/.config_version
 {{- end}}
 
-# --- Hermes config.yaml ---
-cat > /opt/hermes/data/config.yaml <<CFGEOF
-model:
-  default: "{{.Provider}}/{{.Model}}"
-terminal:
-  backend: docker
-api_server:
-  enabled: true
-  host: "0.0.0.0"
-  port: 8642
-CFGEOF
-chown hermes:hermes /opt/hermes/data/config.yaml
+# Config and SOUL.md are written into ~/.hermes/ after install (see below)
 
-# --- Default SOUL.md ---
-cat > /opt/hermes/data/SOUL.md <<SOULEOF
+# --- Write API keys into Hermes's own .env at ~/.hermes/.env ---
+# The install script creates ~/.hermes/ with its own .env template.
+# We append our API keys there so Hermes's dotenv loader finds them.
+HERMES_ENV="/home/hermes/.hermes/.env"
+if [ -f "$HERMES_ENV" ]; then
+    # Remove any existing placeholder keys and add ours
+    sed -i '/^#\?\s*OPENROUTER_API_KEY=/d' "$HERMES_ENV"
+    sed -i '/^#\?\s*ANTHROPIC_API_KEY=/d' "$HERMES_ENV"
+    sed -i '/^#\?\s*OPENAI_API_KEY=/d' "$HERMES_ENV"
+    sed -i '/^#\?\s*API_SERVER_ENABLED=/d' "$HERMES_ENV"
+    sed -i '/^#\?\s*API_SERVER_HOST=/d' "$HERMES_ENV"
+    sed -i '/^#\?\s*API_SERVER_PORT=/d' "$HERMES_ENV"
+    sed -i '/^#\?\s*API_SERVER_KEY=/d' "$HERMES_ENV"
+fi
+cat >> "$HERMES_ENV" <<HERMESENVEOF
+API_SERVER_ENABLED=true
+API_SERVER_HOST=0.0.0.0
+API_SERVER_PORT=8642
+API_SERVER_KEY={{.APIServerKey}}
+{{- if .OpenRouterAPIKey}}
+OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
+{{- end}}
+{{- if .AnthropicAPIKey}}
+ANTHROPIC_API_KEY={{.AnthropicAPIKey}}
+{{- end}}
+{{- if .OpenAIAPIKey}}
+OPENAI_API_KEY={{.OpenAIAPIKey}}
+{{- end}}
+HERMESENVEOF
+chown hermes:hermes "$HERMES_ENV"
+
+# --- Set model via Hermes CLI (writes to ~/.hermes/config.yaml) ---
+{{- if .Model}}
+su - hermes -c 'hermes config set model.default "{{.Model}}"' || true
+{{- end}}
+
+# --- Write SOUL.md into Hermes's config dir ---
+cat > /home/hermes/.hermes/SOUL.md <<SOULEOF
 You are a helpful AI assistant running on Tardi.
 You can execute code, browse the web, manage files, and help with various tasks.
 Be concise and helpful in your responses.
 SOULEOF
-chown hermes:hermes /opt/hermes/data/SOUL.md
-
-# --- Symlink Hermes data dir so HERMES_HOME works ---
-su - hermes -c 'ln -sfn /opt/hermes/data ~/.hermes' || true
+chown hermes:hermes /home/hermes/.hermes/SOUL.md
 
 log_status "CONFIG_WRITTEN"
 
@@ -246,7 +268,6 @@ Type=simple
 User=hermes
 Group=hermes
 EnvironmentFile=/opt/hermes/.env
-Environment=HERMES_HOME=/opt/hermes/data
 Environment=HOME=/home/hermes
 Environment=PATH=/home/hermes/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=${HERMES_BIN} gateway
