@@ -6,6 +6,13 @@ import (
 	"github.com/google/uuid"
 )
 
+type AgentFramework string
+
+const (
+	FrameworkOpenClaw AgentFramework = "openclaw"
+	FrameworkHermes   AgentFramework = "hermes"
+)
+
 type VpsStatus string
 
 const (
@@ -90,6 +97,7 @@ type VpsInstance struct {
 	ID                   uuid.UUID
 	UserID               uuid.UUID
 	SubscriptionID       uuid.UUID
+	Framework            AgentFramework
 	Provider             string
 	ProviderServerID     *string
 	ProviderRegion       *string

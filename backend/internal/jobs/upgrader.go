@@ -139,14 +139,14 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		return
 	}
 
-	openClawAuthToken, err := GenerateAgentToken()
+	frameworkAuthToken, err := GenerateAgentToken()
 	if err != nil {
-		u.logger.Error("upgrader: generate openclaw auth token", "error", err)
+		u.logger.Error("upgrader: generate framework auth token", "error", err)
 		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
 		return
 	}
-	if err := db.UpdateInstanceOpenClawAuthToken(ctx, u.pool, inst.ID, openClawAuthToken); err != nil {
-		u.logger.Error("upgrader: store openclaw auth token", "error", err)
+	if err := db.UpdateInstanceOpenClawAuthToken(ctx, u.pool, inst.ID, frameworkAuthToken); err != nil {
+		u.logger.Error("upgrader: store framework auth token", "error", err)
 		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
 		return
 	}
@@ -160,55 +160,90 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	}
 	_ = db.UpdateInstanceRootPassword(ctx, u.pool, inst.ID, rootPassword)
 
-	ciData := CloudInitData{
-		AgentToken:         agentToken,
-		APIURL:             u.apiURL,
-		InstanceID:         inst.ID.String(),
-		OpenClawAuthToken:  openClawAuthToken,
-		OpenClawImageTag:   resolveImageTag(ctx, u.pool, u.openClawImageTag),
-		RootPassword:       rootPassword,
-		SSHPublicKey:       u.sshPublicKey,
-		BackendEgressCIDRs: u.backendEgressCIDRs,
-	}
-
-	// Preserve domain for Let's Encrypt TLS
-	if inst.Domain != nil && *inst.Domain != "" {
-		ciData.Domain = *inst.Domain
-	}
-
+	// Extract config values
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, u.pool, inst.ID)
 	if err != nil {
 		u.logger.Error("upgrader: get agent config", "error", err)
 		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
 		return
 	}
+	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey, providerName, modelID string
+	var configVersion int
 	if agentCfg != nil {
-		ciData.ConfigVersion = agentCfg.Version
+		configVersion = agentCfg.Version
 		if v, ok := agentCfg.Config["openrouter_api_key"].(string); ok {
-			ciData.OpenRouterAPIKey = v
+			openRouterAPIKey = v
 		}
 		if v, ok := agentCfg.Config["anthropic_api_key"].(string); ok {
-			ciData.AnthropicAPIKey = v
+			anthropicAPIKey = v
 		}
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
-			ciData.OpenAIAPIKey = v
+			openAIAPIKey = v
 		}
 		if v, ok := agentCfg.Config["provider"].(string); ok {
-			ciData.Provider = v
+			providerName = v
 		}
 		if v, ok := agentCfg.Config["model"].(string); ok {
-			ciData.Model = v
+			modelID = v
 		}
 	}
 
-	// Fetch all enabled model IDs for OC dashboard dropdown
-	if allModels, err := db.ListEnabledModels(ctx, u.pool); err == nil {
-		for _, m := range allModels {
-			ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
-		}
+	var domain string
+	if inst.Domain != nil && *inst.Domain != "" {
+		domain = *inst.Domain
 	}
 
-	userData, err := RenderCloudInit(ciData)
+	framework := inst.Framework
+	if framework == "" {
+		framework = models.FrameworkOpenClaw
+	}
+
+	var userData string
+	switch framework {
+	case models.FrameworkHermes:
+		hermesData := HermesCloudInitData{
+			AgentToken:         agentToken,
+			APIURL:             u.apiURL,
+			InstanceID:         inst.ID.String(),
+			APIServerKey:       frameworkAuthToken,
+			HermesImageTag:     "latest",
+			Provider:           providerName,
+			Model:              modelID,
+			OpenRouterAPIKey:   openRouterAPIKey,
+			AnthropicAPIKey:    anthropicAPIKey,
+			OpenAIAPIKey:       openAIAPIKey,
+			ConfigVersion:      configVersion,
+			RootPassword:       rootPassword,
+			SSHPublicKey:       u.sshPublicKey,
+			Domain:             domain,
+			BackendEgressCIDRs: u.backendEgressCIDRs,
+		}
+		userData, err = RenderHermesCloudInit(hermesData)
+	default:
+		ciData := CloudInitData{
+			AgentToken:         agentToken,
+			APIURL:             u.apiURL,
+			InstanceID:         inst.ID.String(),
+			OpenClawAuthToken:  frameworkAuthToken,
+			OpenClawImageTag:   resolveImageTag(ctx, u.pool, u.openClawImageTag),
+			RootPassword:       rootPassword,
+			SSHPublicKey:       u.sshPublicKey,
+			Domain:             domain,
+			BackendEgressCIDRs: u.backendEgressCIDRs,
+			Provider:           providerName,
+			Model:              modelID,
+			OpenRouterAPIKey:   openRouterAPIKey,
+			AnthropicAPIKey:    anthropicAPIKey,
+			OpenAIAPIKey:       openAIAPIKey,
+			ConfigVersion:      configVersion,
+		}
+		if allModels, lErr := db.ListEnabledModels(ctx, u.pool); lErr == nil {
+			for _, m := range allModels {
+				ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
+			}
+		}
+		userData, err = RenderCloudInit(ciData)
+	}
 	if err != nil {
 		u.logger.Error("upgrader: render cloud-init", "error", err)
 		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
@@ -225,7 +260,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 
 	// Step 4: Create new server from snapshot on the new tier
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
-		Name:       buildServerName("openclaw", user.Email, inst.ID.String()[:8]),
+		Name:       buildServerName(string(framework), user.Email, inst.ID.String()[:8]),
 		ServerType: mapping.ProviderServerType,
 		Region:     mapping.ProviderRegion,
 		ImageID:    result.ProviderImageID,

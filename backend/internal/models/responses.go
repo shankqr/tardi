@@ -17,6 +17,7 @@ type DashboardStateResponse struct {
 type InstanceResponse struct {
 	ID              string  `json:"id"`
 	Name            string  `json:"name"`
+	Framework       string  `json:"framework"`
 	Status          string  `json:"status"`
 	Step            *string `json:"step,omitempty"`
 	Provider        string  `json:"provider"`
@@ -44,15 +45,21 @@ type SubscriptionResponse struct {
 
 // CreateInstanceRequest matches frontend's POST /api/instances body.
 type CreateInstanceRequest struct {
-	Name   string `json:"name"`
-	Region string `json:"region"`
+	Name      string `json:"name"`
+	Region    string `json:"region"`
+	Framework string `json:"framework"`
 }
 
 // ToInstanceResponse converts a VpsInstance model to the API response type.
 func ToInstanceResponse(inst VpsInstance) InstanceResponse {
+	framework := string(inst.Framework)
+	if framework == "" {
+		framework = string(FrameworkOpenClaw)
+	}
 	r := InstanceResponse{
 		ID:        inst.ID.String(),
 		Name:      inst.Name,
+		Framework: framework,
 		Status:    string(inst.Status),
 		Provider:  inst.Provider,
 		IPv4:      inst.IPv4,

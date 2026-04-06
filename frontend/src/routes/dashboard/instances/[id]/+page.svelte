@@ -590,7 +590,7 @@
 													<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 												</svg>
 											</div>
-											<span class="text-sm font-medium text-gray-900 dark:text-white">Starting OpenClaw</span>
+											<span class="text-sm font-medium text-gray-900 dark:text-white">Starting {instance.framework === 'hermes' ? 'Hermes' : 'OpenClaw'}</span>
 										</div>
 									</div>
 								{/if}
@@ -615,7 +615,7 @@
 							<dd class="font-mono text-gray-900 dark:text-white">{instance.ipv4 ?? '—'}</dd>
 						</div>
 						<div class="flex justify-between">
-							<dt class="text-gray-500 dark:text-gray-400">OpenClaw</dt>
+							<dt class="text-gray-500 dark:text-gray-400">{instance.framework === 'hermes' ? 'Hermes' : 'OpenClaw'}</dt>
 							<dd>
 								{#if isProvisioning || activationCooloff}
 									<span class="inline-flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
@@ -682,41 +682,50 @@
 
 					{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url}
 						{#if hasApiKey}
-							<button
-								onclick={async () => {
-									dashboardBtnLoading = true;
-									try {
-										const [, result] = await Promise.all([
-											new Promise(r => setTimeout(r, 2000)),
-											(async () => {
-												const token = await getIdToken();
-												if (!token) return null;
-												const { token: scopedToken } = await getDashboardToken(instance!.id, token);
-												return scopedToken;
-											})()
-										]);
-										if (result) {
-											window.open(`${instance!.dashboard_url!}/#token=${result}`, '_blank');
+							{#if instance.framework === 'hermes'}
+								<a
+									href="/dashboard/instances/{instance.id}/chat"
+									class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100"
+								>
+									Chat with Agent
+								</a>
+							{:else}
+								<button
+									onclick={async () => {
+										dashboardBtnLoading = true;
+										try {
+											const [, result] = await Promise.all([
+												new Promise(r => setTimeout(r, 2000)),
+												(async () => {
+													const token = await getIdToken();
+													if (!token) return null;
+													const { token: scopedToken } = await getDashboardToken(instance!.id, token);
+													return scopedToken;
+												})()
+											]);
+											if (result) {
+												window.open(`${instance!.dashboard_url!}/#token=${result}`, '_blank');
+											}
+										} catch {
+											alert('Failed to generate dashboard token. Please try again.');
+										} finally {
+											dashboardBtnLoading = false;
 										}
-									} catch {
-										alert('Failed to generate dashboard token. Please try again.');
-									} finally {
-										dashboardBtnLoading = false;
-									}
-								}}
-								disabled={dashboardBtnLoading}
-								class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-70"
-							>
-								{#if dashboardBtnLoading}
-									<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-									</svg>
-									Opening...
-								{:else}
-									Open Agent Dashboard
-								{/if}
-							</button>
+									}}
+									disabled={dashboardBtnLoading}
+									class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-70"
+								>
+									{#if dashboardBtnLoading}
+										<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+											<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+										</svg>
+										Opening...
+									{:else}
+										Open Agent Dashboard
+									{/if}
+								</button>
+							{/if}
 						{:else}
 							<p class="mt-4 text-xs text-gray-400 dark:text-gray-500">Set up your OpenRouter API key below to access the dashboard.</p>
 						{/if}
@@ -916,7 +925,7 @@
 					</div>
 				{/if}
 
-				{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url}
+				{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url && instance.framework !== 'hermes'}
 					<MagicMoment
 						previewUrl={instance.preview_url}
 						googleConnected={googleConnected}

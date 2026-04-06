@@ -140,7 +140,7 @@ func GetSubscriptionByStripeSubID(ctx context.Context, pool *pgxpool.Pool, strip
 // GetInstancesByUserID returns all non-terminated instances for a user.
 func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.UUID) ([]models.VpsInstance, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
+		SELECT id, user_id, subscription_id, framework, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running','failed') ORDER BY updated_at DESC LIMIT 1),
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
@@ -160,7 +160,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 	for rows.Next() {
 		var inst models.VpsInstance
 		if err := rows.Scan(
-			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
+			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Framework, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status, &inst.Step,
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
@@ -179,7 +179,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, userID uuid.UUID) (*models.VpsInstance, error) {
 	inst := &models.VpsInstance{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
+		SELECT id, user_id, subscription_id, framework, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       (SELECT step FROM provisioning_jobs WHERE vps_instance_id = v.id AND status IN ('pending','running','failed') ORDER BY updated_at DESC LIMIT 1),
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
@@ -189,7 +189,7 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		FROM vps_instances v
 		WHERE id = $1 AND user_id = $2
 	`, instanceID, userID).Scan(
-		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
+		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Framework, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status, &inst.Step,
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
@@ -209,9 +209,9 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 // CreateInstance inserts a new VPS instance.
 func CreateInstance(ctx context.Context, pool *pgxpool.Pool, inst *models.VpsInstance) error {
 	_, err := pool.Exec(ctx, `
-		INSERT INTO vps_instances (id, user_id, subscription_id, provider, provider_region, name, region, status)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`, inst.ID, inst.UserID, inst.SubscriptionID, inst.Provider,
+		INSERT INTO vps_instances (id, user_id, subscription_id, framework, provider, provider_region, name, region, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	`, inst.ID, inst.UserID, inst.SubscriptionID, inst.Framework, inst.Provider,
 		inst.ProviderRegion, inst.Name, inst.Region, inst.Status)
 	if err != nil {
 		return fmt.Errorf("create instance: %w", err)
@@ -505,7 +505,7 @@ func UpdateInstanceAgentToken(ctx context.Context, pool *pgxpool.Pool, instanceI
 // GetActiveInstancesByStatus returns all instances with the given status.
 func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status models.VpsStatus) ([]models.VpsInstance, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
+		SELECT id, user_id, subscription_id, framework, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
@@ -523,7 +523,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 	for rows.Next() {
 		var inst models.VpsInstance
 		if err := rows.Scan(
-			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
+			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Framework, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
@@ -669,7 +669,7 @@ func GetSnapshotsByInstanceID(ctx context.Context, pool *pgxpool.Pool, instanceI
 // GetInstancesBySubscriptionID returns all non-terminated instances for a subscription.
 func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID uuid.UUID) ([]models.VpsInstance, error) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
+		SELECT id, user_id, subscription_id, framework, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
@@ -687,7 +687,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 	for rows.Next() {
 		var inst models.VpsInstance
 		if err := rows.Scan(
-			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
+			&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Framework, &inst.Provider,
 			&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 			&inst.Region, &inst.Status,
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
@@ -897,7 +897,7 @@ func GetAllSnapshotsByInstanceID(ctx context.Context, pool *pgxpool.Pool, instan
 func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecretName string) (*models.VpsInstance, error) {
 	inst := &models.VpsInstance{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
+		SELECT id, user_id, subscription_id, framework, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
@@ -906,7 +906,7 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 		FROM vps_instances
 		WHERE agent_token_secret_name = $1
 	`, tokenSecretName).Scan(
-		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
+		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Framework, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,

@@ -107,56 +107,80 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		return
 	}
 
-	// Generate OpenClaw auth token
-	openClawAuthToken, err := GenerateAgentToken()
+	// Generate framework auth token
+	frameworkAuthToken, err := GenerateAgentToken()
 	if err != nil {
-		r.logger.Error("resumer: generate openclaw auth token", "error", err)
+		r.logger.Error("resumer: generate framework auth token", "error", err)
 		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
 		return
 	}
-	if err := db.UpdateInstanceOpenClawAuthToken(ctx, r.pool, inst.ID, openClawAuthToken); err != nil {
-		r.logger.Error("resumer: store openclaw auth token", "error", err)
+	if err := db.UpdateInstanceOpenClawAuthToken(ctx, r.pool, inst.ID, frameworkAuthToken); err != nil {
+		r.logger.Error("resumer: store framework auth token", "error", err)
 		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
 		return
 	}
 
-	// Build cloud-init data with API keys from agent config
-	ciData := CloudInitData{
-		AgentToken:         agentToken,
-		APIURL:             r.apiURL,
-		InstanceID:         inst.ID.String(),
-		OpenClawAuthToken:  openClawAuthToken,
-		OpenClawImageTag:   resolveImageTag(ctx, r.pool, r.openClawImageTag),
-		SSHPublicKey:       r.sshPublicKey,
-		BackendEgressCIDRs: r.backendEgressCIDRs,
-	}
+	// Extract config values
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, r.pool, inst.ID)
 	if err != nil {
 		r.logger.Error("resumer: get agent config", "error", err)
 		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
 		return
 	}
+	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey string
 	if agentCfg != nil {
 		if v, ok := agentCfg.Config["openrouter_api_key"].(string); ok {
-			ciData.OpenRouterAPIKey = v
+			openRouterAPIKey = v
 		}
 		if v, ok := agentCfg.Config["anthropic_api_key"].(string); ok {
-			ciData.AnthropicAPIKey = v
+			anthropicAPIKey = v
 		}
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
-			ciData.OpenAIAPIKey = v
+			openAIAPIKey = v
 		}
 	}
 
-	// Fetch all enabled model IDs for OC dashboard dropdown
-	if allModels, err := db.ListEnabledModels(ctx, r.pool); err == nil {
-		for _, m := range allModels {
-			ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
-		}
+	framework := inst.Framework
+	if framework == "" {
+		framework = models.FrameworkOpenClaw
 	}
 
-	// Render cloud-init
-	userData, err := RenderCloudInit(ciData)
+	var userData string
+	switch framework {
+	case models.FrameworkHermes:
+		hermesData := HermesCloudInitData{
+			AgentToken:         agentToken,
+			APIURL:             r.apiURL,
+			InstanceID:         inst.ID.String(),
+			APIServerKey:       frameworkAuthToken,
+			HermesImageTag:     "latest",
+			OpenRouterAPIKey:   openRouterAPIKey,
+			AnthropicAPIKey:    anthropicAPIKey,
+			OpenAIAPIKey:       openAIAPIKey,
+			SSHPublicKey:       r.sshPublicKey,
+			BackendEgressCIDRs: r.backendEgressCIDRs,
+		}
+		userData, err = RenderHermesCloudInit(hermesData)
+	default:
+		ciData := CloudInitData{
+			AgentToken:         agentToken,
+			APIURL:             r.apiURL,
+			InstanceID:         inst.ID.String(),
+			OpenClawAuthToken:  frameworkAuthToken,
+			OpenClawImageTag:   resolveImageTag(ctx, r.pool, r.openClawImageTag),
+			SSHPublicKey:       r.sshPublicKey,
+			BackendEgressCIDRs: r.backendEgressCIDRs,
+			OpenRouterAPIKey:   openRouterAPIKey,
+			AnthropicAPIKey:    anthropicAPIKey,
+			OpenAIAPIKey:       openAIAPIKey,
+		}
+		if allModels, lErr := db.ListEnabledModels(ctx, r.pool); lErr == nil {
+			for _, m := range allModels {
+				ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
+			}
+		}
+		userData, err = RenderCloudInit(ciData)
+	}
 	if err != nil {
 		r.logger.Error("resumer: render cloud-init", "error", err)
 		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
@@ -173,7 +197,7 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 
 	// Create new server from snapshot
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
-		Name:       "openclaw",
+		Name:       buildServerName(string(framework), user.Email, inst.ID.String()[:8]),
 		ServerType: mapping.ProviderServerType,
 		Region:     mapping.ProviderRegion,
 		ImageID:    *snap.ProviderImageID,

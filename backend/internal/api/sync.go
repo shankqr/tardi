@@ -16,6 +16,7 @@ import (
 
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/sshexec"
 )
 
@@ -284,6 +285,88 @@ fi
 `
 }
 
+// buildHermesConfigSyncScript returns the config-sync script for Hermes instances.
+// It fetches config from the Tardi API and writes to .env, config.yaml, SOUL.md,
+// then restarts the container if env vars changed.
+func buildHermesConfigSyncScript() string {
+	return "#!/bin/bash\n" +
+		"set -euo pipefail\n" +
+		"\n" +
+		"export API_URL=$(grep '^API_URL=' /opt/hermes/.env | cut -d= -f2-)\n" +
+		"export AGENT_TOKEN=$(grep '^AGENT_TOKEN=' /opt/hermes/.env | cut -d= -f2-)\n" +
+		"\n" +
+		"# Update heartbeat script\n" +
+		"curl -sf -H \"Authorization: Bearer ${AGENT_TOKEN}\" \"${API_URL}/api/agent/heartbeat-script\" -o /opt/hermes/heartbeat.sh\n" +
+		"chmod +x /opt/hermes/heartbeat.sh\n" +
+		"\n" +
+		"CONFIG=$(curl -sf \"${API_URL}/api/agent/config\" -H \"Authorization: Bearer ${AGENT_TOKEN}\")\n" +
+		"if [ $? -ne 0 ] || [ -z \"$CONFIG\" ]; then\n" +
+		"    echo 'ERROR: failed to fetch config from API'\n" +
+		"    exit 1\n" +
+		"fi\n" +
+		"\n" +
+		"NEW_OR_KEY=$(echo \"$CONFIG\" | jq -r '.config.openrouter_api_key // empty')\n" +
+		"NEW_AN_KEY=$(echo \"$CONFIG\" | jq -r '.config.anthropic_api_key // empty')\n" +
+		"NEW_OA_KEY=$(echo \"$CONFIG\" | jq -r '.config.openai_api_key // empty')\n" +
+		"NEW_PROVIDER=$(echo \"$CONFIG\" | jq -r '.config.provider // \"openrouter\"')\n" +
+		"NEW_MODEL=$(echo \"$CONFIG\" | jq -r '.config.model // empty')\n" +
+		"REMOTE_VERSION=$(echo \"$CONFIG\" | jq -r '.version // 0')\n" +
+		"\n" +
+		"cp /opt/hermes/.env /opt/hermes/.env.bak\n" +
+		"grep -v -E '_API_KEY=' /opt/hermes/.env > /opt/hermes/.env.tmp\n" +
+		"[ -n \"$NEW_OR_KEY\" ] && echo \"OPENROUTER_API_KEY=$NEW_OR_KEY\" >> /opt/hermes/.env.tmp\n" +
+		"[ -n \"$NEW_AN_KEY\" ] && echo \"ANTHROPIC_API_KEY=$NEW_AN_KEY\" >> /opt/hermes/.env.tmp\n" +
+		"[ -n \"$NEW_OA_KEY\" ] && echo \"OPENAI_API_KEY=$NEW_OA_KEY\" >> /opt/hermes/.env.tmp\n" +
+		"mv /opt/hermes/.env.tmp /opt/hermes/.env\n" +
+		"chmod 600 /opt/hermes/.env\n" +
+		"\n" +
+		"# Update config.yaml with new model\n" +
+		"if [ -n \"$NEW_MODEL\" ]; then\n" +
+		"    cat > /opt/hermes/data/config.yaml <<CFGEOF\n" +
+		"model:\n" +
+		"  default: \"${NEW_PROVIDER}/${NEW_MODEL}\"\n" +
+		"terminal:\n" +
+		"  backend: docker\n" +
+		"api_server:\n" +
+		"  enabled: true\n" +
+		"  host: \"0.0.0.0\"\n" +
+		"  port: 8642\n" +
+		"CFGEOF\n" +
+		"    chown 1000:1000 /opt/hermes/data/config.yaml\n" +
+		"fi\n" +
+		"\n" +
+		"# Update SOUL.md if provided\n" +
+		"NEW_SOUL=$(echo \"$CONFIG\" | jq -r '.config.soul_md // empty')\n" +
+		"if [ -n \"$NEW_SOUL\" ]; then\n" +
+		"    echo \"$NEW_SOUL\" > /opt/hermes/data/SOUL.md\n" +
+		"    chown 1000:1000 /opt/hermes/data/SOUL.md\n" +
+		"fi\n" +
+		"\n" +
+		"ENV_CHANGED=false\n" +
+		"if ! diff -q /opt/hermes/.env /opt/hermes/.env.bak >/dev/null 2>&1; then\n" +
+		"    ENV_CHANGED=true\n" +
+		"fi\n" +
+		"rm -f /opt/hermes/.env.bak\n" +
+		"\n" +
+		"if [ \"$ENV_CHANGED\" = true ]; then\n" +
+		"    cd /opt/hermes && docker compose up -d --force-recreate hermes-agent\n" +
+		"    HEALTHY=false\n" +
+		"    for i in $(seq 1 24); do\n" +
+		"        sleep 5\n" +
+		"        if curl -sf http://localhost:8642/health >/dev/null 2>&1; then\n" +
+		"            HEALTHY=true\n" +
+		"            break\n" +
+		"        fi\n" +
+		"    done\n" +
+		"else\n" +
+		"    echo 'env unchanged, skipping container recreate'\n" +
+		"    # Restart anyway to pick up config.yaml/SOUL.md changes\n" +
+		"    cd /opt/hermes && docker compose restart hermes-agent\n" +
+		"fi\n" +
+		"\n" +
+		"echo \"$REMOTE_VERSION\" > /opt/hermes/.config_version\n"
+}
+
 // patchModelConfig uses OpenClaw's config.patch RPC to atomically set the
 // primary model AND register all catalog models in one call. This avoids
 // the CLI "openclaw models set" loop which changes the primary as a side
@@ -409,45 +492,40 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 		pw := *inst.RootPassword
 		sshKey := deps.Config.SSHPrivateKey
 
-		// Patch the model + register all catalog models via config.patch RPC
-		// BEFORE launching the SSH script. This is critical for two reasons:
-		// 1. The SSH script may restart the container (if env vars changed),
-		//    which kills our RPC connection mid-flight.
-		// 2. CLI commands in the SSH script change the config hash, causing
-		//    baseHash mismatches if they run between our config.get and
-		//    config.patch.
-		// config.patch persists to openclaw.json, so even if the container
-		// restarts afterwards, OC reads the patched model on startup.
-		if inst.OpenClawAuthToken != nil && *inst.OpenClawAuthToken != "" {
-			agentCfg, cfgErr := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
-			if cfgErr == nil && agentCfg != nil {
-				model, _ := agentCfg.Config["model"].(string)
-				provider, _ := agentCfg.Config["provider"].(string)
-				if model != "" {
-					var modelIDs []string
-					if allModels, mErr := db.ListEnabledModels(r.Context(), deps.Pool); mErr == nil {
-						for _, m := range allModels {
-							modelIDs = append(modelIDs, m.ID)
+		// For OpenClaw: patch the model via config.patch RPC before SSH script.
+		// Hermes uses file-based config — no RPC needed.
+		if inst.Framework != models.FrameworkHermes {
+			if inst.OpenClawAuthToken != nil && *inst.OpenClawAuthToken != "" {
+				agentCfg, cfgErr := db.GetAgentConfigByInstanceID(r.Context(), deps.Pool, inst.ID)
+				if cfgErr == nil && agentCfg != nil {
+					model, _ := agentCfg.Config["model"].(string)
+					provider, _ := agentCfg.Config["provider"].(string)
+					if model != "" {
+						var modelIDs []string
+						if allModels, mErr := db.ListEnabledModels(r.Context(), deps.Pool); mErr == nil {
+							for _, m := range allModels {
+								modelIDs = append(modelIDs, m.ID)
+							}
 						}
-					}
-					if err := patchModelConfig(r.Context(), *inst.IPv4, *inst.OpenClawAuthToken, provider, model, modelIDs); err != nil {
-						slog.Warn("sync config: model RPC patch failed (script will handle it)",
-							"error", err, "instance_id", instanceID)
-					} else {
-						slog.Info("sync config: model+catalog patched via RPC", "model", model, "instance_id", instanceID)
+						if err := patchModelConfig(r.Context(), *inst.IPv4, *inst.OpenClawAuthToken, provider, model, modelIDs); err != nil {
+							slog.Warn("sync config: model RPC patch failed (script will handle it)",
+								"error", err, "instance_id", instanceID)
+						} else {
+							slog.Info("sync config: model+catalog patched via RPC", "model", model, "instance_id", instanceID)
+						}
 					}
 				}
 			}
 		}
 
 		// Deploy the script and launch it in the background.
-		// The script takes 60-90s (docker recreate + health wait) which
-		// exceeds Cloud Run's effective connection timeout (~60s), so we
-		// cannot wait for it synchronously. Instead we:
-		//   1. Upload the script (fast, <2s)
-		//   2. Launch it detached via systemd-run (returns immediately)
-		//   3. Return success to the frontend
-		encoded := base64.StdEncoding.EncodeToString([]byte(buildConfigSyncScript()))
+		var syncScript string
+		if inst.Framework == models.FrameworkHermes {
+			syncScript = buildHermesConfigSyncScript()
+		} else {
+			syncScript = buildConfigSyncScript()
+		}
+		encoded := base64.StdEncoding.EncodeToString([]byte(syncScript))
 		cmd := fmt.Sprintf(
 			"echo %s | base64 -d > /tmp/config-sync.sh && chmod +x /tmp/config-sync.sh && systemctl stop tardi-config-sync 2>/dev/null; systemctl reset-failed tardi-config-sync 2>/dev/null; systemd-run --unit=tardi-config-sync --no-block --collect bash /tmp/config-sync.sh",
 			encoded,

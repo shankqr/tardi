@@ -24,6 +24,7 @@ import (
 // frameworkCodes maps agent framework names to short codes for server naming.
 var frameworkCodes = map[string]string{
 	"openclaw": "oc",
+	"hermes":   "hm",
 }
 
 // Per-step timeouts per the architecture spec.
@@ -578,13 +579,13 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		return fmt.Errorf("store agent token: %w", err)
 	}
 
-	// Generate OpenClaw auth token
-	openClawAuthToken, err := GenerateAgentToken()
+	// Generate framework auth token (OpenClaw gateway token / Hermes API server key)
+	frameworkAuthToken, err := GenerateAgentToken()
 	if err != nil {
-		return fmt.Errorf("generate openclaw auth token: %w", err)
+		return fmt.Errorf("generate framework auth token: %w", err)
 	}
-	if err := db.UpdateInstanceOpenClawAuthToken(ctx, p.pool, inst.ID, openClawAuthToken); err != nil {
-		return fmt.Errorf("store openclaw auth token: %w", err)
+	if err := db.UpdateInstanceOpenClawAuthToken(ctx, p.pool, inst.ID, frameworkAuthToken); err != nil {
+		return fmt.Errorf("store framework auth token: %w", err)
 	}
 
 	// Generate root password (set explicitly in cloud-init to avoid Hetzner/cloud-init expiry)
@@ -612,54 +613,94 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	// Fetch API keys from agent config (with defaults for provider/model)
-	ciData := CloudInitData{
-		AgentToken:         agentToken,
-		APIURL:             p.apiURL,
-		InstanceID:         inst.ID.String(),
-		OpenClawAuthToken:  openClawAuthToken,
-		OpenClawImageTag:   resolveImageTag(ctx, p.pool, p.openClawImageTag),
-		Provider:           "openrouter",
-		Model:              defaultModel,
-		RootPassword:       rootPassword,
-		SSHPublicKey:       p.sshPublicKey,
-		Domain:             domain,
-		PreviewDomain:      previewDomain,
-		BackendEgressCIDRs: p.backendEgressCIDRs,
-	}
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, p.pool, inst.ID)
 	if err != nil {
 		return fmt.Errorf("get agent config: %w", err)
 	}
+	providerName := "openrouter"
+	modelID := defaultModel
+	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey string
+	var configVersion int
 	if agentCfg != nil {
 		if v, ok := agentCfg.Config["openrouter_api_key"].(string); ok {
-			ciData.OpenRouterAPIKey = v
+			openRouterAPIKey = v
 		}
 		if v, ok := agentCfg.Config["anthropic_api_key"].(string); ok {
-			ciData.AnthropicAPIKey = v
+			anthropicAPIKey = v
 		}
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
-			ciData.OpenAIAPIKey = v
+			openAIAPIKey = v
 		}
 		if v, ok := agentCfg.Config["provider"].(string); ok && v != "" {
-			ciData.Provider = v
+			providerName = v
 		}
 		if v, ok := agentCfg.Config["model"].(string); ok && v != "" {
-			ciData.Model = v
+			modelID = v
 		}
-		ciData.ConfigVersion = agentCfg.Version
+		configVersion = agentCfg.Version
 	}
 
-	// Fetch all enabled model IDs for OC dashboard dropdown
-	if allModels, err := db.ListEnabledModels(ctx, p.pool); err == nil {
-		for _, m := range allModels {
-			ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
-		}
+	// Resolve framework and render cloud-init
+	framework := inst.Framework
+	if framework == "" {
+		framework = models.FrameworkOpenClaw
 	}
 
-	// Render cloud-init user data
-	userData, err := RenderCloudInit(ciData)
-	if err != nil {
-		return fmt.Errorf("render cloud-init: %w", err)
+	var userData string
+	switch framework {
+	case models.FrameworkHermes:
+		hermesData := HermesCloudInitData{
+			AgentToken:         agentToken,
+			APIURL:             p.apiURL,
+			InstanceID:         inst.ID.String(),
+			APIServerKey:       frameworkAuthToken,
+			HermesImageTag:     "latest",
+			Provider:           providerName,
+			Model:              modelID,
+			OpenRouterAPIKey:   openRouterAPIKey,
+			AnthropicAPIKey:    anthropicAPIKey,
+			OpenAIAPIKey:       openAIAPIKey,
+			ConfigVersion:      configVersion,
+			RootPassword:       rootPassword,
+			SSHPublicKey:       p.sshPublicKey,
+			Domain:             domain,
+			PreviewDomain:      previewDomain,
+			BackendEgressCIDRs: p.backendEgressCIDRs,
+		}
+		userData, err = RenderHermesCloudInit(hermesData)
+		if err != nil {
+			return fmt.Errorf("render hermes cloud-init: %w", err)
+		}
+
+	default: // OpenClaw
+		ciData := CloudInitData{
+			AgentToken:         agentToken,
+			APIURL:             p.apiURL,
+			InstanceID:         inst.ID.String(),
+			OpenClawAuthToken:  frameworkAuthToken,
+			OpenClawImageTag:   resolveImageTag(ctx, p.pool, p.openClawImageTag),
+			Provider:           providerName,
+			Model:              modelID,
+			OpenRouterAPIKey:   openRouterAPIKey,
+			AnthropicAPIKey:    anthropicAPIKey,
+			OpenAIAPIKey:       openAIAPIKey,
+			ConfigVersion:      configVersion,
+			RootPassword:       rootPassword,
+			SSHPublicKey:       p.sshPublicKey,
+			Domain:             domain,
+			PreviewDomain:      previewDomain,
+			BackendEgressCIDRs: p.backendEgressCIDRs,
+		}
+		// Fetch all enabled model IDs for OC dashboard dropdown
+		if allModels, err := db.ListEnabledModels(ctx, p.pool); err == nil {
+			for _, m := range allModels {
+				ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
+			}
+		}
+		userData, err = RenderCloudInit(ciData)
+		if err != nil {
+			return fmt.Errorf("render cloud-init: %w", err)
+		}
 	}
 
 	// Fetch user email for server labels
@@ -669,7 +710,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
-		Name:       buildServerName("openclaw", user.Email, inst.ID.String()[:8]),
+		Name:       buildServerName(string(framework), user.Email, inst.ID.String()[:8]),
 		ServerType: mapping.ProviderServerType,
 		Region:     mapping.ProviderRegion,
 		Image:      mapping.ProviderImage,
@@ -874,7 +915,7 @@ func (p *Provisioner) stepActivate(ctx context.Context, job *models.Provisioning
 func GetInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID) (*models.VpsInstance, error) {
 	inst := &models.VpsInstance{}
 	err := pool.QueryRow(ctx, `
-		SELECT id, user_id, subscription_id, provider, provider_server_id, provider_region,
+		SELECT id, user_id, subscription_id, framework, provider, provider_server_id, provider_region,
 		       name, host(ipv4)::text, region, status,
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
@@ -882,7 +923,7 @@ func GetInstanceInternal(ctx context.Context, pool *pgxpool.Pool, instanceID uui
 		       created_at, updated_at
 		FROM vps_instances WHERE id = $1
 	`, instanceID).Scan(
-		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Provider,
+		&inst.ID, &inst.UserID, &inst.SubscriptionID, &inst.Framework, &inst.Provider,
 		&inst.ProviderServerID, &inst.ProviderRegion, &inst.Name, &inst.IPv4,
 		&inst.Region, &inst.Status,
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.LastHeartbeatAt,

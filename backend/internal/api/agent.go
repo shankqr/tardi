@@ -15,6 +15,7 @@ import (
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/crypto"
 	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/scripts"
 )
 
@@ -352,13 +353,22 @@ func AgentHeartbeatScriptHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		if _, err := db.GetInstanceByAgentToken(r.Context(), deps.Pool, token); err != nil {
+		inst, err := db.GetInstanceByAgentToken(r.Context(), deps.Pool, token)
+		if err != nil {
 			WriteError(w, http.StatusUnauthorized, "unauthorized", "invalid agent token")
 			return
 		}
 
+		var script string
+		switch inst.Framework {
+		case models.FrameworkHermes:
+			script = scripts.HermesHeartbeatScript
+		default:
+			script = scripts.HeartbeatScript
+		}
+
 		w.Header().Set("Content-Type", "text/x-shellscript")
-		w.Write([]byte(scripts.HeartbeatScript))
+		w.Write([]byte(script))
 	}
 }
 

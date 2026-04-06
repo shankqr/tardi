@@ -24,6 +24,7 @@ export const mockDashboardState: DashboardState = {
 		{
 			id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
 			name: 'my-trading-agent',
+			framework: 'openclaw',
 			status: 'active',
 			provider: 'hetzner',
 			ipv4: '203.0.113.10',

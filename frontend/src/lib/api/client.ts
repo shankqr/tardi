@@ -110,12 +110,13 @@ export async function getModels(): Promise<{ models: ModelInfo[]; default_model_
 
 export async function createInstance(
 	token: string,
-	data: { name: string; region: string }
+	data: { name: string; region: string; framework?: string }
 ): Promise<VpsInstance> {
 	if (USE_MOCK) {
 		return {
 			id: 'mock-instance',
 			name: data.name,
+			framework: (data.framework as 'openclaw' | 'hermes') ?? 'openclaw',
 			status: 'requested',
 			provider: 'hetzner',
 			ipv4: null,
@@ -167,6 +168,7 @@ export async function renameInstance(
 		return {
 			id: instanceId,
 			name,
+			framework: 'openclaw',
 			status: 'active',
 			provider: 'hetzner',
 			ipv4: null,

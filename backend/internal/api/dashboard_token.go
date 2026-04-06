@@ -12,6 +12,7 @@ import (
 
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/db"
+	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/sshexec"
 )
 
@@ -48,16 +49,8 @@ func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Read the actual gateway token OpenClaw is using. Three possible sources:
-		// 1. Running container's process env (most reliable — what OpenClaw actually uses)
-		// 2. .env file (set at provisioning, may be stale after restart)
-		// 3. openclaw.json gateway.auth.token (only if set via config commands)
-		// This script is READ-ONLY — no modifications to openclaw.json.
-		// Config fixes (trustedProxies, auth mode, etc.) are handled by the
-		// heartbeat drift guard and provisioner.
 		// Try DB-cached token first — avoids SSH entirely when available.
-		// This is the fast path; SSH is only needed when the DB token is empty
-		// (e.g. first boot before heartbeat syncs the token).
+		// For OpenClaw this is the gateway token; for Hermes it's the API_SERVER_KEY.
 		if inst.OpenClawAuthToken != nil && *inst.OpenClawAuthToken != "" {
 			WriteJSON(w, http.StatusOK, map[string]string{
 				"token": *inst.OpenClawAuthToken,
@@ -65,26 +58,31 @@ func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Fallback: read token from VPS via SSH
-		script := `#!/bin/bash
-# No set -e: we want to try all fallbacks even if earlier commands fail
-OC_CFG="/opt/openclaw/data/openclaw/openclaw.json"
-# 1. Read from running container's process environment (most reliable)
-GW_TOKEN=$(docker exec openclaw-gateway printenv OPENCLAW_GATEWAY_TOKEN 2>/dev/null || true)
-# 2. Fallback: .env file
-if [ -z "$GW_TOKEN" ]; then
-    GW_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2- || true)
-fi
-# 3. Fallback: openclaw.json
-if [ -z "$GW_TOKEN" ]; then
-    GW_TOKEN=$(cat "$OC_CFG" 2>/dev/null | jq -r '.gateway.auth.token // empty' 2>/dev/null || true)
-fi
-if [ -z "$GW_TOKEN" ]; then
-    echo '{"error":"no gateway token"}'
-    exit 0
-fi
-echo "{\"token\":\"$GW_TOKEN\"}"
-`
+		// Fallback: read token from VPS via SSH.
+		// Both scripts end with the same JSON output logic.
+		scriptTail := "\n" + `if [ -z "$GW_TOKEN" ]; then` + "\n" +
+			`    echo '{"error":"no gateway token"}'` + "\n" +
+			"    exit 0\nfi\n" +
+			`echo "{\"token\":\"$GW_TOKEN\"}"` + "\n"
+
+		var script string
+		if inst.Framework == models.FrameworkHermes {
+			script = "#!/bin/bash\n" +
+				"GW_TOKEN=$(docker exec hermes-agent printenv API_SERVER_KEY 2>/dev/null || true)\n" +
+				"if [ -z \"$GW_TOKEN\" ]; then\n" +
+				"    GW_TOKEN=$(grep '^API_SERVER_KEY=' /opt/hermes/.env 2>/dev/null | cut -d= -f2- || true)\n" +
+				"fi\n" + scriptTail
+		} else {
+			script = "#!/bin/bash\n" +
+				"OC_CFG=\"/opt/openclaw/data/openclaw/openclaw.json\"\n" +
+				"GW_TOKEN=$(docker exec openclaw-gateway printenv OPENCLAW_GATEWAY_TOKEN 2>/dev/null || true)\n" +
+				"if [ -z \"$GW_TOKEN\" ]; then\n" +
+				"    GW_TOKEN=$(grep '^OPENCLAW_GATEWAY_TOKEN=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2- || true)\n" +
+				"fi\n" +
+				"if [ -z \"$GW_TOKEN\" ]; then\n" +
+				"    GW_TOKEN=$(cat \"$OC_CFG\" 2>/dev/null | jq -r '.gateway.auth.token // empty' 2>/dev/null || true)\n" +
+				"fi\n" + scriptTail
+		}
 		out, err := sshexec.RunCommand(*inst.IPv4, deps.Config.SSHPrivateKey, *inst.RootPassword, script, 30*time.Second)
 		if err != nil {
 			slog.Error("dashboard-token: ssh failed", "error", err, "instance_id", instanceID)

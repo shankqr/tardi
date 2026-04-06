@@ -24,6 +24,8 @@ export type ProvisioningStep =
 	| 'install_agent'
 	| 'activate';
 
+export type AgentFramework = 'openclaw' | 'hermes';
+
 export type PlanTier = 'standard' | 'pro';
 
 export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'suspended';
@@ -31,6 +33,7 @@ export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'suspended
 export interface VpsInstance {
 	id: string;
 	name: string;
+	framework: AgentFramework;
 	status: VpsStatus;
 	step?: ProvisioningStep;
 	provider: string;

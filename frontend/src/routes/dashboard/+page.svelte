@@ -6,6 +6,7 @@
 	import InstanceCard from '$lib/components/InstanceCard.svelte';
 	import SubscriptionCard from '$lib/components/SubscriptionCard.svelte';
 	import { plans } from '$lib/api/mock';
+	import type { AgentFramework } from '$lib/types';
 
 	const activeInstance = $derived(
 		$dashboardState?.instances.find(
@@ -14,6 +15,7 @@
 	);
 
 	let agentName = $state('');
+	let selectedFramework = $state<AgentFramework>('openclaw');
 	let deploying = $state(false);
 	let deployError = $state('');
 
@@ -26,7 +28,8 @@
 			if (!token) return;
 			const instance = await createInstance(token, {
 				name: agentName,
-				region: 'eu-central'
+				region: 'eu-central',
+				framework: selectedFramework
 			});
 			await refreshDashboard();
 			goto(`/dashboard/instances/${instance.id}`);
@@ -78,6 +81,29 @@
 								placeholder="e.g. my-trading-agent"
 							/>
 						</div>
+
+						<div>
+							<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Agent Framework</label>
+							<div class="grid grid-cols-2 gap-3">
+								<button
+									type="button"
+									onclick={() => selectedFramework = 'openclaw'}
+									class="rounded-lg border-2 p-3 text-left transition-colors {selectedFramework === 'openclaw' ? 'border-gray-900 dark:border-white bg-gray-50 dark:bg-gray-800' : 'border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500'}"
+								>
+									<div class="text-sm font-semibold text-gray-900 dark:text-white">OpenClaw</div>
+									<div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Web dashboard & code execution</div>
+								</button>
+								<button
+									type="button"
+									onclick={() => selectedFramework = 'hermes'}
+									class="rounded-lg border-2 p-3 text-left transition-colors {selectedFramework === 'hermes' ? 'border-gray-900 dark:border-white bg-gray-50 dark:bg-gray-800' : 'border-gray-200 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-500'}"
+								>
+									<div class="text-sm font-semibold text-gray-900 dark:text-white">Hermes</div>
+									<div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Self-improving agent with skills & memory</div>
+								</button>
+							</div>
+						</div>
+
 						<button
 							type="submit"
 							disabled={deploying}

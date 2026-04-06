@@ -26,7 +26,7 @@
 	<div class="flex items-start justify-between">
 		<div>
 			<h3 class="font-semibold text-gray-900 dark:text-white">{instance.name}</h3>
-			<p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{planName}</p>
+			<p class="mt-0.5 text-xs text-gray-400 dark:text-gray-500">{planName} &middot; {instance.framework === 'hermes' ? 'Hermes' : 'OpenClaw'}</p>
 		</div>
 		<StatusBadge status={instance.status} updateStatus={instance.openclaw_update_status} />
 	</div>

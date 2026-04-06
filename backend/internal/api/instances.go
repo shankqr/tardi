@@ -36,6 +36,17 @@ func CreateInstanceHandler(deps Dependencies) http.HandlerFunc {
 			WriteError(w, http.StatusBadRequest, "bad_request", "region is required")
 			return
 		}
+		// Default framework to openclaw if not provided.
+		if req.Framework == "" {
+			req.Framework = string(models.FrameworkOpenClaw)
+		}
+		switch models.AgentFramework(req.Framework) {
+		case models.FrameworkOpenClaw, models.FrameworkHermes:
+			// valid
+		default:
+			WriteError(w, http.StatusBadRequest, "bad_request", "invalid framework: "+req.Framework)
+			return
+		}
 
 		// Check active subscription
 		sub, err := db.GetSubscriptionByUserID(r.Context(), deps.Pool, user.ID)
@@ -80,6 +91,7 @@ func CreateInstanceHandler(deps Dependencies) http.HandlerFunc {
 			ID:             instanceID,
 			UserID:         user.ID,
 			SubscriptionID: sub.ID,
+			Framework:      models.AgentFramework(req.Framework),
 			Provider:       mapping.Provider,
 			ProviderRegion: &mapping.ProviderRegion,
 			Name:           req.Name,
