@@ -109,19 +109,23 @@ systemctl enable docker
 systemctl start docker
 log_status "DOCKER_INSTALLED"
 
-# --- Create hermes user with Docker access ---
+# --- Create hermes user with Docker access + passwordless sudo ---
 useradd -r -m -s /bin/bash hermes || true
 usermod -aG docker hermes
+# Passwordless sudo so the install script can install system packages non-interactively
+echo 'hermes ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/hermes
+
+# --- Pre-install system deps that the Hermes install script would ask for interactively ---
+apt-get install -y -qq ripgrep ffmpeg 2>/dev/null || true
 
 # --- Install Hermes via official install script ---
 # The install script sets up Python 3.11+, Node.js 22, uv, and the hermes CLI.
-# It installs to ~/.hermes/ under the hermes user and symlinks to ~/.local/bin/hermes.
+# --skip-setup avoids the interactive setup wizard.
 log_status "HERMES_INSTALLING"
-su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash' || {
-    log_status "HERMES_INSTALL_FAILED"
-    # Retry once
+su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup' || {
+    log_status "HERMES_INSTALL_RETRY"
     sleep 5
-    su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash'
+    su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup'
 }
 log_status "HERMES_INSTALLED"
 
