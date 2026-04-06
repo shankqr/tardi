@@ -1,11 +1,12 @@
 import type { Page } from '@playwright/test';
 
 /**
- * Wait for OpenClaw status to show "Running" after a config change.
+ * Wait for agent status to show "Running" after a config change.
+ * Works for both OpenClaw and Hermes frameworks.
  * Polls the instance page for up to timeoutMs, reloading periodically.
- * Throws if OpenClaw does not return to Running within the timeout.
+ * Throws if the agent does not return to Running within the timeout.
  */
-export async function waitForOpenClawRunning(page: Page, timeoutMs = 300_000): Promise<void> {
+export async function waitForAgentRunning(page: Page, timeoutMs = 300_000): Promise<void> {
 	const currentUrl = page.url();
 	const instanceMatch = currentUrl.match(/\/dashboard\/instances\/[^/]+/);
 	const instancePath = instanceMatch ? instanceMatch[0] : null;
@@ -17,11 +18,11 @@ export async function waitForOpenClawRunning(page: Page, timeoutMs = 300_000): P
 		const statusText = await page.locator('dd').filter({ hasText: /Running|Healthy/i }).first()
 			.isVisible({ timeout: 10_000 }).catch(() => false);
 		if (statusText) {
-			console.log(`[E2E] OpenClaw status: Running (${Math.round((Date.now() - start) / 1000)}s)`);
+			console.log(`[E2E] Agent status: Running (${Math.round((Date.now() - start) / 1000)}s)`);
 			return;
 		}
 
-		console.log(`[E2E] Waiting for OpenClaw to be Running... (${Math.round((Date.now() - start) / 1000)}s)`);
+		console.log(`[E2E] Waiting for agent to be Running... (${Math.round((Date.now() - start) / 1000)}s)`);
 
 		// Reload every 3rd check to get fresh dashboard state; otherwise just wait
 		// for the in-page 5s polling to update
@@ -36,5 +37,12 @@ export async function waitForOpenClawRunning(page: Page, timeoutMs = 300_000): P
 		}
 		await page.waitForTimeout(5_000);
 	}
-	throw new Error(`OpenClaw did not return to Running status within ${timeoutMs / 1000}s`);
+	throw new Error(`Agent did not return to Running status within ${timeoutMs / 1000}s`);
+}
+
+/**
+ * @deprecated Use waitForAgentRunning instead. Kept for backward compatibility.
+ */
+export async function waitForOpenClawRunning(page: Page, timeoutMs = 300_000): Promise<void> {
+	return waitForAgentRunning(page, timeoutMs);
 }

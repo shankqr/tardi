@@ -129,6 +129,50 @@ export async function ensureInstancePage(
 }
 
 /**
+ * Create an instance with the given framework via the Tardi API.
+ * Returns the instance ID.
+ */
+export async function createInstanceViaAPI(
+	email: string,
+	password: string,
+	name: string,
+	framework: 'openclaw' | 'hermes' = 'openclaw'
+): Promise<string> {
+	const idToken = await getIdToken(email, password);
+	const res = await fetch(`${API_URL}/api/instances`, {
+		method: 'POST',
+		headers: {
+			Authorization: `Bearer ${idToken}`,
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({ name, region: 'eu-central', framework }),
+	});
+	if (!res.ok) {
+		const body = await res.text().catch(() => '');
+		throw new Error(`Failed to create instance (${res.status}): ${body}`);
+	}
+	const data = await res.json();
+	return data.id;
+}
+
+/**
+ * Get the framework of an instance by checking the dashboard state API.
+ */
+export async function getInstanceFramework(
+	email: string,
+	password: string,
+	instId: string
+): Promise<string> {
+	const idToken = await getIdToken(email, password);
+	const res = await fetch(`${API_URL}/api/dashboard/state`, {
+		headers: { Authorization: `Bearer ${idToken}` },
+	});
+	const state = await res.json();
+	const inst = state.instances?.find((i: { id: string }) => i.id === instId);
+	return inst?.framework || 'openclaw';
+}
+
+/**
  * Delete any existing non-terminated instances for the given account.
  * Polls until all instances are terminated or only 'error'/'terminating' remain
  * that won't block a new deploy (max 5 minutes).

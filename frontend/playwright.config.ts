@@ -37,6 +37,12 @@ export default defineConfig({
 		{
 			name: 'journey',
 			testDir: './e2e/tests/journey',
+			testMatch: 'full-flow.spec.ts',
+		},
+		{
+			name: 'hermes',
+			testDir: './e2e/tests/journey',
+			testMatch: 'hermes-flow.spec.ts',
 		},
 		{
 			name: 'prod-e2e',

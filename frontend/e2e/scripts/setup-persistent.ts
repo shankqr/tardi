@@ -74,7 +74,7 @@ async function getFirebaseIdToken(userEmail: string, userPassword: string): Prom
 
 async function checkInstance(
 	idToken: string
-): Promise<{ id: string; status: string; name: string } | null> {
+): Promise<{ id: string; status: string; name: string; framework: string } | null> {
 	const apiUrl =
 		process.env.E2E_API_URL || 'https://tardi-api-dev-lckw22k4gq-uc.a.run.app';
 
@@ -91,7 +91,7 @@ async function checkInstance(
 		if (instances.length === 0) return null;
 
 		const instance = instances[0];
-		return { id: instance.id, status: instance.status, name: instance.name };
+		return { id: instance.id, status: instance.status, name: instance.name, framework: instance.framework || 'openclaw' };
 	} catch {
 		return null;
 	}
@@ -142,13 +142,15 @@ async function setup() {
 	const instance = await checkInstance(idToken);
 
 	if (instance) {
-		console.log(`   Instance found: ${instance.id} (status: ${instance.status}, name: ${instance.name})`);
+		console.log(`   Instance found: ${instance.id} (status: ${instance.status}, name: ${instance.name}, framework: ${instance.framework})`);
 		console.log('\nSetup check complete.');
 		return;
 	}
 
 	// No active instance — deploy one
-	console.log('   No active instance found. Deploying...');
+	// Use E2E_FRAMEWORK env var to control which framework to deploy (default: openclaw)
+	const framework = process.env.E2E_FRAMEWORK || 'openclaw';
+	console.log(`   No active instance found. Deploying with framework: ${framework}...`);
 	const apiUrl =
 		process.env.E2E_API_URL || 'https://tardi-api-dev-lckw22k4gq-uc.a.run.app';
 
@@ -158,7 +160,7 @@ async function setup() {
 			Authorization: `Bearer ${idToken}`,
 			'Content-Type': 'application/json',
 		},
-		body: JSON.stringify({ name: 'e2e-persistent', region: 'eu-central' }),
+		body: JSON.stringify({ name: `e2e-persistent-${framework}`, region: 'eu-central', framework }),
 	});
 
 	if (!createRes.ok) {
