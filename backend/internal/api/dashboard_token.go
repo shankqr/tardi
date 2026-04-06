@@ -68,10 +68,8 @@ func DashboardTokenHandler(deps Dependencies) http.HandlerFunc {
 		var script string
 		if inst.Framework == models.FrameworkHermes {
 			script = "#!/bin/bash\n" +
-				"GW_TOKEN=$(docker exec hermes-agent printenv API_SERVER_KEY 2>/dev/null || true)\n" +
-				"if [ -z \"$GW_TOKEN\" ]; then\n" +
-				"    GW_TOKEN=$(grep '^API_SERVER_KEY=' /opt/hermes/.env 2>/dev/null | cut -d= -f2- || true)\n" +
-				"fi\n" + scriptTail
+				"GW_TOKEN=$(grep '^API_SERVER_KEY=' /opt/hermes/.env 2>/dev/null | cut -d= -f2- || true)\n" +
+				scriptTail
 		} else {
 			script = "#!/bin/bash\n" +
 				"OC_CFG=\"/opt/openclaw/data/openclaw/openclaw.json\"\n" +

@@ -348,21 +348,17 @@ func buildHermesConfigSyncScript() string {
 		"fi\n" +
 		"rm -f /opt/hermes/.env.bak\n" +
 		"\n" +
-		"if [ \"$ENV_CHANGED\" = true ]; then\n" +
-		"    cd /opt/hermes && docker compose up -d --force-recreate hermes-agent\n" +
-		"    HEALTHY=false\n" +
-		"    for i in $(seq 1 24); do\n" +
-		"        sleep 5\n" +
-		"        if curl -sf http://localhost:8642/health >/dev/null 2>&1; then\n" +
-		"            HEALTHY=true\n" +
-		"            break\n" +
-		"        fi\n" +
-		"    done\n" +
-		"else\n" +
-		"    echo 'env unchanged, skipping container recreate'\n" +
-		"    # Restart anyway to pick up config.yaml/SOUL.md changes\n" +
-		"    cd /opt/hermes && docker compose restart hermes-agent\n" +
-		"fi\n" +
+		"# Restart Hermes systemd service to pick up config changes\n" +
+		"systemctl restart hermes-agent\n" +
+		"HEALTHY=false\n" +
+		"for i in $(seq 1 24); do\n" +
+		"    sleep 5\n" +
+		"    if curl -sf http://localhost:8642/health >/dev/null 2>&1; then\n" +
+		"        HEALTHY=true\n" +
+		"        break\n" +
+		"    fi\n" +
+		"done\n" +
+		"rm -f /opt/hermes/.env.bak\n" +
 		"\n" +
 		"echo \"$REMOTE_VERSION\" > /opt/hermes/.config_version\n"
 }

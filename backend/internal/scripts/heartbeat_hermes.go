@@ -3,6 +3,8 @@ package scripts
 // HermesHeartbeatScript is the bash script that runs on each Hermes VPS every
 // 5 minutes via a systemd timer. It reports health status to the Tardi API,
 // syncs config when the version changes, and guards against drift.
+//
+// Hermes runs as a native systemd service (hermes-agent.service), NOT Docker.
 const HermesHeartbeatScript = `#!/bin/bash
 source /opt/hermes/.env
 
@@ -21,30 +23,33 @@ HEALTH=$(curl -sf http://localhost:8642/health 2>/dev/null)
 if [ $? -eq 0 ]; then
     STATUS="running"
 else
-    # Check if container exists but is unhealthy
-    CONTAINER_STATE=$(docker inspect -f '{{.State.Status}}' hermes-agent 2>/dev/null)
-    if [ "$CONTAINER_STATE" = "running" ]; then
+    # Check if systemd service is active
+    SVC_STATE=$(systemctl is-active hermes-agent 2>/dev/null)
+    if [ "$SVC_STATE" = "active" ]; then
         STATUS="unhealthy"
-    elif [ -n "$CONTAINER_STATE" ]; then
+    elif [ "$SVC_STATE" = "inactive" ] || [ "$SVC_STATE" = "failed" ]; then
         STATUS="stopped"
     else
         STATUS="not_found"
     fi
 fi
 
-# Detect current running Hermes version (image tag)
-CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' hermes-agent 2>/dev/null)
-CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://' | tr -d '[:space:]')
-[ -z "$CURRENT_TAG" ] && CURRENT_TAG="unknown"
+# Detect current Hermes version
+CURRENT_TAG="unknown"
+HERMES_BIN=$(su - hermes -c 'which hermes' 2>/dev/null || echo "")
+if [ -n "$HERMES_BIN" ]; then
+    CURRENT_TAG=$(su - hermes -c 'hermes --version 2>/dev/null' | head -1 | sed 's/[^0-9.]//g')
+    [ -z "$CURRENT_TAG" ] && CURRENT_TAG="unknown"
+fi
 
 # Read update status if mid-update
 UPDATE_STATUS=$(cat /opt/hermes/.update_status 2>/dev/null || echo "")
 UPDATE_ERROR=$(cat /opt/hermes/.update_error 2>/dev/null || echo "")
 
-# Check for provider errors in recent docker logs
+# Check for errors in recent journal logs
 AGENT_ERROR=""
 if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
-    RECENT_LOGS=$(docker logs hermes-agent --tail 100 --since 10m 2>&1)
+    RECENT_LOGS=$(journalctl -u hermes-agent --no-pager -n 100 --since "10 min ago" 2>&1)
     if echo "$RECENT_LOGS" | grep -qi "key limit exceeded"; then
         AGENT_ERROR="openrouter_credits_exhausted"
     elif echo "$RECENT_LOGS" | grep -qi "invalid.*api.*key\|authentication.*failed"; then
@@ -72,8 +77,6 @@ if [ -n "$API_PREVIEW_DOMAIN" ]; then
 fi
 
 # --- Caddy drift guard ---
-# Ensure Caddyfile matches expected routing:
-# Preview domain → port 3000, everything else → port 8642
 source /opt/hermes/.env 2>/dev/null
 EXPECTED_CADDYFILE=""
 if [ -n "${PREVIEW_DOMAIN:-}" ]; then
@@ -100,7 +103,6 @@ fi
 API_CONFIG_VERSION=$(echo "$RESPONSE" | jq -r '.config_version // empty' 2>/dev/null)
 LOCAL_CONFIG_VERSION=$(cat /opt/hermes/.config_version 2>/dev/null || echo "0")
 if [ -n "$API_CONFIG_VERSION" ] && [ "$API_CONFIG_VERSION" != "$LOCAL_CONFIG_VERSION" ]; then
-    # Fetch latest config from API
     CONFIG_RESPONSE=$(curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/config" 2>/dev/null)
     if [ $? -eq 0 ]; then
         # Update API keys in .env
@@ -145,18 +147,18 @@ api_server:
   host: "0.0.0.0"
   port: 8642
 CFGEOF
-            chown 1000:1000 /opt/hermes/data/config.yaml
+            chown hermes:hermes /opt/hermes/data/config.yaml
         fi
 
         # Update SOUL.md if provided
         NEW_SOUL=$(echo "$CONFIG_RESPONSE" | jq -r '.config.soul_md // empty' 2>/dev/null)
         if [ -n "$NEW_SOUL" ]; then
             echo "$NEW_SOUL" > /opt/hermes/data/SOUL.md
-            chown 1000:1000 /opt/hermes/data/SOUL.md
+            chown hermes:hermes /opt/hermes/data/SOUL.md
         fi
 
-        # Restart container to pick up new config
-        cd /opt/hermes && docker compose restart 2>/dev/null
+        # Restart Hermes service to pick up new config
+        systemctl restart hermes-agent 2>/dev/null
 
         echo "$API_CONFIG_VERSION" > /opt/hermes/.config_version
     fi
