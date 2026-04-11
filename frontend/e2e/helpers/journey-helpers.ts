@@ -217,7 +217,7 @@ export async function deleteExistingInstances(
 
 	// Poll until no instances block a new deploy (terminated/error are fine)
 	const start = Date.now();
-	const timeoutMs = 300_000; // 5 minutes
+	const timeoutMs = 600_000; // 10 minutes — snapshot-restored instances can take longer
 	while (Date.now() - start < timeoutMs) {
 		try {
 			const token = await getIdToken(email, password);
@@ -245,5 +245,5 @@ export async function deleteExistingInstances(
 		}
 		await new Promise((r) => setTimeout(r, 10000));
 	}
-	throw new Error('Instances did not terminate within 5 minutes');
+	throw new Error('Instances did not terminate within 10 minutes');
 }
