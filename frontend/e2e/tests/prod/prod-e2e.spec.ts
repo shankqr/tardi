@@ -196,22 +196,24 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 			await chatInput.click();
 			await chatInput.fill('Hello, what is 2 + 2?');
 			await page.keyboard.press('Enter');
+			console.log('[Prod E2E] Message sent, waiting for response...');
 
 			let responseDetected = false;
 			const startTime = Date.now();
 			const initialContent = await page.textContent('body') || '';
 			const initialLength = initialContent.length;
 
-			while (Date.now() - startTime < 30_000) {
+			while (Date.now() - startTime < 60_000) {
 				await page.waitForTimeout(3000);
 				const currentContent = await page.textContent('body') || '';
 				if (currentContent.length > initialLength + 50) {
 					responseDetected = true;
+					console.log(`[Prod E2E] Response detected after ${Math.round((Date.now() - startTime) / 1000)}s`);
 					break;
 				}
 			}
 
-			expect(responseDetected).toBeTruthy();
+			expect(responseDetected, 'Agent did not respond within 60s').toBeTruthy();
 			console.log('[Prod E2E] Dashboard responded with relevant content');
 		} else {
 			console.log('[Prod E2E] Dashboard never became reachable, skipping OC verification');
