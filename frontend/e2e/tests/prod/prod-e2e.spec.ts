@@ -142,11 +142,6 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 
 	// ── Step 7: Verify OpenClaw dashboard responds ──
 	await test.step('Verify OpenClaw dashboard', async () => {
-		if (!selectedModelName) {
-			console.log('[Prod E2E] Skipping: no model selected');
-			return;
-		}
-
 		const idToken = await getIdToken(PROD_EMAIL, PROD_PASSWORD);
 
 		const dashTokenRes = await fetch(
@@ -199,7 +194,7 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 			console.log('[Prod E2E] Control UI loaded, chat input found');
 
 			await chatInput.click();
-			await chatInput.fill('what model are you using right now?');
+			await chatInput.fill('Hello, what is 2 + 2?');
 			await page.keyboard.press('Enter');
 
 			let responseDetected = false;
