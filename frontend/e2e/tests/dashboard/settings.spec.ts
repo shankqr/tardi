@@ -1,16 +1,16 @@
 import { test, expect } from '../../fixtures/auth';
-import { loadTestState } from '../../helpers/test-state';
+import { loadAccountState } from '../../helpers/test-state';
 
 test.describe('Settings page', () => {
 	test('settings page shows account info', async ({ authedPage: page }) => {
-		const state = loadTestState();
+		const account = loadAccountState('openclaw');
 		await page.goto('/dashboard/settings');
 
 		// Should show Settings heading
 		await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible({ timeout: 10_000 });
 
 		// Should show the user's email
-		await expect(page.getByText(state.email).first()).toBeVisible({ timeout: 10_000 });
+		await expect(page.getByText(account.email).first()).toBeVisible({ timeout: 10_000 });
 
 		// Should show back to dashboard link
 		await expect(page.getByRole('link', { name: /back to dashboard/i })).toBeVisible();

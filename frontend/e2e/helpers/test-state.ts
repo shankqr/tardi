@@ -3,12 +3,16 @@ import { join } from 'path';
 
 const STATE_FILE = join(__dirname, '..', '.test-state.json');
 
-export interface TestState {
+export interface AccountState {
 	email: string;
 	password: string;
 	instanceId: string;
-	framework: string;
 	firebaseUid: string;
+}
+
+export interface TestState {
+	openclaw: AccountState;
+	hermes: AccountState;
 }
 
 export function saveTestState(state: TestState): void {
@@ -22,6 +26,12 @@ export function loadTestState(): TestState {
 		);
 	}
 	return JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+}
+
+/** Load account state for a specific framework. */
+export function loadAccountState(framework: 'openclaw' | 'hermes'): AccountState {
+	const state = loadTestState();
+	return state[framework];
 }
 
 export function hasTestState(): boolean {

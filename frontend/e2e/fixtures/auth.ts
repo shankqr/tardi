@@ -1,5 +1,5 @@
 import { test as base, expect, type Page } from '@playwright/test';
-import { loadTestState } from '../helpers/test-state';
+import { loadAccountState } from '../helpers/test-state';
 
 /**
  * Login helper using pressSequentially to work around Svelte 5 hydration issues.
@@ -27,19 +27,11 @@ export async function loginWithCredentials(
 /**
  * Navigate to the first instance detail page from the dashboard.
  * Returns false if no instance is found (caller should skip the test).
- *
- * Waits for the dashboard API polling to populate the instance list before
- * checking for instance links — the dashboard loads a shell first, then
- * fetches state via /api/dashboard/state which populates instance cards.
  */
 export async function navigateToInstance(page: Page): Promise<boolean> {
-	// Wait for the dashboard API polling to finish — the page shows "Loading dashboard..."
-	// until /api/dashboard/state returns, then renders either instance cards or deploy form.
-	// First wait for the loading indicator to disappear, then check for content.
 	const loading = page.getByText('Loading dashboard...');
 	await loading.waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => {});
 
-	// Now wait for actual dashboard content (use heading role to avoid matching description text)
 	await expect(
 		page.getByRole('heading', { name: 'Your Agent' }).or(page.getByRole('heading', { name: 'Deploy your agent' })).first()
 	).toBeVisible({ timeout: 15_000 });
@@ -57,24 +49,28 @@ export async function navigateToInstance(page: Page): Promise<boolean> {
 	return true;
 }
 
+async function waitForDashboard(page: Page): Promise<void> {
+	const loading = page.getByText('Loading dashboard...');
+	await loading.waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => {});
+	await expect(
+		page.getByRole('heading', { name: 'Your Agent' }).or(page.getByText('Deploy your agent').first()).first()
+	).toBeVisible({ timeout: 15_000 });
+}
+
 /**
- * Auth fixture that logs into the test account created by the setup project.
- * Use for dashboard tests that need a pre-authenticated session with an active instance.
- *
- * Usage:
- *   import { test, expect } from '../../fixtures/auth';
- *   test('my test', async ({ authedPage }) => { ... });
+ * Auth fixture — logs into the OpenClaw test account (default for generic dashboard tests).
  */
-export const test = base.extend<{ authedPage: Page }>({
+export const test = base.extend<{ authedPage: Page; authedHermesPage: Page }>({
 	authedPage: async ({ page }, use) => {
-		const state = loadTestState();
-		await loginWithCredentials(page, state.email, state.password);
-		// Wait for dashboard API polling to finish loading
-		const loading = page.getByText('Loading dashboard...');
-		await loading.waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => {});
-		await expect(
-			page.getByRole('heading', { name: 'Your Agent' }).or(page.getByText('Deploy your agent').first()).first()
-		).toBeVisible({ timeout: 15_000 });
+		const account = loadAccountState('openclaw');
+		await loginWithCredentials(page, account.email, account.password);
+		await waitForDashboard(page);
+		await use(page);
+	},
+	authedHermesPage: async ({ page }, use) => {
+		const account = loadAccountState('hermes');
+		await loginWithCredentials(page, account.email, account.password);
+		await waitForDashboard(page);
 		await use(page);
 	},
 });

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
-import { loadTestState } from '../../helpers/test-state';
+import { loadAccountState } from '../../helpers/test-state';
 import { loginWithCredentials } from '../../fixtures/auth';
 
 // VPS details — set via env vars; skip test if not available
@@ -9,8 +9,8 @@ const VPS_IP = process.env.E2E_VPS_IP || '';
 const OC_AUTH_TOKEN = process.env.E2E_OC_AUTH_TOKEN || '';
 
 async function login(page: Page): Promise<void> {
-	const state = loadTestState();
-	await loginWithCredentials(page, state.email, state.password);
+	const account = loadAccountState('openclaw');
+	await loginWithCredentials(page, account.email, account.password);
 }
 
 /** SSH into VPS and read the current primary model from OpenClaw. */
