@@ -186,15 +186,18 @@ export async function deleteExistingInstances(
 		headers: { Authorization: `Bearer ${idToken}` },
 	});
 	const state = await res.json();
-	const deletableInstances = (state.instances || []).filter(
-		(i: { status: string }) =>
-			i.status !== 'terminated' && i.status !== 'terminating'
+	const allNonTerminated = (state.instances || []).filter(
+		(i: { status: string }) => i.status !== 'terminated'
 	);
 
-	if (!deletableInstances.length) {
+	if (!allNonTerminated.length) {
 		console.log('[E2E] No active instances to delete');
 		return;
 	}
+
+	const deletableInstances = allNonTerminated.filter(
+		(i: { status: string }) => i.status !== 'terminating'
+	);
 
 	for (const inst of deletableInstances) {
 		console.log(`[E2E] Deleting instance ${inst.id} (status: ${inst.status})`);
@@ -206,6 +209,10 @@ export async function deleteExistingInstances(
 			const body = await delRes.text().catch(() => '');
 			console.log(`[E2E] Delete returned ${delRes.status}: ${body}`);
 		}
+	}
+
+	if (!deletableInstances.length) {
+		console.log(`[E2E] ${allNonTerminated.length} instance(s) already terminating, waiting...`);
 	}
 
 	// Poll until no instances block a new deploy (terminated/error are fine)
