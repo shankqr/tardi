@@ -1,7 +1,6 @@
-import { test, expect, PERSISTENT_PASSWORD } from '../../fixtures/auth';
+import { test, expect } from '../../fixtures/auth';
 
 test.describe('Session persistence', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('session survives page reload', async ({ authedPage: page }) => {
 		// Reload the page

@@ -1,7 +1,6 @@
-import { test, expect, PERSISTENT_PASSWORD } from '../../fixtures/auth';
+import { test, expect } from '../../fixtures/auth';
 
 test.describe('Logout', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('logout redirects to homepage and clears session', async ({ authedPage: page }) => {
 		// Click Sign out

@@ -1,11 +1,10 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
 
 const API_KEY_1 = process.env.E2E_OPENROUTER_API_KEY || '';
 const API_KEY_2 = process.env.E2E_OPENROUTER_API_KEY_2 || '';
 
 test.describe('Config swap: API key', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('swap OpenRouter API key and restore', async ({ authedPage: page }) => {
 		test.skip(!API_KEY_1 || !API_KEY_2, 'Both E2E_OPENROUTER_API_KEY and E2E_OPENROUTER_API_KEY_2 required');

@@ -1,10 +1,9 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
 
 const API_KEY = process.env.E2E_OPENROUTER_API_KEY || '';
 
 test.describe('Config sync persists across navigation', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('"Applying Config" survives navigation away and back', async ({ authedPage: page }) => {
 		test.skip(!API_KEY, 'E2E_OPENROUTER_API_KEY required');

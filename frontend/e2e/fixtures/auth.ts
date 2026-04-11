@@ -1,8 +1,5 @@
 import { test as base, expect, type Page } from '@playwright/test';
-
-export const PERSISTENT_EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
-export const PERSISTENT_PASSWORD =
-	process.env.E2E_PERSISTENT_PASSWORD || process.env.E2E_TEST_PASSWORD || '';
+import { loadTestState } from '../helpers/test-state';
 
 /**
  * Login helper using pressSequentially to work around Svelte 5 hydration issues.
@@ -61,7 +58,7 @@ export async function navigateToInstance(page: Page): Promise<boolean> {
 }
 
 /**
- * Auth fixture that logs into the persistent test account.
+ * Auth fixture that logs into the test account created by the setup project.
  * Use for dashboard tests that need a pre-authenticated session with an active instance.
  *
  * Usage:
@@ -70,12 +67,8 @@ export async function navigateToInstance(page: Page): Promise<boolean> {
  */
 export const test = base.extend<{ authedPage: Page }>({
 	authedPage: async ({ page }, use) => {
-		if (!PERSISTENT_PASSWORD) {
-			throw new Error(
-				'E2E_PERSISTENT_PASSWORD not set — use test.skip() at describe level'
-			);
-		}
-		await loginWithCredentials(page, PERSISTENT_EMAIL, PERSISTENT_PASSWORD);
+		const state = loadTestState();
+		await loginWithCredentials(page, state.email, state.password);
 		// Wait for dashboard API polling to finish loading
 		const loading = page.getByText('Loading dashboard...');
 		await loading.waitFor({ state: 'hidden', timeout: 30_000 }).catch(() => {});

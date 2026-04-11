@@ -1,7 +1,6 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('Instance management', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set — skipping instance management tests');
 
 	test('rename instance and restore original name', async ({ authedPage: page }) => {
 		if (!(await navigateToInstance(page))) {

@@ -1,8 +1,7 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
 
 test.describe('Agent error and recovery', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('restart agent and verify recovery to Running', async ({ authedPage: page }) => {
 		if (!(await navigateToInstance(page))) {

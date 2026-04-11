@@ -1,7 +1,6 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('Open Agent Dashboard button', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('Open Agent Dashboard button opens OC dashboard with token auth', async ({ authedPage: page }) => {
 		if (!(await navigateToInstance(page))) {

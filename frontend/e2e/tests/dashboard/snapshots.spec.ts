@@ -1,7 +1,6 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('Snapshot create, restore, and delete', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set — skipping snapshot tests');
 
 	test('create, restore, and delete a snapshot', async ({ authedPage: page }) => {
 		let snapshotName: string;

@@ -1,7 +1,6 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('Instance status', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('instance card shows status badge on dashboard', async ({ authedPage: page }) => {
 		const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();

@@ -1,7 +1,6 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('Dashboard sad paths', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('invalid instance ID shows not found', async ({ authedPage: page }) => {
 		await page.goto('/dashboard/instances/nonexistent-id-12345');

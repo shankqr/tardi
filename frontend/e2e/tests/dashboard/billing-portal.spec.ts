@@ -1,7 +1,6 @@
-import { test, expect, PERSISTENT_PASSWORD } from '../../fixtures/auth';
+import { test, expect } from '../../fixtures/auth';
 
 test.describe('Billing portal', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('billing page renders plan details', async ({ authedPage: page }) => {
 		await page.goto('/dashboard/billing');

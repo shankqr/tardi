@@ -1,7 +1,6 @@
-import { test, expect, PERSISTENT_PASSWORD } from '../../fixtures/auth';
+import { test, expect } from '../../fixtures/auth';
 
 test.describe('Network error handling', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
 
 	test('dashboard handles API failure gracefully', async ({ authedPage: page }) => {
 		// Wait for dashboard to fully load first

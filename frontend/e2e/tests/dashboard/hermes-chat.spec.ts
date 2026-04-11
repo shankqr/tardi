@@ -1,18 +1,18 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 import { API_URL, getIdToken } from '../../helpers/journey-helpers';
+import { loadTestState } from '../../helpers/test-state';
 
-const PERSISTENT_EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
 const API_KEY = process.env.E2E_OPENROUTER_API_KEY || '';
 
 async function getInstanceDetails(): Promise<{ id: string; framework: string; dashboard_url: string | null; agent_status: string | null } | null> {
-	if (!PERSISTENT_PASSWORD) return null;
 	try {
-		const idToken = await getIdToken(PERSISTENT_EMAIL, PERSISTENT_PASSWORD);
+		const state = loadTestState();
+		const idToken = await getIdToken(state.email, state.password);
 		const res = await fetch(`${API_URL}/api/dashboard/state`, {
 			headers: { Authorization: `Bearer ${idToken}` },
 		});
-		const state = await res.json();
-		const inst = state.instances?.find(
+		const data = await res.json();
+		const inst = data.instances?.find(
 			(i: { status: string }) => i.status !== 'terminated' && i.status !== 'terminating'
 		);
 		if (!inst) return null;
@@ -28,8 +28,6 @@ async function getInstanceDetails(): Promise<{ id: string; framework: string; da
 }
 
 test.describe('Hermes chat interface', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
-
 	test('"Chat with Agent" link navigates to chat page', async ({ authedPage: page }) => {
 		const inst = await getInstanceDetails();
 		if (!inst || inst.framework !== 'hermes') {

@@ -1,28 +1,16 @@
 import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
+import { loadTestState } from '../../helpers/test-state';
+import { loginWithCredentials } from '../../fixtures/auth';
 
-const EMAIL = 'clawmyway+1@gmail.com';
-const PASSWORD = 'ir9AsMALZgQz9if';
-
-// VPS details for this test account
-const VPS_IP = '204.168.162.209';
-const OC_AUTH_TOKEN = '30dfd58e6e581f311b5fa4204a71ac126375f0431d0677aae3b1f625742e61eb';
+// VPS details — set via env vars; skip test if not available
+const VPS_IP = process.env.E2E_VPS_IP || '';
+const OC_AUTH_TOKEN = process.env.E2E_OC_AUTH_TOKEN || '';
 
 async function login(page: Page): Promise<void> {
-	await page.goto('/login');
-	const signInBtn = page.getByRole('button', { name: 'Sign in' });
-	await expect(signInBtn).toBeVisible({ timeout: 10_000 });
-	await expect(signInBtn).toBeEnabled();
-	await page.waitForTimeout(1000);
-
-	await page.locator('#email').click();
-	await page.locator('#email').pressSequentially(EMAIL, { delay: 20 });
-	await page.locator('#password').click();
-	await page.locator('#password').pressSequentially(PASSWORD, { delay: 20 });
-
-	await signInBtn.click();
-	await page.waitForURL('**/dashboard**', { timeout: 30_000 });
+	const state = loadTestState();
+	await loginWithCredentials(page, state.email, state.password);
 }
 
 /** SSH into VPS and read the current primary model from OpenClaw. */
@@ -71,6 +59,8 @@ async function openOcDashboard(page: Page, retries = 5): Promise<boolean> {
 }
 
 test('cycle through ALL models: FE change → VPS verify → OC dashboard chat', async ({ page }) => {
+	test.skip(!VPS_IP || !OC_AUTH_TOKEN, 'E2E_VPS_IP and E2E_OC_AUTH_TOKEN required for VPS verification');
+
 	// Each model cycle takes ~40s (config sync + SSH verify + OC dashboard chat).
 	// With 8 models, we need ~6min. Set timeout to 10min for safety margin.
 	test.setTimeout(600_000);

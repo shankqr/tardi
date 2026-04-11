@@ -17,7 +17,7 @@
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"test:e2e:cleanup": "tsx e2e/scripts/cleanup.ts",
-		"test:e2e:setup": "tsx e2e/scripts/setup-persistent.ts"
+		"test:e2e:setup": "playwright test --project=setup"
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.58.2",

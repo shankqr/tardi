@@ -1,23 +1,16 @@
-import { test, expect, PERSISTENT_PASSWORD, navigateToInstance } from '../../fixtures/auth';
+import { test, expect, navigateToInstance } from '../../fixtures/auth';
 import { API_URL, getIdToken } from '../../helpers/journey-helpers';
-
-/**
- * These tests run against the persistent test account's instance.
- * They check Hermes-specific UI behaviors when the instance is a Hermes agent.
- * If the persistent instance is OpenClaw, Hermes-specific tests are skipped.
- */
-
-const PERSISTENT_EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
+import { loadTestState } from '../../helpers/test-state';
 
 async function getInstanceFramework(): Promise<string | null> {
-	if (!PERSISTENT_PASSWORD) return null;
 	try {
-		const idToken = await getIdToken(PERSISTENT_EMAIL, PERSISTENT_PASSWORD);
+		const state = loadTestState();
+		const idToken = await getIdToken(state.email, state.password);
 		const res = await fetch(`${API_URL}/api/dashboard/state`, {
 			headers: { Authorization: `Bearer ${idToken}` },
 		});
-		const state = await res.json();
-		const inst = state.instances?.find(
+		const data = await res.json();
+		const inst = data.instances?.find(
 			(i: { status: string }) => i.status !== 'terminated' && i.status !== 'terminating'
 		);
 		return inst?.framework || 'openclaw';
@@ -27,8 +20,6 @@ async function getInstanceFramework(): Promise<string | null> {
 }
 
 test.describe('Hermes instance detail page', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
-
 	test('instance card shows framework label', async ({ authedPage: page }) => {
 		const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
 		const hasInstance = await instanceLink.isVisible({ timeout: 15_000 }).catch(() => false);
@@ -48,7 +39,7 @@ test.describe('Hermes instance detail page', () => {
 	test('Hermes instance shows "Chat with Agent" instead of "Open Agent Dashboard"', async ({ authedPage: page }) => {
 		const framework = await getInstanceFramework();
 		if (framework !== 'hermes') {
-			test.skip(true, 'Persistent instance is not Hermes');
+			test.skip(true, 'Instance is not Hermes');
 			return;
 		}
 
@@ -57,11 +48,9 @@ test.describe('Hermes instance detail page', () => {
 			return;
 		}
 
-		// Wait for agent to be Running
 		const runningStatus = page.locator('dd').filter({ hasText: /Running/i }).first();
 		await expect(runningStatus).toBeVisible({ timeout: 60_000 });
 
-		// Should show "Chat with Agent" link instead of "Open Agent Dashboard" button
 		const chatLink = page.getByRole('link', { name: 'Chat with Agent' });
 		const dashboardBtn = page.getByRole('button', { name: 'Open Agent Dashboard' });
 
@@ -74,7 +63,7 @@ test.describe('Hermes instance detail page', () => {
 	test('Hermes instance shows "Hermes" in agent details label', async ({ authedPage: page }) => {
 		const framework = await getInstanceFramework();
 		if (framework !== 'hermes') {
-			test.skip(true, 'Persistent instance is not Hermes');
+			test.skip(true, 'Instance is not Hermes');
 			return;
 		}
 
@@ -83,7 +72,6 @@ test.describe('Hermes instance detail page', () => {
 			return;
 		}
 
-		// The agent details section should show "Hermes" as the label
 		const hermesLabel = page.locator('dt').filter({ hasText: 'Hermes' });
 		await expect(hermesLabel).toBeVisible({ timeout: 15_000 });
 		console.log('[E2E] Hermes label visible in agent details');
@@ -92,7 +80,7 @@ test.describe('Hermes instance detail page', () => {
 	test('Hermes instance does not show MagicMoment prompts', async ({ authedPage: page }) => {
 		const framework = await getInstanceFramework();
 		if (framework !== 'hermes') {
-			test.skip(true, 'Persistent instance is not Hermes');
+			test.skip(true, 'Instance is not Hermes');
 			return;
 		}
 
@@ -101,10 +89,8 @@ test.describe('Hermes instance detail page', () => {
 			return;
 		}
 
-		// Wait for page to fully load
 		await page.waitForTimeout(3_000);
 
-		// MagicMoment section should NOT be visible for Hermes
 		const magicMoment = page.getByText('Try these prompts');
 		const isVisible = await magicMoment.isVisible({ timeout: 5_000 }).catch(() => false);
 		expect(isVisible).toBeFalsy();
@@ -114,7 +100,7 @@ test.describe('Hermes instance detail page', () => {
 	test('OpenClaw instance shows "Open Agent Dashboard" and not "Chat with Agent"', async ({ authedPage: page }) => {
 		const framework = await getInstanceFramework();
 		if (framework !== 'openclaw') {
-			test.skip(true, 'Persistent instance is not OpenClaw');
+			test.skip(true, 'Instance is not OpenClaw');
 			return;
 		}
 
@@ -123,7 +109,6 @@ test.describe('Hermes instance detail page', () => {
 			return;
 		}
 
-		// Wait for agent to be Running
 		const runningStatus = page.locator('dd').filter({ hasText: /Running/i }).first();
 		const isRunning = await runningStatus.isVisible({ timeout: 60_000 }).catch(() => false);
 		if (!isRunning) {
@@ -131,15 +116,12 @@ test.describe('Hermes instance detail page', () => {
 			return;
 		}
 
-		// Should show "Open Agent Dashboard" button, not "Chat with Agent"
 		const dashboardBtn = page.getByRole('button', { name: 'Open Agent Dashboard' });
 		const chatLink = page.getByRole('link', { name: 'Chat with Agent' });
 
 		const hasDashboard = await dashboardBtn.isVisible({ timeout: 10_000 }).catch(() => false);
 		const hasChatLink = await chatLink.isVisible({ timeout: 3_000 }).catch(() => false);
 
-		// At least the dashboard button or the API key prompt should be visible
-		// (dashboard button requires API key to be set)
 		if (hasDashboard) {
 			expect(hasChatLink).toBeFalsy();
 			console.log('[E2E] OpenClaw instance shows "Open Agent Dashboard"');

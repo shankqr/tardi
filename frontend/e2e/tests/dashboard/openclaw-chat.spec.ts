@@ -1,7 +1,7 @@
-import { test, expect, PERSISTENT_PASSWORD } from '../../fixtures/auth';
+import { test, expect } from '../../fixtures/auth';
 import { API_URL, getIdToken } from '../../helpers/journey-helpers';
+import { loadTestState } from '../../helpers/test-state';
 
-const PERSISTENT_EMAIL = process.env.E2E_PERSISTENT_EMAIL || 'clawmyway+1@gmail.com';
 const API_KEY = process.env.E2E_OPENROUTER_API_KEY || '';
 
 async function getInstanceDetails(): Promise<{
@@ -10,14 +10,14 @@ async function getInstanceDetails(): Promise<{
 	dashboard_url: string | null;
 	agent_status: string | null;
 } | null> {
-	if (!PERSISTENT_PASSWORD) return null;
 	try {
-		const idToken = await getIdToken(PERSISTENT_EMAIL, PERSISTENT_PASSWORD);
+		const state = loadTestState();
+		const idToken = await getIdToken(state.email, state.password);
 		const res = await fetch(`${API_URL}/api/dashboard/state`, {
 			headers: { Authorization: `Bearer ${idToken}` },
 		});
-		const state = await res.json();
-		const inst = state.instances?.find(
+		const data = await res.json();
+		const inst = data.instances?.find(
 			(i: { status: string }) => i.status !== 'terminated' && i.status !== 'terminating'
 		);
 		if (!inst) return null;
@@ -33,8 +33,6 @@ async function getInstanceDetails(): Promise<{
 }
 
 test.describe('OpenClaw chat via Control UI', () => {
-	test.skip(!PERSISTENT_PASSWORD, 'E2E_PERSISTENT_PASSWORD not set');
-
 	test('can send a message and receive a response on OC dashboard', async ({ authedPage: page }) => {
 		test.skip(!API_KEY, 'E2E_OPENROUTER_API_KEY required for chat test');
 
@@ -53,7 +51,8 @@ test.describe('OpenClaw chat via Control UI', () => {
 		}
 
 		// Get dashboard token via API
-		const idToken = await getIdToken(PERSISTENT_EMAIL, PERSISTENT_PASSWORD);
+		const state = loadTestState();
+		const idToken = await getIdToken(state.email, state.password);
 		const dashTokenRes = await fetch(
 			`${API_URL}/api/instances/${inst.id}/dashboard-token`,
 			{
@@ -112,7 +111,6 @@ test.describe('OpenClaw chat via Control UI', () => {
 		while (Date.now() - startTime < 60_000) {
 			await page.waitForTimeout(3000);
 			const currentContent = await page.textContent('body') || '';
-			// Response detected when page content grows significantly (agent replied)
 			if (currentContent.length > initialLength + 50) {
 				responseDetected = true;
 				console.log(`[E2E] Response detected after ${Math.round((Date.now() - startTime) / 1000)}s`);

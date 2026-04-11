@@ -12,6 +12,7 @@ export default defineConfig({
 	retries: 0,
 	workers: 1,
 	reporter: [['list'], ['html', { open: 'never' }]],
+	globalTeardown: './e2e/global-teardown.ts',
 	use: {
 		baseURL: process.env.E2E_BASE_URL || 'https://dev.tardi-467.pages.dev',
 		trace: 'retain-on-failure',
@@ -19,6 +20,7 @@ export default defineConfig({
 		video: 'retain-on-failure',
 	},
 	projects: [
+		// ── Pre-account: no setup needed ──
 		{
 			name: 'smoke',
 			testDir: './e2e/tests/smoke',
@@ -29,11 +31,21 @@ export default defineConfig({
 			testDir: './e2e/tests/auth',
 			timeout: 60_000,
 		},
+		// ── Account setup: creates user, subscribes, deploys instance ──
+		{
+			name: 'setup',
+			testDir: './e2e/tests/setup',
+			testMatch: 'account-setup.spec.ts',
+			timeout: 900_000, // 15 min — provisioning takes 5-10 min
+		},
+		// ── Post-account: requires setup to have run ──
 		{
 			name: 'dashboard',
 			testDir: './e2e/tests/dashboard',
 			timeout: 300_000, // 5 min — snapshots + health checks can be slow
+			dependencies: ['setup'],
 		},
+		// ── Journey tests: create their own accounts ──
 		{
 			name: 'journey',
 			testDir: './e2e/tests/journey',
