@@ -212,21 +212,30 @@ export async function deleteExistingInstances(
 	const start = Date.now();
 	const timeoutMs = 300_000; // 5 minutes
 	while (Date.now() - start < timeoutMs) {
-		const token = await getIdToken(email, password);
-		const r = await fetch(`${API_URL}/api/dashboard/state`, {
-			headers: { Authorization: `Bearer ${token}` },
-		});
-		const s = await r.json();
-		const blocking = (s.instances || []).filter(
-			(i: { status: string }) =>
-				i.status !== 'terminated' && i.status !== 'error'
-		);
-		if (!blocking.length) {
-			console.log('[E2E] All instances terminated or in error state');
-			return;
+		try {
+			const token = await getIdToken(email, password);
+			const r = await fetch(`${API_URL}/api/dashboard/state`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			if (!r.ok) {
+				console.log(`[E2E] Dashboard state returned ${r.status}, retrying...`);
+				await new Promise((r) => setTimeout(r, 10000));
+				continue;
+			}
+			const s = await r.json();
+			const blocking = (s.instances || []).filter(
+				(i: { status: string }) =>
+					i.status !== 'terminated' && i.status !== 'error'
+			);
+			if (!blocking.length) {
+				console.log('[E2E] All instances terminated or in error state');
+				return;
+			}
+			const elapsed = Math.round((Date.now() - start) / 1000);
+			console.log(`[E2E] Waiting for ${blocking.length} instance(s) to terminate... (${elapsed}s)`);
+		} catch {
+			console.log('[E2E] Error polling dashboard state, retrying...');
 		}
-		const elapsed = Math.round((Date.now() - start) / 1000);
-		console.log(`[E2E] Waiting for ${blocking.length} instance(s) to terminate... (${elapsed}s)`);
 		await new Promise((r) => setTimeout(r, 10000));
 	}
 	throw new Error('Instances did not terminate within 5 minutes');
