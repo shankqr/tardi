@@ -654,7 +654,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 			APIURL:             p.apiURL,
 			InstanceID:         inst.ID.String(),
 			APIServerKey:       frameworkAuthToken,
-			HermesImageTag:     "latest",
+			HermesImageTag:     resolveHermesVersion(ctx, p.pool),
 			Provider:           providerName,
 			Model:              modelID,
 			OpenRouterAPIKey:   openRouterAPIKey,

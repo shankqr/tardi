@@ -14,7 +14,7 @@ type HermesCloudInitData struct {
 	AnthropicAPIKey    string // Optional direct Anthropic access
 	OpenAIAPIKey       string // Optional direct OpenAI access
 	APIServerKey       string // Hermes HTTP API auth token (stored in openclaw_auth_token column)
-	HermesImageTag     string // Unused (kept for interface compat); Hermes installed natively
+	HermesImageTag     string // Version tag for install script (e.g. "v2026.4.8" or "main")
 	Provider           string // AI provider: openrouter, anthropic, openai
 	Model              string // Model ID for the provider
 	ConfigVersion      int    // Initial config version to prevent redundant first sync
@@ -122,10 +122,10 @@ apt-get install -y -qq ripgrep ffmpeg 2>/dev/null || true
 # The install script sets up Python 3.11+, Node.js 22, uv, and the hermes CLI.
 # --skip-setup avoids the interactive setup wizard.
 log_status "HERMES_INSTALLING"
-su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup' || {
+su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/{{.HermesImageTag}}/scripts/install.sh | bash -s -- --skip-setup' || {
     log_status "HERMES_INSTALL_RETRY"
     sleep 5
-    su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup'
+    su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/{{.HermesImageTag}}/scripts/install.sh | bash -s -- --skip-setup'
 }
 log_status "HERMES_INSTALLED"
 

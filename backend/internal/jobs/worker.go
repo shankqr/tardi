@@ -71,6 +71,16 @@ func resolveImageTag(ctx context.Context, pool *pgxpool.Pool, fallback string) s
 	return v
 }
 
+// resolveHermesVersion reads the pinned Hermes version from the database.
+// Falls back to "main" if the DB has no pinned version or still says "latest".
+func resolveHermesVersion(ctx context.Context, pool *pgxpool.Pool) string {
+	v, err := db.GetGlobalHermesVersion(ctx, pool)
+	if err != nil || v == "" || v == "latest" {
+		return "main"
+	}
+	return v
+}
+
 func (w *Worker) poll(ctx context.Context) {
 	job, err := db.ClaimNextJob(ctx, w.pool)
 	if err != nil {

@@ -164,6 +164,51 @@ CFGEOF
     fi
 fi
 
+# --- Hermes version update ---
+TARGET_VERSION=$(echo "$RESPONSE" | jq -r '.target_openclaw_version // empty' 2>/dev/null)
+
+if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "latest" ] \
+   && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
+   && [ "$UPDATE_STATUS" != "pulling" ] && [ "$UPDATE_STATUS" != "updating" ]; then
+
+    echo "pulling" > /opt/hermes/.update_status
+    rm -f /opt/hermes/.update_error
+
+    # Re-run the install script from the target version tag
+    INSTALL_URL="https://raw.githubusercontent.com/NousResearch/hermes-agent/${TARGET_VERSION}/scripts/install.sh"
+    if ! su - hermes -c "curl -fsSL '${INSTALL_URL}' | bash -s -- --skip-setup" 2>/tmp/hermes-update.log; then
+        echo "failed" > /opt/hermes/.update_status
+        echo "install failed: $(tail -1 /tmp/hermes-update.log)" > /opt/hermes/.update_error
+        # No rollback needed — old binary is still in place if install fails
+        exit 0
+    fi
+
+    echo "updating" > /opt/hermes/.update_status
+
+    # Restart the service with the new version
+    systemctl restart hermes-agent 2>/dev/null
+
+    # Health check: wait up to 90 seconds (18 x 5s)
+    HEALTHY=false
+    for i in $(seq 1 18); do
+        sleep 5
+        if curl -sf http://localhost:8642/health >/dev/null 2>&1; then
+            HEALTHY=true
+            break
+        fi
+    done
+
+    if [ "$HEALTHY" = true ]; then
+        echo "completed" > /opt/hermes/.update_status
+        rm -f /opt/hermes/.update_error
+    else
+        echo "failed" > /opt/hermes/.update_status
+        echo "health check failed after update to ${TARGET_VERSION}" > /opt/hermes/.update_error
+        # Restart service again in case it just needs more time
+        systemctl restart hermes-agent 2>/dev/null
+    fi
+fi
+
 # --- Download latest heartbeat script ---
 SCRIPT_RESPONSE=$(curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/heartbeat-script" 2>/dev/null)
 if [ $? -eq 0 ] && [ -n "$SCRIPT_RESPONSE" ]; then

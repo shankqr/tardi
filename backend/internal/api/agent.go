@@ -185,10 +185,12 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			configVersion = config.Version
 		}
 
-		// Compute effective target version: per-instance override > global
+		// Compute effective target version: per-instance override > global (framework-aware)
 		var targetVersion string
 		if inst.TargetOpenClawVersion != nil && *inst.TargetOpenClawVersion != "" {
 			targetVersion = *inst.TargetOpenClawVersion
+		} else if inst.Framework == "hermes" {
+			targetVersion, _ = db.GetGlobalHermesVersion(r.Context(), deps.Pool)
 		} else {
 			targetVersion, _ = db.GetGlobalTargetVersion(r.Context(), deps.Pool)
 		}

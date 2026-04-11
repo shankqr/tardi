@@ -965,6 +965,20 @@ func SetGlobalTargetVersion(ctx context.Context, pool *pgxpool.Pool, version str
 	return UpsertPlatformSetting(ctx, pool, "target_openclaw_version", version)
 }
 
+// GetGlobalHermesVersion returns the platform-wide target Hermes version.
+func GetGlobalHermesVersion(ctx context.Context, pool *pgxpool.Pool) (string, error) {
+	value, err := GetPlatformSetting(ctx, pool, "target_hermes_version")
+	if errors.Is(err, ErrNotFound) {
+		return "latest", nil
+	}
+	return value, err
+}
+
+// SetGlobalHermesVersion updates the platform-wide target Hermes version.
+func SetGlobalHermesVersion(ctx context.Context, pool *pgxpool.Pool, version string) error {
+	return UpsertPlatformSetting(ctx, pool, "target_hermes_version", version)
+}
+
 // UpdateInstanceOpenClawVersion records the version the agent reports and its update status.
 func UpdateInstanceOpenClawVersion(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, version string, updateStatus *string, updateError *string) error {
 	_, err := pool.Exec(ctx, `
