@@ -78,31 +78,19 @@ fi
 
 # --- Caddy drift guard ---
 source /opt/hermes/.env 2>/dev/null
-HERMES_BLOCK='http:// {
-    @cors_preflight method OPTIONS
-
-    handle @cors_preflight {
-        header Access-Control-Allow-Origin "*"
-        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
-        header Access-Control-Allow-Headers "Authorization, Content-Type"
-        header Access-Control-Max-Age "86400"
-        respond "" 204
-    }
-
-    handle {
-        header Access-Control-Allow-Origin "*"
-        reverse_proxy localhost:8642
-    }
-}'
 EXPECTED_CADDYFILE=""
 if [ -n "${PREVIEW_DOMAIN:-}" ]; then
     EXPECTED_CADDYFILE="http://${PREVIEW_DOMAIN} {
     reverse_proxy localhost:3000
 }
 
-${HERMES_BLOCK}"
+http:// {
+    reverse_proxy localhost:8642
+}"
 else
-    EXPECTED_CADDYFILE="${HERMES_BLOCK}"
+    EXPECTED_CADDYFILE="http:// {
+    reverse_proxy localhost:8642
+}"
 fi
 
 CURRENT_CADDYFILE=$(cat /etc/caddy/Caddyfile 2>/dev/null || echo "")

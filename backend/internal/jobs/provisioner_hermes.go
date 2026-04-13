@@ -142,6 +142,9 @@ API_SERVER_ENABLED=true
 API_SERVER_HOST=0.0.0.0
 API_SERVER_PORT=8642
 API_SERVER_KEY={{.APIServerKey}}
+API_SERVER_CORS_ORIGINS=*
+SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+SSL_CERT_DIR=/etc/ssl/certs
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
 {{- if .AnthropicAPIKey}}
 ANTHROPIC_API_KEY={{.AnthropicAPIKey}}
@@ -178,12 +181,18 @@ if [ -f "$HERMES_ENV" ]; then
     sed -i '/^#\?\s*API_SERVER_HOST=/d' "$HERMES_ENV"
     sed -i '/^#\?\s*API_SERVER_PORT=/d' "$HERMES_ENV"
     sed -i '/^#\?\s*API_SERVER_KEY=/d' "$HERMES_ENV"
+    sed -i '/^#\?\s*API_SERVER_CORS_ORIGINS=/d' "$HERMES_ENV"
+    sed -i '/^#\?\s*SSL_CERT_FILE=/d' "$HERMES_ENV"
+    sed -i '/^#\?\s*SSL_CERT_DIR=/d' "$HERMES_ENV"
 fi
 cat >> "$HERMES_ENV" <<HERMESENVEOF
 API_SERVER_ENABLED=true
 API_SERVER_HOST=0.0.0.0
 API_SERVER_PORT=8642
 API_SERVER_KEY={{.APIServerKey}}
+API_SERVER_CORS_ORIGINS=*
+SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+SSL_CERT_DIR=/etc/ssl/certs
 {{- if .OpenRouterAPIKey}}
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
 {{- end}}
@@ -230,20 +239,7 @@ http://{{.PreviewDomain}} {
 {{- end}}
 
 http:// {
-    @cors_preflight method OPTIONS
-
-    handle @cors_preflight {
-        header Access-Control-Allow-Origin "*"
-        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
-        header Access-Control-Allow-Headers "Authorization, Content-Type"
-        header Access-Control-Max-Age "86400"
-        respond "" 204
-    }
-
-    handle {
-        header Access-Control-Allow-Origin "*"
-        reverse_proxy localhost:8642
-    }
+    reverse_proxy localhost:8642
 }
 CADDYEOF
 
