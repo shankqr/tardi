@@ -732,15 +732,6 @@
 							<p class="mt-4 text-xs text-gray-400 dark:text-gray-500">Set up your OpenRouter API key below to access the dashboard.</p>
 						{/if}
 					{/if}
-
-					{#if instance.status === 'active' && instance.ipv4}
-						<a
-							href="/dashboard/instances/{instance.id}/terminal"
-							class="mt-2 ml-2 inline-flex items-center gap-1.5 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
-						>
-							Open Terminal
-						</a>
-					{/if}
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
@@ -796,6 +787,14 @@
 										>
 											{doctorRunning ? 'Checking...' : 'Health Check'}
 										</button>
+										{/if}
+										{#if instance.status === 'active'}
+											<a
+												href="/dashboard/instances/{instance.id}/terminal"
+												class="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+											>
+												Open Terminal
+											</a>
 										{/if}
 									</div>
 

@@ -511,7 +511,13 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		expect(roundtrip.output).toContain('root');
 
 		// UI: Open Terminal button is visible + the /terminal page loads and connects
+		// Open Terminal lives inside the Power User accordion — expand it first.
+		const powerUserToggle = page.getByText('Power User').first();
+		await powerUserToggle.scrollIntoViewIfNeeded();
 		const terminalButton = page.getByRole('link', { name: 'Open Terminal' });
+		if (!(await terminalButton.isVisible().catch(() => false))) {
+			await powerUserToggle.click();
+		}
 		await expect(terminalButton).toBeVisible({ timeout: 15_000 });
 		await terminalButton.click();
 		await page.waitForURL(`**/dashboard/instances/${instanceId}/terminal`, {

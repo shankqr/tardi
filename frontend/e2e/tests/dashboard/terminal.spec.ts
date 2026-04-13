@@ -101,6 +101,11 @@ test.describe('Web terminal', () => {
 		await page.goto(`/dashboard/instances/${account.instanceId}`);
 		await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
 
+		// Expand Power User section to reveal the Open Terminal button
+		const powerUserButton = page.getByText('Power User').first();
+		await powerUserButton.scrollIntoViewIfNeeded();
+		await powerUserButton.click();
+
 		const terminalButton = page.getByRole('link', { name: 'Open Terminal' });
 		await expect(terminalButton).toBeVisible({ timeout: 15_000 });
 		await expect(terminalButton).toHaveAttribute(
