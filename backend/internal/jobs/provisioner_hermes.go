@@ -230,7 +230,20 @@ http://{{.PreviewDomain}} {
 {{- end}}
 
 http:// {
-    reverse_proxy localhost:8642
+    @cors_preflight method OPTIONS
+
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Access-Control-Max-Age "86400"
+        respond "" 204
+    }
+
+    handle {
+        header Access-Control-Allow-Origin "*"
+        reverse_proxy localhost:8642
+    }
 }
 CADDYEOF
 
