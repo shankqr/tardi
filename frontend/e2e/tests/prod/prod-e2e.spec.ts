@@ -9,6 +9,11 @@ import {
 	ensureInstancePage,
 	deleteExistingInstances,
 } from '../../helpers/journey-helpers';
+import {
+	fetchTerminalTicket,
+	runTerminalCommandViaWs,
+	probeTerminalWsWithBadTicket,
+} from '../../helpers/terminal-helpers';
 
 const PROD_EMAIL = process.env.E2E_PROD_EMAIL || '';
 const PROD_PASSWORD = process.env.E2E_PROD_PASSWORD || '';
@@ -450,6 +455,75 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		const backLink = page.getByRole('link', { name: /back|dashboard/i });
 		await expect(backLink).toBeVisible({ timeout: 5_000 });
 		console.log('[Prod E2E] Settings page verified');
+	});
+
+	// ── Step 17: Web terminal (API + UI round-trip) ──
+	await test.step('Verify web terminal', async () => {
+		// API: ticket endpoint requires auth
+		const unauthRes = await fetchTerminalTicket(PROD_EMAIL, PROD_PASSWORD, instanceId, {
+			authOverride: null,
+		});
+		expect(unauthRes.status).toBe(401);
+
+		// API: ticket endpoint rejects an instance the user does not own
+		const otherRes = await fetchTerminalTicket(
+			PROD_EMAIL,
+			PROD_PASSWORD,
+			'00000000-0000-0000-0000-000000000001'
+		);
+		expect(otherRes.status).toBe(404);
+
+		// API: ticket endpoint returns a signed ticket for the owned instance
+		const ticketRes = await fetchTerminalTicket(PROD_EMAIL, PROD_PASSWORD, instanceId);
+		expect(ticketRes.status).toBe(200);
+		const { ticket } = await ticketRes.json();
+		expect(typeof ticket).toBe('string');
+		expect(ticket.split('.').length).toBe(4);
+
+		// Make sure we are on the app origin so the WS Origin header matches
+		// ALLOWED_ORIGINS in the backend upgrader.
+		await ensureInstancePage(page, instanceId);
+
+		// WS: tampered ticket is rejected before any shell is opened
+		const badProbe = await probeTerminalWsWithBadTicket(
+			page,
+			API_URL,
+			instanceId,
+			'tampered-ticket-value'
+		);
+		expect(badProbe.closed).toBe(true);
+		expect(badProbe.closeCode).not.toBe(1000);
+		console.log(`[Prod E2E] Bad ticket rejected, close code=${badProbe.closeCode}`);
+
+		// WS: full round-trip — whoami on the real VPS should return "root"
+		const roundtrip = await runTerminalCommandViaWs(
+			page,
+			API_URL,
+			instanceId,
+			ticket,
+			'whoami',
+			{ readWindowMs: 15_000 }
+		);
+		console.log(
+			`[Prod E2E] terminal roundtrip opened=${roundtrip.opened} closed=${roundtrip.closed} output.len=${roundtrip.output.length}`
+		);
+		expect(roundtrip.opened).toBe(true);
+		expect(roundtrip.output).toContain('root');
+
+		// UI: Open Terminal button is visible + the /terminal page loads and connects
+		const terminalButton = page.getByRole('link', { name: 'Open Terminal' });
+		await expect(terminalButton).toBeVisible({ timeout: 15_000 });
+		await terminalButton.click();
+		await page.waitForURL(`**/dashboard/instances/${instanceId}/terminal`, {
+			timeout: 10_000,
+		});
+		await expect(page.getByText('Connected as root')).toBeVisible({ timeout: 45_000 });
+		await expect(page.locator('.xterm-helper-textarea')).toBeAttached({ timeout: 10_000 });
+		console.log('[Prod E2E] Terminal page loaded and WebSocket connected');
+
+		// Return to the agent page so the later cleanup step finds the right UI.
+		await page.getByRole('link', { name: /Back to agent/ }).click();
+		await page.waitForURL(`**/dashboard/instances/${instanceId}`, { timeout: 10_000 });
 	});
 
 	// ── Cleanup: Delete instance to save Hetzner costs ──
