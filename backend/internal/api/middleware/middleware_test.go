@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bufio"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -365,6 +367,48 @@ func TestStatusRecorder_DefaultsTo200(t *testing.T) {
 
 	if sr.status != http.StatusOK {
 		t.Fatalf("expected default status 200, got %d", sr.status)
+	}
+}
+
+// hijackableWriter is a test double that satisfies both http.ResponseWriter
+// and http.Hijacker so we can verify statusRecorder forwards Hijack calls.
+type hijackableWriter struct {
+	http.ResponseWriter
+	hijacked bool
+}
+
+func (h *hijackableWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h.hijacked = true
+	return nil, nil, nil
+}
+
+func TestStatusRecorder_ForwardsHijack(t *testing.T) {
+	// Regression test: WebSocket upgrades (gorilla/websocket) rely on the
+	// ResponseWriter implementing http.Hijacker. The logger middleware wraps
+	// the writer in statusRecorder, so it must forward Hijack to the
+	// underlying writer or the upgrade fails mid-handshake.
+	base := &hijackableWriter{ResponseWriter: httptest.NewRecorder()}
+	sr := &statusRecorder{ResponseWriter: base, status: http.StatusOK}
+
+	hijacker, ok := any(sr).(http.Hijacker)
+	if !ok {
+		t.Fatal("statusRecorder does not implement http.Hijacker")
+	}
+	if _, _, err := hijacker.Hijack(); err != nil {
+		t.Fatalf("Hijack returned error: %v", err)
+	}
+	if !base.hijacked {
+		t.Fatal("Hijack call was not forwarded to the underlying ResponseWriter")
+	}
+}
+
+func TestStatusRecorder_HijackErrorsWhenUnsupported(t *testing.T) {
+	// Underlying writer without Hijacker support — should return an error,
+	// not panic or corrupt the connection.
+	sr := &statusRecorder{ResponseWriter: httptest.NewRecorder(), status: http.StatusOK}
+	_, _, err := sr.Hijack()
+	if err == nil {
+		t.Fatal("expected Hijack to fail when underlying writer is not a Hijacker")
 	}
 }
 
