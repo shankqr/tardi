@@ -1,7 +1,7 @@
 import { test, expect, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('Instance UI per framework', () => {
-	test('Hermes instance shows "Chat with Agent" instead of "Open Agent Dashboard"', async ({ authedHermesPage: page }) => {
+	test('Hermes instance shows "Open Agent Dashboard" link that opens chat in a new tab', async ({ authedHermesPage: page }) => {
 		const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
 		if (!(await instanceLink.isVisible({ timeout: 15_000 }).catch(() => false))) {
 			test.skip(true, 'No active instance found'); return;
@@ -13,13 +13,11 @@ test.describe('Instance UI per framework', () => {
 		const runningStatus = page.locator('dd').filter({ hasText: /Running/i }).first();
 		await expect(runningStatus).toBeVisible({ timeout: 60_000 });
 
-		const chatLink = page.getByRole('link', { name: 'Chat with Agent' });
-		const dashboardBtn = page.getByRole('button', { name: 'Open Agent Dashboard' });
-
-		await expect(chatLink).toBeVisible({ timeout: 10_000 });
-		const hasDashboardBtn = await dashboardBtn.isVisible({ timeout: 3_000 }).catch(() => false);
-		expect(hasDashboardBtn).toBeFalsy();
-		console.log('[E2E] Hermes instance shows "Chat with Agent" link');
+		const dashboardLink = page.getByRole('link', { name: 'Open Agent Dashboard' });
+		await expect(dashboardLink).toBeVisible({ timeout: 10_000 });
+		await expect(dashboardLink).toHaveAttribute('target', '_blank');
+		await expect(dashboardLink).toHaveAttribute('href', /\/dashboard\/instances\/[^/]+\/chat$/);
+		console.log('[E2E] Hermes instance shows "Open Agent Dashboard" link opening chat in new tab');
 	});
 
 	test('Hermes instance shows "Hermes" in agent details label', async ({ authedHermesPage: page }) => {
@@ -52,7 +50,7 @@ test.describe('Instance UI per framework', () => {
 		console.log('[E2E] MagicMoment correctly hidden for Hermes instance');
 	});
 
-	test('OpenClaw instance shows "Open Agent Dashboard" and not "Chat with Agent"', async ({ authedPage: page }) => {
+	test('OpenClaw instance shows "Open Agent Dashboard" as a button (not a link)', async ({ authedPage: page }) => {
 		if (!(await navigateToInstance(page))) {
 			test.skip(true, 'No active instance found'); return;
 		}
@@ -62,16 +60,15 @@ test.describe('Instance UI per framework', () => {
 		if (!isRunning) { test.skip(true, 'Agent not running'); return; }
 
 		const dashboardBtn = page.getByRole('button', { name: 'Open Agent Dashboard' });
-		const chatLink = page.getByRole('link', { name: 'Chat with Agent' });
+		const dashboardLink = page.getByRole('link', { name: 'Open Agent Dashboard' });
 
 		const hasDashboard = await dashboardBtn.isVisible({ timeout: 10_000 }).catch(() => false);
-		const hasChatLink = await chatLink.isVisible({ timeout: 3_000 }).catch(() => false);
+		const hasDashboardLink = await dashboardLink.isVisible({ timeout: 3_000 }).catch(() => false);
 
 		if (hasDashboard) {
-			expect(hasChatLink).toBeFalsy();
-			console.log('[E2E] OpenClaw instance shows "Open Agent Dashboard"');
+			expect(hasDashboardLink).toBeFalsy();
+			console.log('[E2E] OpenClaw instance shows "Open Agent Dashboard" button');
 		} else {
-			expect(hasChatLink).toBeFalsy();
 			console.log('[E2E] OpenClaw instance: dashboard button hidden (API key may be required)');
 		}
 	});

@@ -685,9 +685,11 @@
 							{#if instance.framework === 'hermes'}
 								<a
 									href="/dashboard/instances/{instance.id}/chat"
+									target="_blank"
+									rel="noopener"
 									class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100"
 								>
-									Chat with Agent
+									Open Agent Dashboard
 								</a>
 							{:else}
 								<button

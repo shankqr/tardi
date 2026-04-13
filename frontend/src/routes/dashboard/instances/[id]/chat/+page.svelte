@@ -41,18 +41,13 @@
 </script>
 
 <div class="space-y-4">
-	<div class="flex items-center gap-3">
-		<a
-			href="/dashboard/instances/{instanceId}"
-			class="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-		>
-			&larr; Back to agent
-		</a>
-		{#if instance}
-			<span class="text-sm text-gray-400 dark:text-gray-500">/</span>
+	{#if instance}
+		<div class="flex items-center gap-2">
 			<span class="text-sm font-medium text-gray-900 dark:text-white">{instance.name}</span>
-		{/if}
-	</div>
+			<span class="text-sm text-gray-400 dark:text-gray-500">·</span>
+			<span class="text-sm text-gray-500 dark:text-gray-400">Agent Dashboard</span>
+		</div>
+	{/if}
 
 	{#if loading}
 		<div class="flex items-center justify-center py-20">

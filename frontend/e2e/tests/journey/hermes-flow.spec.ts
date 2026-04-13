@@ -215,13 +215,13 @@ test('Hermes journey: signup -> deploy Hermes -> configure -> chat', async ({
 		// Wait for agent to be running
 		await waitForAgentRunning(page);
 
-		// Click "Chat with Agent" link
-		const chatLink = page.getByRole('link', { name: 'Chat with Agent' });
-		await expect(chatLink).toBeVisible({ timeout: 30_000 });
-		await chatLink.click();
+		// Verify "Open Agent Dashboard" link is present and targets a new tab
+		const dashboardLink = page.getByRole('link', { name: 'Open Agent Dashboard' });
+		await expect(dashboardLink).toBeVisible({ timeout: 30_000 });
+		await expect(dashboardLink).toHaveAttribute('target', '_blank');
 
-		// Verify chat page loads
-		await page.waitForURL(`**/chat`, { timeout: 15_000 });
+		// Navigate directly to the chat page (link target is a new tab — avoid popup handling)
+		await page.goto(`/dashboard/instances/${instanceId}/chat`);
 		await expect(page.getByText('Hermes Agent Chat')).toBeVisible({ timeout: 30_000 });
 
 		// Send a test message
