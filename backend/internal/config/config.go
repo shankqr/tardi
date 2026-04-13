@@ -43,6 +43,10 @@ type Config struct {
 	SSHPrivateKey []byte  // decoded PEM bytes
 	SSHPublicKey  string  // "ssh-ed25519 AAAA..." format for authorized_keys
 
+	// HMAC secret for short-lived web-terminal WebSocket tickets. When empty,
+	// the terminal endpoints return 503 — the feature is disabled.
+	TerminalTicketSecret []byte
+
 	// Mock provider delays (dev only)
 	MockInitDelay      time.Duration
 	MockHeartbeatDelay time.Duration
@@ -75,7 +79,8 @@ func Load() *Config {
 
 		BackendEgressCIDRs: os.Getenv("BACKEND_EGRESS_CIDRS"),
 
-		SSHPrivateKey: loadSSHPrivateKey(),
+		SSHPrivateKey:        loadSSHPrivateKey(),
+		TerminalTicketSecret: []byte(secretOrEmpty("TERMINAL_TICKET_SECRET")),
 
 		MockInitDelay:      parseDuration("MOCK_INIT_DELAY", 12*time.Second),
 		MockHeartbeatDelay: parseDuration("MOCK_HEARTBEAT_DELAY", 18*time.Second),

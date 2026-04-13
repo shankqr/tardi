@@ -49,6 +49,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("DELETE /api/snapshots/{snapshot_id}", DeleteSnapshotHandler(deps))
 	authedMux.HandleFunc("GET /api/instances/{id}/diagnostics", DiagnosticsHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/dashboard-token", DashboardTokenHandler(deps))
+	authedMux.HandleFunc("POST /api/instances/{id}/terminal/ticket", TerminalTicketHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/doctor", DoctorHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/sync-config", SyncConfigHandler(deps))
 	authedMux.HandleFunc("GET /api/instances/{id}/sync-status", SyncStatusHandler(deps))
@@ -62,6 +63,10 @@ func NewRouter(deps Dependencies) http.Handler {
 	// Public API (no auth)
 	mux.HandleFunc("GET /api/models", ListModelsHandler(deps))
 	mux.HandleFunc("GET /api/oauth/google/callback", GoogleOAuthCallbackHandler(deps))
+
+	// Web-terminal WebSocket. Auth is via short-lived HMAC ticket in ?t=
+	// (browsers can't set Authorization on the WS upgrade).
+	mux.HandleFunc("GET /api/instances/{id}/terminal/ws", TerminalWebSocketHandler(deps))
 
 	// Agent phone-home endpoints (agent token auth, handled inside handlers)
 	mux.HandleFunc("GET /api/agent/config", AgentConfigHandler(deps))

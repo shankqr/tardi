@@ -425,6 +425,19 @@ export async function getDashboardToken(
 	}
 }
 
+// --- Web Terminal ---
+
+export async function getTerminalTicket(
+	instanceId: string,
+	token: string
+): Promise<{ ticket: string }> {
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/terminal/ticket`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'getTerminalTicket'
+	);
+}
+
 // --- Google OAuth ---
 
 export async function getGoogleOAuthUrl(token: string): Promise<{ redirect_url: string }> {

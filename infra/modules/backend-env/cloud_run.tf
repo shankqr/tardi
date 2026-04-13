@@ -158,6 +158,15 @@ resource "google_cloud_run_v2_service" "api" {
           }
         }
       }
+      env {
+        name = "TERMINAL_TICKET_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.terminal_ticket_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
 
       resources {
         limits = {

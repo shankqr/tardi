@@ -240,3 +240,22 @@ resource "google_secret_manager_secret_version" "token_encryption_key" {
     ignore_changes = [secret_data]
   }
 }
+
+# Terminal ticket secret — HMAC key for signing short-lived web-terminal WS tickets
+resource "google_secret_manager_secret" "terminal_ticket_secret" {
+  secret_id = "${var.environment}-terminal-ticket-secret"
+  project   = var.project_id
+
+  replication {
+    auto {}
+  }
+}
+
+resource "google_secret_manager_secret_version" "terminal_ticket_secret" {
+  secret      = google_secret_manager_secret.terminal_ticket_secret.id
+  secret_data = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
