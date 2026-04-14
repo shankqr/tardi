@@ -4,6 +4,7 @@ import { loadAccountState } from '../../helpers/test-state';
 import {
 	fetchTerminalTicket,
 	runTerminalCommandViaWs,
+	runTerminalCommandSequenceViaWs,
 	probeTerminalWsWithBadTicket,
 } from '../../helpers/terminal-helpers';
 
@@ -128,5 +129,61 @@ test.describe('Web terminal', () => {
 		// Back link navigates home (also triggers WS teardown).
 		await page.getByRole('link', { name: /Back to agent/ }).click();
 		await page.waitForURL(`**/dashboard/instances/${account.instanceId}`, { timeout: 10_000 });
+	});
+
+	test('launched terminal runs "openclaw status" inside the gateway container', async ({
+		authedPage: page,
+	}) => {
+		const account = loadAccountState('openclaw');
+
+		// Launch the terminal the way a user would: click "Open Terminal" from
+		// the instance page and wait for the WS handshake to flip to connected.
+		await page.goto(`/dashboard/instances/${account.instanceId}`);
+		await expect(page.getByText('Agent Details')).toBeVisible({ timeout: 30_000 });
+		const powerUserButton = page.getByText('Power User').first();
+		await powerUserButton.scrollIntoViewIfNeeded();
+		await powerUserButton.click();
+		const terminalButton = page.getByRole('link', { name: 'Open Terminal' });
+		await expect(terminalButton).toBeVisible({ timeout: 15_000 });
+		await terminalButton.click();
+		await page.waitForURL(`**/dashboard/instances/${account.instanceId}/terminal`, {
+			timeout: 10_000,
+		});
+		await expect(page.getByText('Connected as root')).toBeVisible({ timeout: 30_000 });
+
+		// Drive the PTY from a parallel WS (same backend path, same VPS):
+		//   1) docker exec -it openclaw-gateway sh   → enter the gateway container
+		//   2) openclaw status                       → print the status table
+		const idToken = await getIdToken(account.email, account.password);
+		const ticketRes = await fetch(
+			`${API_URL}/api/instances/${account.instanceId}/terminal/ticket`,
+			{
+				method: 'POST',
+				headers: { Authorization: `Bearer ${idToken}` },
+			}
+		);
+		expect(ticketRes.status).toBe(200);
+		const { ticket } = await ticketRes.json();
+
+		const result = await runTerminalCommandSequenceViaWs(
+			page,
+			API_URL,
+			account.instanceId,
+			ticket,
+			['docker exec -it openclaw-gateway sh', 'openclaw status'],
+			{ readWindowMs: 45_000, interCommandDelayMs: 4_000 }
+		);
+		console.log(
+			`[terminal] opened=${result.opened} closed=${result.closed} output.len=${result.output.length}`
+		);
+		expect(result.opened).toBe(true);
+
+		// `openclaw status` renders a table with an "Overview" header and rows
+		// for Gateway, Agents, Memory, etc. Checking a few distinct markers
+		// keeps the assertion stable across version bumps that tweak copy.
+		expect(result.output).toContain('OpenClaw status');
+		expect(result.output).toContain('Overview');
+		expect(result.output).toContain('Gateway');
+		expect(result.output).toContain('Agents');
 	});
 });
