@@ -38,7 +38,7 @@ var stepTimeouts = map[models.ProvisioningStep]time.Duration{
 }
 
 // fallbackDefaultModelID is used when the DB models table is unavailable.
-const fallbackDefaultModelID = "nvidia/nemotron-3-super-120b-a12b:free"
+const fallbackDefaultModelID = "openai/gpt-5.4"
 
 // CloudInitData holds all template variables for cloud-init rendering.
 type CloudInitData struct {
