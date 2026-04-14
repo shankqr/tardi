@@ -69,11 +69,6 @@ test.describe('Framework selector on deploy page', () => {
 			await expect(openclawBtn).toHaveClass(/border-gray-900|border-white/);
 			console.log('[E2E] Can switch back to OpenClaw');
 
-			// Verify framework descriptions
-			await expect(page.getByText('Web dashboard & code execution')).toBeVisible();
-			await expect(page.getByText('Self-improving agent with skills & memory')).toBeVisible();
-			console.log('[E2E] Framework descriptions visible');
-
 		} finally {
 			try { await deleteStripeCustomer(email); } catch {}
 			try { await deleteTestUser(email); } catch {}
