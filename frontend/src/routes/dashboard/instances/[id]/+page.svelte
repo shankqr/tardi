@@ -779,6 +779,14 @@
 										>
 											{instance.status === 'restarting' ? 'Restarting...' : restarting ? 'Restarting...' : restartCooloff ? `Restart (${restartCooloffRemaining}s)` : 'Restart'}
 										</button>
+										{#if instance.status === 'active'}
+											<a
+												href="/dashboard/instances/{instance.id}/terminal"
+												class="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+											>
+												Open Terminal
+											</a>
+										{/if}
 										{#if featureFlags.healthCheck}
 										<button
 											onclick={handleRunDoctor}
@@ -787,14 +795,6 @@
 										>
 											{doctorRunning ? 'Checking...' : 'Health Check'}
 										</button>
-										{/if}
-										{#if instance.status === 'active'}
-											<a
-												href="/dashboard/instances/{instance.id}/terminal"
-												class="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
-											>
-												Open Terminal
-											</a>
 										{/if}
 									</div>
 
