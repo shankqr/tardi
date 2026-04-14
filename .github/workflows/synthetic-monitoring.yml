@@ -1,195 +1,23 @@
 name: "Synthetic Monitoring"
 
+# Health checks (curl + SSL) now run on Cloud Scheduler → Cloud Run Job
+# (see infra/modules/backend-env/synthetic_monitor.tf). This workflow
+# only keeps the Playwright deep check, at a reduced hourly cadence.
+
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
   issues: write
 
-env:
-  API_URL: https://tardi-api-prod-vyqbffpjya-uc.a.run.app
-  FRONTEND_URL: https://app.tardi.ai
-
 jobs:
-  health-checks:
-    name: Health Checks
-    runs-on: ubuntu-latest
-    outputs:
-      failed: ${{ steps.checks.outputs.failed }}
-      summary: ${{ steps.checks.outputs.summary }}
-    steps:
-      - name: Run health checks
-        id: checks
-        run: |
-          FAILED=0
-          RESULTS=""
-
-          check_endpoint() {
-            local name="$1"
-            local url="$2"
-            local max_time="$3"
-            local body_check="$4"
-
-            START=$(date +%s%N)
-            HTTP_CODE=$(curl -s -o /tmp/response_body -w '%{http_code}' --max-time "$max_time" "$url" 2>/dev/null || echo "000")
-            END=$(date +%s%N)
-            LATENCY_MS=$(( (END - START) / 1000000 ))
-            BODY=$(cat /tmp/response_body 2>/dev/null || echo "")
-
-            if [ "$HTTP_CODE" = "200" ]; then
-              if [ -n "$body_check" ] && ! echo "$BODY" | grep -qi "$body_check"; then
-                STATUS="FAIL"
-                DETAIL="200 but missing expected content: $body_check"
-                FAILED=1
-              else
-                STATUS="OK"
-                DETAIL=""
-              fi
-            else
-              STATUS="FAIL"
-              DETAIL="HTTP $HTTP_CODE"
-              FAILED=1
-            fi
-
-            RESULTS="${RESULTS}| ${name} | ${STATUS} | ${HTTP_CODE} | ${LATENCY_MS}ms | ${DETAIL} |\n"
-          }
-
-          # API checks
-          check_endpoint "API /readyz" "$API_URL/readyz" 5 ""
-          check_endpoint "API /api/models" "$API_URL/api/models" 5 ""
-
-          # Frontend checks
-          check_endpoint "Frontend /" "$FRONTEND_URL" 10 "tardi"
-          check_endpoint "Frontend /login" "$FRONTEND_URL/login" 10 ""
-
-          # SSL certificate expiry
-          SSL_EXPIRY=$(echo | openssl s_client -servername app.tardi.ai -connect app.tardi.ai:443 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
-          if [ -n "$SSL_EXPIRY" ]; then
-            EXPIRY_EPOCH=$(date -d "$SSL_EXPIRY" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$SSL_EXPIRY" +%s 2>/dev/null || echo "0")
-            NOW_EPOCH=$(date +%s)
-            DAYS_LEFT=$(( (EXPIRY_EPOCH - NOW_EPOCH) / 86400 ))
-            if [ "$DAYS_LEFT" -lt 14 ]; then
-              RESULTS="${RESULTS}| SSL Certificate | WARN | - | - | Expires in ${DAYS_LEFT} days |\n"
-              FAILED=1
-            else
-              RESULTS="${RESULTS}| SSL Certificate | OK | - | - | Expires in ${DAYS_LEFT} days |\n"
-            fi
-          else
-            RESULTS="${RESULTS}| SSL Certificate | FAIL | - | - | Could not check |\n"
-            FAILED=1
-          fi
-
-          # Write summary
-          SUMMARY="| Check | Status | HTTP | Latency | Details |\n|-------|--------|------|---------|---------|"
-          SUMMARY="${SUMMARY}\n${RESULTS}"
-
-          echo "## Synthetic Monitoring Results" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          printf "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
-
-          echo "failed=$FAILED" >> "$GITHUB_OUTPUT"
-
-          # Escape newlines for output
-          SUMMARY_ESCAPED=$(printf "$SUMMARY" | sed ':a;N;$!ba;s/\n/\\n/g')
-          echo "summary=$SUMMARY_ESCAPED" >> "$GITHUB_OUTPUT"
-
-          if [ "$FAILED" -eq 1 ]; then
-            echo "::error::One or more health checks failed"
-            exit 1
-          fi
-
-      - name: Alert on failure (create or update issue)
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const label = 'outage';
-
-            // Search for existing open outage issue
-            const { data: issues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              labels: label,
-              state: 'open',
-              per_page: 1,
-            });
-
-            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const timestamp = new Date().toISOString();
-            const failureDetails = `**${timestamp}** — Health checks failed. [View run](${runUrl})`;
-
-            if (issues.length > 0) {
-              // Comment on existing issue
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issues[0].number,
-                body: `Still failing:\n\n${failureDetails}`,
-              });
-              console.log(`Commented on existing outage issue #${issues[0].number}`);
-            } else {
-              // Create new issue
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: `OUTAGE DETECTED: Production health checks failing`,
-                body: [
-                  `## Production Outage Detected`,
-                  ``,
-                  failureDetails,
-                  ``,
-                  `This issue was auto-created by synthetic monitoring.`,
-                  `It will be auto-closed when checks pass again.`,
-                ].join('\n'),
-                labels: [label],
-              });
-              console.log('Created new outage issue');
-            }
-
-      - name: Auto-resolve on recovery
-        if: success()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const label = 'outage';
-
-            const { data: issues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              labels: label,
-              state: 'open',
-              per_page: 5,
-            });
-
-            const timestamp = new Date().toISOString();
-
-            for (const issue of issues) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body: `**${timestamp}** — Resolved. All health checks passing. ✅`,
-              });
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                state: 'closed',
-                state_reason: 'completed',
-              });
-              console.log(`Closed outage issue #${issue.number}`);
-            }
-
   deep-checks:
     name: Deep Checks (Playwright)
     runs-on: ubuntu-latest
-    # Run on manual dispatch or always (health checks gate frequency via cron)
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
