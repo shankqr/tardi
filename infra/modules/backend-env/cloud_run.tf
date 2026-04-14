@@ -173,6 +173,7 @@ resource "google_cloud_run_v2_service" "api" {
           cpu    = "1"
           memory = "512Mi"
         }
+        cpu_idle = true
       }
 
       startup_probe {
@@ -193,7 +194,7 @@ resource "google_cloud_run_v2_service" "api" {
     }
 
     scaling {
-      min_instance_count = 1
+      min_instance_count = var.environment == "prod" ? 1 : 0
       max_instance_count = var.environment == "prod" ? 10 : 2
     }
 
