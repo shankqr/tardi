@@ -1,7 +1,11 @@
-.PHONY: dev build run test lint db-reset db-dev db-prod db-query-dev db-query-prod
+.PHONY: dev build dashboard-shim run test lint db-reset db-dev db-prod db-query-dev db-query-prod
 
-# Build the server binary
-build:
+# Build the dashboard-shim binary (always linux/amd64 — runs on user VPSes)
+dashboard-shim:
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bin/tardi-dashboard-shim ./cmd/dashboard-shim
+
+# Build the server binary (also produces dashboard-shim so the agent endpoint can serve it)
+build: dashboard-shim
 	go build -o bin/server ./cmd/server
 
 # Run the server

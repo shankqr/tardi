@@ -129,6 +129,19 @@ su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes
 }
 log_status "HERMES_INSTALLED"
 
+# --- Install Hermes web dashboard extras (FastAPI + Uvicorn) ---
+# v0.9.0 ships a local web dashboard via "hermes dashboard" that requires the
+# [web] extras. Install into the same uv-managed venv as the hermes CLI.
+HERMES_VENV=$(su - hermes -c 'ls -d ~/.hermes/.venv 2>/dev/null || ls -d ~/.local/share/hermes/.venv 2>/dev/null || true')
+if [ -n "$HERMES_VENV" ]; then
+    su - hermes -c "~/.local/bin/uv pip install --python ${HERMES_VENV}/bin/python 'hermes-agent[web]'" || \
+        su - hermes -c "${HERMES_VENV}/bin/pip install 'hermes-agent[web]'" || true
+else
+    # Fallback: pip via the hermes CLI's own python
+    su - hermes -c 'hermes --version >/dev/null 2>&1 && (~/.local/bin/uv pip install "hermes-agent[web]" || pip install "hermes-agent[web]")' || true
+fi
+log_status "HERMES_WEB_INSTALLED"
+
 # --- Directory structure ---
 mkdir -p /opt/hermes/data/memories /opt/hermes/data/skills /opt/hermes/data/sessions /opt/hermes/data/logs /opt/hermes/data/hooks /opt/hermes/data/cron
 chown -R hermes:hermes /opt/hermes/data
@@ -239,7 +252,15 @@ http://{{.PreviewDomain}} {
 {{- end}}
 
 http:// {
-    reverse_proxy localhost:8642
+    handle /v1/* {
+        reverse_proxy localhost:8642
+    }
+    handle /health {
+        reverse_proxy localhost:8642
+    }
+    handle {
+        reverse_proxy localhost:9118
+    }
 }
 CADDYEOF
 
@@ -288,6 +309,64 @@ WorkingDirectory=/opt/hermes/data
 WantedBy=multi-user.target
 SVCEOF
 
+# --- Hermes web dashboard (loopback only — fronted by tardi-dashboard-shim) ---
+cat > /etc/systemd/system/hermes-dashboard.service <<SVCEOF
+[Unit]
+Description=Hermes Web Dashboard
+After=network.target hermes-agent.service
+Requires=hermes-agent.service
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+EnvironmentFile=/opt/hermes/.env
+Environment=HOME=/home/hermes
+Environment=PATH=/home/hermes/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=${HERMES_BIN} dashboard --host 127.0.0.1 --port 9119 --no-open
+Restart=always
+RestartSec=10
+WorkingDirectory=/opt/hermes/data
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+# --- Tardi dashboard auth shim ---
+# Hermes dashboard ships with no authentication; this shim sits in front of it,
+# accepts the API_SERVER_KEY via #token= URL hash, sets an HttpOnly cookie, and
+# reverse-proxies to localhost:9119. Caddy routes the public domain to :9118.
+for i in $(seq 1 10); do
+    if curl -fsSL -H "Authorization: Bearer {{.AgentToken}}" \
+        "{{.APIURL}}/api/agent/dashboard-shim" \
+        -o /usr/local/bin/tardi-dashboard-shim; then
+        chmod +x /usr/local/bin/tardi-dashboard-shim
+        break
+    fi
+    sleep 5
+done
+
+cat > /etc/systemd/system/tardi-dashboard-shim.service <<'SHIMSVCEOF'
+[Unit]
+Description=Tardi Dashboard Auth Shim
+After=network.target hermes-dashboard.service
+Requires=hermes-dashboard.service
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+EnvironmentFile=/opt/hermes/.env
+Environment=LISTEN=127.0.0.1:9118
+Environment=DASHBOARD_BACKEND=http://127.0.0.1:9119
+ExecStart=/usr/local/bin/tardi-dashboard-shim
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SHIMSVCEOF
+
 # --- Heartbeat script ---
 for i in $(seq 1 10); do
     if curl -sf -H "Authorization: Bearer {{.AgentToken}}" "{{.APIURL}}/api/agent/heartbeat-script" -o /opt/hermes/heartbeat.sh; then
@@ -324,6 +403,10 @@ HBTEOF
 systemctl daemon-reload
 systemctl enable hermes-agent
 systemctl start hermes-agent
+systemctl enable hermes-dashboard
+systemctl start hermes-dashboard
+systemctl enable tardi-dashboard-shim
+systemctl start tardi-dashboard-shim
 systemctl enable hermes-heartbeat.timer
 systemctl start hermes-heartbeat.timer
 log_status "SERVICES_STARTED"

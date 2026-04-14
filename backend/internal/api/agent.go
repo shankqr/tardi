@@ -374,6 +374,56 @@ func AgentHeartbeatScriptHandler(deps Dependencies) http.HandlerFunc {
 	}
 }
 
+// AgentDashboardShimHandler serves the compiled tardi-dashboard-shim binary.
+// Cloud-init downloads it during provisioning and the heartbeat refreshes it
+// when the sha256 changes. Authenticated by agent token.
+func AgentDashboardShimHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := extractAgentToken(r)
+		if token == "" {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "missing agent token")
+			return
+		}
+		if _, err := db.GetInstanceByAgentToken(r.Context(), deps.Pool, token); err != nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "invalid agent token")
+			return
+		}
+
+		bin := scripts.DashboardShimBinary()
+		if len(bin) == 0 {
+			WriteError(w, http.StatusServiceUnavailable, "shim_unavailable", "dashboard-shim binary not loaded")
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("ETag", scripts.DashboardShimSHA256())
+		w.Write(bin)
+	}
+}
+
+// AgentDashboardShimSHAHandler returns the hex sha256 of the current shim
+// binary so the heartbeat can cheaply check for drift before re-downloading.
+func AgentDashboardShimSHAHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := extractAgentToken(r)
+		if token == "" {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "missing agent token")
+			return
+		}
+		if _, err := db.GetInstanceByAgentToken(r.Context(), deps.Pool, token); err != nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "invalid agent token")
+			return
+		}
+
+		sha := scripts.DashboardShimSHA256()
+		if sha == "" {
+			WriteError(w, http.StatusServiceUnavailable, "shim_unavailable", "dashboard-shim binary not loaded")
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.Write([]byte(sha))
+	}
+}
+
 func extractAgentToken(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
 	if strings.HasPrefix(auth, "Bearer ") {

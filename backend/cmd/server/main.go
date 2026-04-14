@@ -24,6 +24,7 @@ import (
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
 	"github.com/shanq/tardi/internal/provider/hetzner"
+	"github.com/shanq/tardi/internal/scripts"
 	"github.com/shanq/tardi/migrations"
 )
 
@@ -50,6 +51,10 @@ func main() {
 	}
 	logger := slog.New(logHandler)
 	slog.SetDefault(logger)
+
+	// Eagerly load the dashboard-shim binary so we surface the success/failure
+	// log line at startup rather than at the first /api/agent/dashboard-shim hit.
+	scripts.LoadDashboardShim()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

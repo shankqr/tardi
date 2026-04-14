@@ -72,11 +72,13 @@ func resolveImageTag(ctx context.Context, pool *pgxpool.Pool, fallback string) s
 }
 
 // resolveHermesVersion reads the pinned Hermes version from the database.
-// Falls back to "main" if the DB has no pinned version or still says "latest".
+// Falls back to v0.9.0 (v2026.4.13) when no version is pinned — the first
+// Hermes release with the built-in web dashboard that Tardi exposes via the
+// dashboard-shim auth gate.
 func resolveHermesVersion(ctx context.Context, pool *pgxpool.Pool) string {
 	v, err := db.GetGlobalHermesVersion(ctx, pool)
 	if err != nil || v == "" || v == "latest" {
-		return "main"
+		return "v2026.4.13"
 	}
 	return v
 }

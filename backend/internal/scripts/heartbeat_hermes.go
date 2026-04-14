@@ -77,26 +77,62 @@ if [ -n "$API_PREVIEW_DOMAIN" ]; then
 fi
 
 # --- Caddy drift guard ---
+# Path-split: /v1/* and /health -> Hermes API (8642), everything else ->
+# tardi-dashboard-shim (9118) which gates the Hermes web dashboard (9119).
 source /opt/hermes/.env 2>/dev/null
-EXPECTED_CADDYFILE=""
+ROOT_BLOCK="http:// {
+    handle /v1/* {
+        reverse_proxy localhost:8642
+    }
+    handle /health {
+        reverse_proxy localhost:8642
+    }
+    handle {
+        reverse_proxy localhost:9118
+    }
+}"
+
 if [ -n "${PREVIEW_DOMAIN:-}" ]; then
     EXPECTED_CADDYFILE="http://${PREVIEW_DOMAIN} {
     reverse_proxy localhost:3000
 }
 
-http:// {
-    reverse_proxy localhost:8642
-}"
+${ROOT_BLOCK}"
 else
-    EXPECTED_CADDYFILE="http:// {
-    reverse_proxy localhost:8642
-}"
+    EXPECTED_CADDYFILE="${ROOT_BLOCK}"
 fi
 
 CURRENT_CADDYFILE=$(cat /etc/caddy/Caddyfile 2>/dev/null || echo "")
 if [ "$CURRENT_CADDYFILE" != "$EXPECTED_CADDYFILE" ]; then
     echo "$EXPECTED_CADDYFILE" > /etc/caddy/Caddyfile
     /usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null || true
+fi
+
+# --- Dashboard + shim service watchdog ---
+# These don't drive the heartbeat STATUS field — only hermes-agent does — but
+# we restart them if they've fallen over so the dashboard URL keeps working.
+for svc in hermes-dashboard tardi-dashboard-shim; do
+    if [ -f /etc/systemd/system/${svc}.service ]; then
+        STATE=$(systemctl is-active ${svc} 2>/dev/null || echo "unknown")
+        if [ "$STATE" = "inactive" ] || [ "$STATE" = "failed" ]; then
+            systemctl restart ${svc} 2>/dev/null || true
+        fi
+    fi
+done
+
+# --- Dashboard shim binary self-update ---
+EXPECTED_SHIM_SHA=$(curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/dashboard-shim-sha" 2>/dev/null)
+if [ -n "$EXPECTED_SHIM_SHA" ]; then
+    CURRENT_SHIM_SHA=$(sha256sum /usr/local/bin/tardi-dashboard-shim 2>/dev/null | awk '{print $1}')
+    if [ "$EXPECTED_SHIM_SHA" != "$CURRENT_SHIM_SHA" ]; then
+        if curl -fsSL -H "Authorization: Bearer ${AGENT_TOKEN}" \
+            "${API_URL}/api/agent/dashboard-shim" \
+            -o /usr/local/bin/tardi-dashboard-shim.new; then
+            chmod +x /usr/local/bin/tardi-dashboard-shim.new
+            mv /usr/local/bin/tardi-dashboard-shim.new /usr/local/bin/tardi-dashboard-shim
+            systemctl restart tardi-dashboard-shim 2>/dev/null || true
+        fi
+    fi
 fi
 
 # --- Config version sync ---
