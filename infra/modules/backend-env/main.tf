@@ -36,7 +36,7 @@ resource "google_sql_database_instance" "db" {
 
   settings {
     tier              = var.db_tier
-    availability_type = var.environment == "prod" ? "REGIONAL" : "ZONAL"
+    availability_type = "ZONAL"
     disk_size         = var.environment == "prod" ? 20 : 10
     disk_autoresize   = true
 
@@ -48,10 +48,10 @@ resource "google_sql_database_instance" "db" {
 
     backup_configuration {
       enabled                        = var.environment == "prod"
-      point_in_time_recovery_enabled = var.environment == "prod"
+      point_in_time_recovery_enabled = false
       start_time                     = "03:00"
       backup_retention_settings {
-        retained_backups = var.environment == "prod" ? 7 : 1
+        retained_backups = var.environment == "prod" ? 3 : 1
       }
     }
 

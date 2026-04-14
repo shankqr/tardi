@@ -12,7 +12,7 @@ variable "region" {
 variable "db_tier" {
   description = "Cloud SQL machine tier"
   type        = string
-  default     = "db-custom-1-3840"
+  default     = "db-g1-small"
 }
 
 variable "frontend_url" {
