@@ -33,7 +33,7 @@ resource "google_cloud_run_v2_service" "api" {
       }
       env {
         name  = "LOG_LEVEL"
-        value = var.environment == "prod" ? "info" : "debug"
+        value = "info"
       }
       env {
         name  = "API_URL"
@@ -208,9 +208,12 @@ resource "google_cloud_run_v2_service" "api" {
   }
 
   # Image + deploy-time labels are owned by the deploy-backend workflow.
+  # volume_mounts drift is reintroduced by the gcloud-based deploy even
+  # though TF only defines the volume at template level; ignore it.
   lifecycle {
     ignore_changes = [
       template[0].containers[0].image,
+      template[0].containers[0].volume_mounts,
       template[0].labels,
       client,
       client_version,

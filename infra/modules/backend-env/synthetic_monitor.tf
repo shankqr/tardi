@@ -126,8 +126,8 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_invoker" {
 resource "google_cloud_scheduler_job" "synthetic_monitor" {
   count            = local.synthetic_monitor_enabled ? 1 : 0
   name             = "tardi-synthetic-monitor"
-  description      = "Invoke synthetic monitor every 10 minutes"
-  schedule         = "*/10 * * * *"
+  description      = "Invoke synthetic monitor every 15 minutes"
+  schedule         = "*/15 * * * *"
   time_zone        = "Etc/UTC"
   region           = var.region
   project          = var.project_id
