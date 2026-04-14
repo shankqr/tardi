@@ -15,6 +15,7 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
+    "cloudscheduler.googleapis.com",
   ])
 
   project            = var.project_id
