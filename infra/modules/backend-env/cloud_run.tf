@@ -206,6 +206,16 @@ resource "google_cloud_run_v2_service" "api" {
       }
     }
   }
+
+  # Image + deploy-time labels are owned by the deploy-backend workflow.
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image,
+      template[0].labels,
+      client,
+      client_version,
+    ]
+  }
 }
 
 # Allow unauthenticated access (API handles auth via Firebase JWT)
