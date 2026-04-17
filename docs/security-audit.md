@@ -1,5 +1,7 @@
 # Security Audit — Tardi VPS Platform
 
+> **Superseded by [security-review-2026-04-17.md](security-review-2026-04-17.md).** Kept for history.
+
 > **Date:** 2026-03-26 (full re-audit)
 > **Scope:** Full security analysis of the single-container VPS architecture with Caddy host binary, Cloudflare Proxy TLS, and token-based gateway auth.
 > **Previous audit:** 2026-03-24 (single-container migration, SSH hardening)
