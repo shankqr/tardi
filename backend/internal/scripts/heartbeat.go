@@ -32,6 +32,17 @@ if ! grep -q 'data/gogcli' /opt/openclaw/docker-compose.yml 2>/dev/null; then
     cd /opt/openclaw && docker compose up -d 2>/dev/null || true
 fi
 
+# --- Migrate: add codex volume mount if missing (persists codex login across upgrades) ---
+if ! grep -q 'data/codex' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    mkdir -p /opt/openclaw/data/codex
+    chown 1000:1000 /opt/openclaw/data/codex
+    # Copy any existing ephemeral auth out before mount hides it
+    docker cp openclaw-gateway:/home/node/.codex/. /opt/openclaw/data/codex/ 2>/dev/null || true
+    chown -R 1000:1000 /opt/openclaw/data/codex
+    sed -i '/\.\/data\/gogcli:\/home\/node\/\.config\/gogcli:rw/a\      - ./data/codex:/home/node/.codex:rw' /opt/openclaw/docker-compose.yml
+    cd /opt/openclaw && docker compose up -d 2>/dev/null || true
+fi
+
 # Check OpenClaw gateway health
 HEALTH=$(curl -sf http://localhost:18789/health 2>/dev/null)
 if [ $? -eq 0 ]; then

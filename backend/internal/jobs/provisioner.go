@@ -163,7 +163,7 @@ useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
 usermod -aG docker openclaw
 
 # --- Directory structure ---
-mkdir -p /opt/openclaw/data/openclaw /opt/openclaw/data/gogcli
+mkdir -p /opt/openclaw/data/openclaw /opt/openclaw/data/gogcli /opt/openclaw/data/codex
 chown -R 1000:1000 /opt/openclaw/data
 
 # --- OpenClaw config ---
@@ -283,6 +283,7 @@ services:
     volumes:
       - ./data/openclaw:/home/node/.openclaw:rw
       - ./data/gogcli:/home/node/.config/gogcli:rw
+      - ./data/codex:/home/node/.codex:rw
       - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env
