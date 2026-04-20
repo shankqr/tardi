@@ -25,6 +25,7 @@ import (
 	"github.com/shanq/tardi/internal/provider"
 	"github.com/shanq/tardi/internal/provider/hetzner"
 	"github.com/shanq/tardi/internal/scripts"
+	"github.com/shanq/tardi/internal/sshexec"
 	"github.com/shanq/tardi/migrations"
 )
 
@@ -163,15 +164,17 @@ func main() {
 
 	// Build router with all endpoints
 	deps := api.Dependencies{
-		Pool:      pool,
-		Logger:    logger,
-		Config:    cfg,
-		Billing:   stripeSvc,
-		Registry:  registry,
-		Resumer:   resumer,
-		Upgrader:  upgrader,
-		DNSClient: dnsClient,
-		BGTasks:   &bgTasks,
+		Pool:       pool,
+		Logger:     logger,
+		Config:     cfg,
+		Billing:    stripeSvc,
+		Registry:   registry,
+		Resumer:    resumer,
+		Upgrader:   upgrader,
+		DNSClient:  dnsClient,
+		BGTasks:    &bgTasks,
+		SSHRunner:  sshexec.DefaultRunner{},
+		CodexState: api.NewCodexLinkState(),
 	}
 	handler := api.NewRouter(deps)
 

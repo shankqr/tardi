@@ -146,6 +146,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id, custom_caddyfile,
+		       codex_linked_at, codex_account_email,
 		       created_at, updated_at
 		FROM vps_instances v
 		WHERE user_id = $1 AND status != 'terminated'
@@ -166,6 +167,7 @@ func GetInstancesByUserID(ctx context.Context, pool *pgxpool.Pool, userID uuid.U
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 			&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID, &inst.CustomCaddyfile,
+			&inst.CodexLinkedAt, &inst.CodexAccountEmail,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -185,6 +187,7 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id, custom_caddyfile,
+		       codex_linked_at, codex_account_email,
 		       created_at, updated_at
 		FROM vps_instances v
 		WHERE id = $1 AND user_id = $2
@@ -510,6 +513,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id, custom_caddyfile,
+		       codex_linked_at, codex_account_email,
 		       created_at, updated_at
 		FROM vps_instances
 		WHERE status = $1
@@ -529,6 +533,7 @@ func GetActiveInstancesByStatus(ctx context.Context, pool *pgxpool.Pool, status 
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 			&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID, &inst.CustomCaddyfile,
+			&inst.CodexLinkedAt, &inst.CodexAccountEmail,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -674,6 +679,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id, custom_caddyfile,
+		       codex_linked_at, codex_account_email,
 		       created_at, updated_at
 		FROM vps_instances
 		WHERE subscription_id = $1 AND status NOT IN ('terminated', 'terminating')
@@ -693,6 +699,7 @@ func GetInstancesBySubscriptionID(ctx context.Context, pool *pgxpool.Pool, subID
 			&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 			&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 			&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID, &inst.CustomCaddyfile,
+			&inst.CodexLinkedAt, &inst.CodexAccountEmail,
 			&inst.CreatedAt, &inst.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
@@ -902,6 +909,7 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 		       root_password, agent_token_secret_name, openclaw_auth_token, agent_status, agent_error, last_heartbeat_at,
 		       openclaw_version, target_openclaw_version, openclaw_update_status, openclaw_update_error,
 		       domain, dns_record_id, preview_domain, preview_dns_record_id, custom_caddyfile,
+		       codex_linked_at, codex_account_email,
 		       created_at, updated_at
 		FROM vps_instances
 		WHERE agent_token_secret_name = $1
@@ -1021,6 +1029,18 @@ func UpdateSubscriptionPlanTier(ctx context.Context, pool *pgxpool.Pool, subID u
 	`, planTier, subID)
 	if err != nil {
 		return fmt.Errorf("update subscription plan tier: %w", err)
+	}
+	return nil
+}
+
+// SetCodexLinkState records whether an instance has a linked Codex (ChatGPT)
+// account. Pass nil for both args to clear the link.
+func SetCodexLinkState(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, linkedAt *time.Time, email *string) error {
+	_, err := pool.Exec(ctx, `
+		UPDATE vps_instances SET codex_linked_at = $1, codex_account_email = $2, updated_at = now() WHERE id = $3
+	`, linkedAt, email, instanceID)
+	if err != nil {
+		return fmt.Errorf("set codex link state: %w", err)
 	}
 	return nil
 }

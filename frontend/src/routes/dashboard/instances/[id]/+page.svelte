@@ -744,11 +744,10 @@
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
 					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsaved={recheckConfig} onsyncchange={(s) => aiConfigSyncing = s} />
 
-					<!-- Codex (ChatGPT) -->
-					<CodexConnect
-						instanceId={instance.id}
-						instanceStatus={instance.status}
-					/>
+					<!-- Codex (ChatGPT) — OpenClaw only -->
+					{#if instance.framework !== 'hermes'}
+					<CodexConnect instance={instance} />
+					{/if}
 
 					<!-- Google Account -->
 					{#if featureFlags.googleWorkspace}

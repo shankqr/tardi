@@ -6,6 +6,20 @@ import (
 	"time"
 )
 
+// Runner executes shell commands over SSH. The package-level RunCommand
+// function is the production implementation; tests inject fakes.
+type Runner interface {
+	RunCommand(host string, privateKey []byte, password, command string, timeout time.Duration) (string, error)
+}
+
+// DefaultRunner delegates to the package-level RunCommand. Use this in
+// production wiring; tests substitute their own Runner.
+type DefaultRunner struct{}
+
+func (DefaultRunner) RunCommand(host string, privateKey []byte, password, command string, timeout time.Duration) (string, error) {
+	return RunCommand(host, privateKey, password, command, timeout)
+}
+
 // RunCommand connects to the host via SSH and executes the given command.
 // It tries key-based auth first (if privateKey is non-nil), then falls back
 // to password auth (if password is non-empty). During the migration from

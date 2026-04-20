@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,19 +15,97 @@ import (
 	"github.com/shanq/tardi/internal/api/middleware"
 	"github.com/shanq/tardi/internal/db"
 	"github.com/shanq/tardi/internal/models"
-	"github.com/shanq/tardi/internal/sshexec"
 )
 
 const (
-	codexVerificationURL = "https://auth.openai.com/codex/device"
-	codexLoginLogPath    = "/tmp/codex-login.log"
-	codexAuthHostPath    = "/opt/openclaw/data/codex/auth.json"
+	codexVerificationURL     = "https://auth.openai.com/codex/device"
+	codexLoginLogPath        = "/tmp/codex-login.log"
+	codexAuthHostPath        = "/opt/openclaw/data/codex/auth.json"
+	codexLinkStartMinGap     = 30 * time.Second
+	codexRestartMaxDuration  = 90 * time.Second
+	codexHealthPollInterval  = 5 * time.Second
+	codexRestartGoroutineCap = 120 * time.Second
 )
 
+// Regexes are exported through package-level helpers to keep them testable.
+// ansiEscapeRE covers SGR and other CSI sequences the codex CLI colourises
+// output with. codexCodeRE matches the "XXXX-YYYYY" device code shape (codex
+// today emits 4-5 uppercase alphanumerics with a dash; we accept 4-4/4-5/4-6
+// to be forgiving).
 var (
-	ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	codexCodeRE  = regexp.MustCompile(`[A-Z0-9]{4}-[A-Z0-9]{4,6}`)
+	ansiEscapeRE     = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	codexCodeRE      = regexp.MustCompile(`[A-Z0-9]{4}-[A-Z0-9]{4,6}`)
+	codexEmailRE     = regexp.MustCompile(`([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})`)
+	codexLinkedRE    = regexp.MustCompile(`\bLINKED\b`)
+	codexPendingRE   = regexp.MustCompile(`\bPENDING\b`)
 )
+
+// CodexLinkState holds in-process per-instance state that the codex link
+// handlers use to rate limit the start endpoint and avoid redundant gateway
+// restarts while a link is being finalised. Scope is a single Cloud Run
+// instance — cross-instance coordination isn't necessary because both
+// behaviours are best-effort optimisations.
+type CodexLinkState struct {
+	lastStart sync.Map // uuid.UUID -> time.Time
+	restartAt sync.Map // uuid.UUID -> time.Time
+}
+
+func NewCodexLinkState() *CodexLinkState { return &CodexLinkState{} }
+
+func (s *CodexLinkState) recordStart(id uuid.UUID) {
+	s.lastStart.Store(id, time.Now())
+}
+
+func (s *CodexLinkState) recentStart(id uuid.UUID) (time.Duration, bool) {
+	v, ok := s.lastStart.Load(id)
+	if !ok {
+		return 0, false
+	}
+	return time.Since(v.(time.Time)), true
+}
+
+func (s *CodexLinkState) markRestart(id uuid.UUID) bool {
+	now := time.Now()
+	existing, loaded := s.restartAt.LoadOrStore(id, now)
+	if !loaded {
+		return true
+	}
+	// Stale marker — recycle.
+	if time.Since(existing.(time.Time)) > codexRestartMaxDuration {
+		s.restartAt.Store(id, now)
+		return true
+	}
+	return false
+}
+
+func (s *CodexLinkState) clearRestart(id uuid.UUID) {
+	s.restartAt.Delete(id)
+}
+
+func (s *CodexLinkState) restartInFlight(id uuid.UUID) bool {
+	v, ok := s.restartAt.Load(id)
+	if !ok {
+		return false
+	}
+	if time.Since(v.(time.Time)) > codexRestartMaxDuration {
+		s.restartAt.Delete(id)
+		return false
+	}
+	return true
+}
+
+// extractDeviceCode returns the device code in the given codex CLI output,
+// or empty if none is present. Strips ANSI escapes before matching.
+func extractDeviceCode(out string) string {
+	return codexCodeRE.FindString(ansiEscapeRE.ReplaceAllString(out, ""))
+}
+
+// extractLoggedInEmail parses `codex login status` output and returns the
+// account email, or empty if the login state can't be parsed.
+func extractLoggedInEmail(out string) string {
+	cleaned := ansiEscapeRE.ReplaceAllString(out, "")
+	return codexEmailRE.FindString(cleaned)
+}
 
 // loadActiveOCInstance parses the instance id from the path, ensures it
 // belongs to the user, is active, has an IP, and runs OpenClaw. Writes an
@@ -52,7 +132,7 @@ func loadActiveOCInstance(w http.ResponseWriter, r *http.Request, deps Dependenc
 		return nil
 	}
 	if inst.Framework == models.FrameworkHermes {
-		WriteError(w, http.StatusConflict, "conflict", "Codex linking is only supported on OpenClaw agents")
+		WriteError(w, http.StatusConflict, "not_supported", "Codex linking is only supported on OpenClaw agents")
 		return nil
 	}
 	if inst.Status != "active" {
@@ -66,6 +146,24 @@ func loadActiveOCInstance(w http.ResponseWriter, r *http.Request, deps Dependenc
 	return inst
 }
 
+func sshCreds(inst *models.VpsInstance, cfg *dependenciesConfigAccessor) (string, []byte, string) {
+	host := *inst.IPv4
+	pw := ""
+	if inst.RootPassword != nil {
+		pw = *inst.RootPassword
+	}
+	return host, cfg.sshKey(), pw
+}
+
+// dependenciesConfigAccessor is a tiny adapter so we can pass just the bits
+// of Dependencies a handler needs without leaking the whole struct into
+// helpers. Kept local to this file.
+type dependenciesConfigAccessor struct {
+	deps Dependencies
+}
+
+func (d *dependenciesConfigAccessor) sshKey() []byte { return d.deps.Config.SSHPrivateKey }
+
 // CodexLinkStartHandler launches `codex login --device-auth` inside the
 // container and returns the device code + verification URL. The login
 // subprocess keeps running inside the container until the user completes
@@ -77,12 +175,17 @@ func CodexLinkStartHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		ip := *inst.IPv4
-		pw := ""
-		if inst.RootPassword != nil {
-			pw = *inst.RootPassword
+		// Per-instance rate limit: reject if the last start was <30s ago.
+		// Prevents button-mashing from churning codex login processes.
+		if since, ok := deps.CodexState.recentStart(inst.ID); ok && since < codexLinkStartMinGap {
+			retryIn := int((codexLinkStartMinGap - since).Seconds()) + 1
+			WriteError(w, http.StatusTooManyRequests, "rate_limited",
+				fmt.Sprintf("please wait %ds before starting another link", retryIn))
+			return
 		}
-		sshKey := deps.Config.SSHPrivateKey
+
+		cfg := &dependenciesConfigAccessor{deps: deps}
+		host, key, pw := sshCreds(inst, cfg)
 
 		script := `set -e
 docker exec openclaw-gateway pkill -f 'codex login' 2>/dev/null || true
@@ -98,34 +201,40 @@ for i in $(seq 1 40); do
 done
 docker exec openclaw-gateway cat ` + codexLoginLogPath + ` 2>/dev/null || true`
 
-		out, err := sshexec.RunCommand(ip, sshKey, pw, script, 30*time.Second)
+		out, err := deps.SSHRunner.RunCommand(host, key, pw, script, 45*time.Second)
 		if err != nil {
 			slog.Error("codex link start: ssh failed", "instance_id", inst.ID, "error", err)
 			WriteError(w, http.StatusBadGateway, "ssh_failed", "could not reach your agent")
 			return
 		}
 
-		cleaned := ansiEscapeRE.ReplaceAllString(out, "")
-		match := codexCodeRE.FindString(cleaned)
-		if match == "" {
-			slog.Warn("codex link start: no code in output", "instance_id", inst.ID, "output", cleaned)
-			WriteError(w, http.StatusBadGateway, "no_code", "codex did not return a device code — it may need a moment, try again")
+		code := extractDeviceCode(out)
+		if code == "" {
+			slog.Warn("codex link start: no code in output", "instance_id", inst.ID, "output", out)
+			WriteError(w, http.StatusBadGateway, "no_code", "codex did not return a device code — please try again in a moment")
 			return
 		}
 
+		deps.CodexState.recordStart(inst.ID)
 		slog.Info("codex link start: device code issued", "instance_id", inst.ID)
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"code":             match,
+			"code":             code,
 			"verification_url": codexVerificationURL,
 			"expires_in":       900,
 		})
 	}
 }
 
-// CodexLinkStatusHandler polls the VPS to see whether the user has
-// completed the device-code flow. When auth.json first appears, the
-// gateway is restarted so the codex app-server subprocess picks up the
-// fresh credentials.
+// CodexLinkStatusHandler reports one of four states to the client:
+//   - linked: DB already records the link (fast path, no SSH).
+//   - restarting: auth.json is present but we're still confirming the
+//     codex app-server picked it up.
+//   - pending: login process still running in the container.
+//   - absent: no auth.json, no login running.
+//
+// On the first observation of a new auth.json, we fire a background
+// goroutine that restarts the gateway, waits for health, then writes the
+// link state and an audit-log entry.
 func CodexLinkStatusHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		inst := loadActiveOCInstance(w, r, deps)
@@ -133,41 +242,47 @@ func CodexLinkStatusHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		ip := *inst.IPv4
-		pw := ""
-		if inst.RootPassword != nil {
-			pw = *inst.RootPassword
+		// Fast path: DB says linked. No SSH needed.
+		if inst.CodexLinkedAt != nil {
+			WriteJSON(w, http.StatusOK, map[string]any{
+				"status": "linked",
+				"email":  inst.CodexAccountEmail,
+			})
+			return
 		}
-		sshKey := deps.Config.SSHPrivateKey
 
-		script := fmt.Sprintf(`if [ -f %s ]; then
+		cfg := &dependenciesConfigAccessor{deps: deps}
+		host, key, pw := sshCreds(inst, cfg)
+
+		// Probe: auth.json present? login process running?
+		probe := fmt.Sprintf(`if [ -f %s ]; then
     echo LINKED
 elif docker exec openclaw-gateway pgrep -f 'codex login' >/dev/null 2>&1; then
     echo PENDING
 else
-    docker exec openclaw-gateway cat %s 2>/dev/null | tail -1
     echo ABSENT
-fi`, codexAuthHostPath, codexLoginLogPath)
+fi`, codexAuthHostPath)
 
-		out, err := sshexec.RunCommand(ip, sshKey, pw, script, 15*time.Second)
+		out, err := deps.SSHRunner.RunCommand(host, key, pw, probe, 15*time.Second)
 		if err != nil {
 			slog.Error("codex link status: ssh failed", "instance_id", inst.ID, "error", err)
 			WriteError(w, http.StatusBadGateway, "ssh_failed", "could not reach your agent")
 			return
 		}
 
-		cleaned := ansiEscapeRE.ReplaceAllString(out, "")
 		switch {
-		case regexp.MustCompile(`\bLINKED\b`).MatchString(cleaned):
-			// Restart gateway so the codex app-server picks up the new auth.
-			// Fire-and-forget — status will reflect LINKED regardless.
-			go func(ip, pw string, key []byte, id uuid.UUID) {
-				if _, rErr := sshexec.RunCommand(ip, key, pw, "docker restart openclaw-gateway", 30*time.Second); rErr != nil {
-					slog.Error("codex link status: gateway restart failed", "instance_id", id, "error", rErr)
-				}
-			}(ip, pw, sshKey, inst.ID)
-			WriteJSON(w, http.StatusOK, map[string]any{"status": "linked"})
-		case regexp.MustCompile(`\bPENDING\b`).MatchString(cleaned):
+		case codexLinkedRE.MatchString(out):
+			// auth.json present but DB not updated yet. Either a restart is
+			// already in flight, or we need to kick one off.
+			if deps.CodexState.restartInFlight(inst.ID) {
+				WriteJSON(w, http.StatusOK, map[string]any{"status": "restarting"})
+				return
+			}
+			if deps.CodexState.markRestart(inst.ID) {
+				go finaliseCodexLink(deps, inst.ID, host, key, pw)
+			}
+			WriteJSON(w, http.StatusOK, map[string]any{"status": "restarting"})
+		case codexPendingRE.MatchString(out):
 			WriteJSON(w, http.StatusOK, map[string]any{"status": "pending"})
 		default:
 			WriteJSON(w, http.StatusOK, map[string]any{"status": "absent"})
@@ -175,9 +290,65 @@ fi`, codexAuthHostPath, codexLoginLogPath)
 	}
 }
 
-// CodexUnlinkHandler logs codex out, deletes the persisted auth.json, and
-// restarts the gateway so any cached credentials in the running codex
-// app-server are dropped.
+// finaliseCodexLink restarts the gateway, waits for /health to come back,
+// reads the account email via `codex login status`, persists the link in
+// the DB, and writes an audit-log entry. Runs off the request goroutine.
+func finaliseCodexLink(deps Dependencies, instanceID uuid.UUID, host string, key []byte, pw string) {
+	defer deps.CodexState.clearRestart(instanceID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), codexRestartGoroutineCap)
+	defer cancel()
+
+	if _, err := deps.SSHRunner.RunCommand(host, key, pw, "docker restart openclaw-gateway", 30*time.Second); err != nil {
+		slog.Error("codex finalise: gateway restart failed", "instance_id", instanceID, "error", err)
+		return
+	}
+
+	// Poll /health until ready or 90s elapsed.
+	healthy := false
+	deadline := time.Now().Add(codexRestartMaxDuration)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			slog.Warn("codex finalise: context done before health confirmed", "instance_id", instanceID)
+			return
+		case <-time.After(codexHealthPollInterval):
+		}
+		out, err := deps.SSHRunner.RunCommand(host, key, pw,
+			"curl -sf -o /dev/null -w %{http_code} http://localhost:18789/health", 10*time.Second)
+		if err == nil && out == "200" {
+			healthy = true
+			break
+		}
+	}
+	if !healthy {
+		slog.Warn("codex finalise: gateway did not become healthy within timeout", "instance_id", instanceID)
+		return
+	}
+
+	statusOut, err := deps.SSHRunner.RunCommand(host, key, pw,
+		"docker exec openclaw-gateway codex login status 2>&1", 15*time.Second)
+	if err != nil {
+		slog.Warn("codex finalise: could not read login status", "instance_id", instanceID, "error", err)
+	}
+	email := extractLoggedInEmail(statusOut)
+	var emailPtr *string
+	if email != "" {
+		emailPtr = &email
+	}
+
+	linkedAt := time.Now().UTC()
+	if err := db.SetCodexLinkState(ctx, deps.Pool, instanceID, &linkedAt, emailPtr); err != nil {
+		slog.Error("codex finalise: persist link state", "instance_id", instanceID, "error", err)
+		return
+	}
+
+	writeCodexAuditLog(ctx, deps, instanceID, "codex_link", emailPtr)
+	slog.Info("codex finalise: linked", "instance_id", instanceID, "email", email)
+}
+
+// CodexUnlinkHandler removes the persisted auth.json, clears the DB link
+// state, writes an audit-log entry, and restarts the gateway.
 func CodexUnlinkHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		inst := loadActiveOCInstance(w, r, deps)
@@ -185,26 +356,50 @@ func CodexUnlinkHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		ip := *inst.IPv4
-		pw := ""
-		if inst.RootPassword != nil {
-			pw = *inst.RootPassword
-		}
-		sshKey := deps.Config.SSHPrivateKey
+		cfg := &dependenciesConfigAccessor{deps: deps}
+		host, key, pw := sshCreds(inst, cfg)
 
 		script := fmt.Sprintf(`docker exec openclaw-gateway pkill -f 'codex login' 2>/dev/null || true
 docker exec openclaw-gateway codex logout 2>/dev/null || true
 rm -f %s
 docker restart openclaw-gateway >/dev/null 2>&1`, codexAuthHostPath)
 
-		_, err := sshexec.RunCommand(ip, sshKey, pw, script, 60*time.Second)
-		if err != nil {
+		if _, err := deps.SSHRunner.RunCommand(host, key, pw, script, 60*time.Second); err != nil {
 			slog.Error("codex unlink: ssh failed", "instance_id", inst.ID, "error", err)
 			WriteError(w, http.StatusBadGateway, "ssh_failed", "could not reach your agent")
 			return
 		}
 
+		if err := db.SetCodexLinkState(r.Context(), deps.Pool, inst.ID, nil, nil); err != nil {
+			slog.Error("codex unlink: clear DB state", "instance_id", inst.ID, "error", err)
+			// SSH already succeeded; don't fail the user-facing request.
+		}
+
+		writeCodexAuditLog(r.Context(), deps, inst.ID, "codex_unlink", nil)
 		slog.Info("codex unlink: ok", "instance_id", inst.ID)
 		WriteJSON(w, http.StatusOK, map[string]any{"status": "unlinked"})
+	}
+}
+
+func writeCodexAuditLog(ctx context.Context, deps Dependencies, instanceID uuid.UUID, action string, email *string) {
+	user := middleware.UserFromContext(ctx)
+	var userID uuid.UUID
+	if user != nil {
+		userID = user.ID
+	}
+	var metadata map[string]any
+	if email != nil && *email != "" {
+		metadata = map[string]any{"email": *email}
+	}
+	entry := &models.AuditLogEntry{
+		ID:           uuid.New(),
+		UserID:       userID,
+		Action:       action,
+		ResourceType: "instance",
+		ResourceID:   &instanceID,
+		Metadata:     metadata,
+	}
+	if err := db.InsertAuditLog(ctx, deps.Pool, entry); err != nil {
+		slog.Warn("codex audit log insert failed", "instance_id", instanceID, "action", action, "error", err)
 	}
 }

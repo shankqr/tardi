@@ -319,7 +319,7 @@ export async function startCodexLink(
 export async function getCodexLinkStatus(
 	token: string,
 	instanceId: string
-): Promise<{ status: 'pending' | 'linked' | 'absent' }> {
+): Promise<{ status: 'pending' | 'linked' | 'absent' | 'restarting'; email?: string | null }> {
 	if (USE_MOCK) {
 		return { status: 'pending' };
 	}

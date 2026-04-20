@@ -13,6 +13,7 @@ import (
 	"github.com/shanq/tardi/internal/dns"
 	"github.com/shanq/tardi/internal/jobs"
 	"github.com/shanq/tardi/internal/provider"
+	"github.com/shanq/tardi/internal/sshexec"
 )
 
 type Dependencies struct {
@@ -25,6 +26,13 @@ type Dependencies struct {
 	Upgrader  *jobs.Upgrader
 	DNSClient *dns.Client   // nil if Cloudflare DNS not configured
 	BGTasks   *sync.WaitGroup // Tracks background goroutines (snapshots, restores) for graceful shutdown
+
+	// SSHRunner executes shell commands on user VPSes. Defaults to
+	// sshexec.DefaultRunner{} in production; tests inject fakes.
+	SSHRunner sshexec.Runner
+	// CodexState holds per-instance in-memory state for the codex link flow:
+	// last start time (for rate limiting) and restart-in-progress markers.
+	CodexState *CodexLinkState
 }
 
 func NewRouter(deps Dependencies) http.Handler {
