@@ -374,6 +374,10 @@ for i in $(seq 1 30); do
 done
 
 if [ "$HEALTHY" = true ]; then
+    # Install Codex CLI so codex/* models work. Idempotent; ephemeral per
+    # container, so heartbeat.go reinstalls after each image upgrade.
+    docker exec -u 0 openclaw-gateway npm install -g @openai/codex >/dev/null 2>&1 || true
+
     # Register all Tardi catalog models so OC dashboard dropdown matches frontend.
     # For OpenRouter, prepend "openrouter/" so OpenClaw routes through OpenRouter
     # instead of the model's native provider.
