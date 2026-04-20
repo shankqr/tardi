@@ -29,7 +29,7 @@ npm run check        # Type check
 - UI labels say "Agent" (not "Instance") — internal code uses `instance`/`VpsInstance`
 - Gray-900 is the primary brand color
 - No VPS specs shown to users — abstracted away
-- Always commit and push to dev branch after any changes to code
+- Default branch for code changes is `main` — commit and push directly to main. Only use the `dev` branch when spinning the dev environment back up.
 
 ## Backend
 
