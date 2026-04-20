@@ -302,6 +302,48 @@ export async function getSyncStatus(
 	);
 }
 
+export async function startCodexLink(
+	token: string,
+	instanceId: string
+): Promise<{ code: string; verification_url: string; expires_in: number }> {
+	if (USE_MOCK) {
+		return { code: 'MOCK-ABC12', verification_url: 'https://auth.openai.com/codex/device', expires_in: 900 };
+	}
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/codex/link/start`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'startCodexLink'
+	);
+}
+
+export async function getCodexLinkStatus(
+	token: string,
+	instanceId: string
+): Promise<{ status: 'pending' | 'linked' | 'absent' }> {
+	if (USE_MOCK) {
+		return { status: 'pending' };
+	}
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/codex/link/status`,
+		{ headers: authHeaders(token) },
+		'getCodexLinkStatus'
+	);
+}
+
+export async function unlinkCodex(
+	token: string,
+	instanceId: string
+): Promise<{ status: string }> {
+	if (USE_MOCK) {
+		return { status: 'unlinked' };
+	}
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/codex/unlink`,
+		{ method: 'POST', headers: authHeaders(token) },
+		'unlinkCodex'
+	);
+}
+
 export async function createSnapshot(
 	token: string,
 	instanceId: string,

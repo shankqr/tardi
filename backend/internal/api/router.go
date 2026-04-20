@@ -53,6 +53,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	authedMux.HandleFunc("POST /api/instances/{id}/doctor", DoctorHandler(deps))
 	authedMux.HandleFunc("POST /api/instances/{id}/sync-config", SyncConfigHandler(deps))
 	authedMux.HandleFunc("GET /api/instances/{id}/sync-status", SyncStatusHandler(deps))
+	authedMux.HandleFunc("POST /api/instances/{id}/codex/link/start", CodexLinkStartHandler(deps))
+	authedMux.HandleFunc("GET /api/instances/{id}/codex/link/status", CodexLinkStatusHandler(deps))
+	authedMux.HandleFunc("POST /api/instances/{id}/codex/unlink", CodexUnlinkHandler(deps))
 	authedMux.HandleFunc("POST /api/billing/portal", BillingPortalHandler(deps))
 
 	// Google OAuth (delegated account access)
