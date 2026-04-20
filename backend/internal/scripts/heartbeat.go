@@ -485,6 +485,10 @@ if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
         echo "completed" > /opt/openclaw/.update_status
         rm -f /opt/openclaw/.update_error
 
+        # Reinstall Codex CLI (lost on container recreate). Best-effort;
+        # failure does not fail the upgrade.
+        docker exec -u 0 openclaw-gateway npm install -g @openai/codex >/dev/null 2>&1 || true
+
         # Clean up old images to save disk space
         docker image prune -f >/dev/null 2>&1
     else
