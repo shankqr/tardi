@@ -198,6 +198,7 @@ func GetInstanceByID(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UU
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 		&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID, &inst.CustomCaddyfile,
+		&inst.CodexLinkedAt, &inst.CodexAccountEmail,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -920,6 +921,7 @@ func GetInstanceByAgentToken(ctx context.Context, pool *pgxpool.Pool, tokenSecre
 		&inst.RootPassword, &inst.AgentTokenSecretName, &inst.OpenClawAuthToken, &inst.AgentStatus, &inst.AgentError, &inst.LastHeartbeatAt,
 		&inst.OpenClawVersion, &inst.TargetOpenClawVersion, &inst.OpenClawUpdateStatus, &inst.OpenClawUpdateError,
 		&inst.Domain, &inst.DNSRecordID, &inst.PreviewDomain, &inst.PreviewDNSRecordID, &inst.CustomCaddyfile,
+		&inst.CodexLinkedAt, &inst.CodexAccountEmail,
 		&inst.CreatedAt, &inst.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
