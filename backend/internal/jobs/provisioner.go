@@ -187,6 +187,13 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
     "auth": {
       "mode": "token"
     }
+  },
+  "plugins": {
+    "entries": {
+      "openrouter": { "enabled": true },
+      "openai": { "enabled": true },
+      "anthropic": { "enabled": true }
+    }
   }
 }
 CFGEOF
@@ -375,9 +382,11 @@ for i in $(seq 1 30); do
 done
 
 if [ "$HEALTHY" = true ]; then
-    # Install Codex CLI so codex/* models work. Idempotent; ephemeral per
-    # container, so heartbeat.go reinstalls after each image upgrade.
-    docker exec -u 0 openclaw-gateway npm install -g @openai/codex >/dev/null 2>&1 || true
+    # Note: codex CLI is installed on-demand by CodexLinkStartHandler
+    # and reinstalled after upgrades by the heartbeat script — keeping
+    # it out of cloud-init narrows the race window between the backend
+    # marking the instance active (on /health 200) and the models loop
+    # below finishing.
 
     # Register all Tardi catalog models so OC dashboard dropdown matches frontend.
     # For OpenRouter, prepend "openrouter/" so OpenClaw routes through OpenRouter
