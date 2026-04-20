@@ -121,7 +121,7 @@ func main() {
 	var workerWg sync.WaitGroup
 
 	// Start background workers
-	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey, dnsClient)
+	worker := jobs.NewWorker(pool, registry, logger, cfg.APIURL, cfg.OpenClawImageTag, cfg.BackendEgressCIDRs, cfg.SSHPublicKey, cfg.SSHPrivateKey, dnsClient)
 	workerWg.Add(1)
 	go func() {
 		defer workerWg.Done()

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strings"
 	"text/template"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/shanq/tardi/internal/dns"
 	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
+	"github.com/shanq/tardi/internal/sshexec"
 )
 
 // frameworkCodes maps agent framework names to short codes for server naming.
@@ -425,6 +427,7 @@ type Provisioner struct {
 	dnsClient          *dns.Client // nil if Cloudflare DNS not configured
 	backendEgressCIDRs string      // comma-separated CIDRs for UFW restriction
 	sshPublicKey       string      // Ed25519 public key for authorized_keys injection
+	sshPrivateKey      []byte      // PEM bytes; used to confirm cloud-init COMPLETED over SSH
 }
 
 // Execute runs through the provisioning steps for a job.
@@ -903,12 +906,58 @@ func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.Provisio
 			resp.Body.Close()
 			if resp.StatusCode == 200 {
 				p.logger.Info("provisioner: agent health check passed", "instance_id", job.VpsInstanceID)
+				// Additionally wait for cloud-init's post-startup models
+				// loop to finish. Without this, the backend marks the
+				// instance active while cloud-init is still running
+				// `openclaw models set ...` inside the container — any
+				// user action that triggers `docker compose up -d` (e.g.
+				// saving an OpenRouter key via sync-config) recreates
+				// the container mid-loop and leaves only a subset of
+				// models registered with primary pointing at a random
+				// one.
+				if err := p.waitForCloudInitCompleted(ctx, inst); err != nil {
+					p.logger.Warn("provisioner: cloud-init completion wait failed, proceeding anyway",
+						"instance_id", job.VpsInstanceID, "error", err)
+				}
 				_ = db.UpdateInstanceHeartbeat(ctx, p.pool, inst.ID, nil, nil)
 				return nil
 			}
 			p.logger.Debug("provisioner: agent health non-200", "status", resp.StatusCode, "instance_id", job.VpsInstanceID)
 		}
 	}
+}
+
+// waitForCloudInitCompleted polls /opt/openclaw/.init-status via SSH
+// until it contains the "COMPLETED" marker written by cloud-init's
+// final log_status call, or until a 3-minute budget elapses.
+func (p *Provisioner) waitForCloudInitCompleted(ctx context.Context, inst *models.VpsInstance) error {
+	if inst.IPv4 == nil || *inst.IPv4 == "" {
+		return fmt.Errorf("no IPv4")
+	}
+	if inst.RootPassword == nil {
+		return fmt.Errorf("no root password")
+	}
+	deadline := time.Now().Add(3 * time.Minute)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+		out, err := sshexec.RunCommand(*inst.IPv4, p.sshPrivateKey, *inst.RootPassword,
+			"grep -q COMPLETED /opt/openclaw/.init-status && echo DONE || echo PENDING",
+			10*time.Second)
+		if err != nil {
+			p.logger.Debug("provisioner: init-status probe failed, retrying",
+				"instance_id", inst.ID, "error", err)
+			continue
+		}
+		if strings.Contains(out, "DONE") {
+			p.logger.Info("provisioner: cloud-init COMPLETED", "instance_id", inst.ID)
+			return nil
+		}
+	}
+	return fmt.Errorf("cloud-init did not COMPLETE within 3 minutes")
 }
 
 func (p *Provisioner) stepActivate(ctx context.Context, job *models.ProvisioningJob) error {
