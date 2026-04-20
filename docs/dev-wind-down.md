@@ -30,16 +30,19 @@ What happens:
 1. Dumps every `dev-*` Secret Manager value (except `dev-database-url`, which
    is regenerated on apply) into `scripts/.dev-secrets-backup/`. That dir is
    gitignored and `chmod 700`.
-2. `terraform state rm module.env.google_artifact_registry_repository.tardi` —
-   the Artifact Registry is left alive in GCP so images survive the destroy.
-   Without this, bring-up has no image for Cloud Run to pull.
+2. `terraform state rm` for resources we want to survive the destroy:
+   - **Artifact Registry** `tardi` — so images for Cloud Run cold-start persist.
+   - **VPC, subnet, reserved IP range, service networking peering** — GCP's
+     service networking backend keeps the peering pinned for hours after
+     Cloud SQL destroy (producer-service cleanup lag), making the TF
+     destroy hang indefinitely. These resources cost $0/mo when idle.
 3. `terraform destroy -auto-approve` in [infra/environments/dev/](../infra/environments/dev/).
 
-What gets destroyed: Cloud SQL (and its data), Cloud Run, VPC + subnet + private
-service peering, IAM service account, logging bucket config, all 14 Secret
-Manager entries, API enablement.
+What gets destroyed: Cloud SQL (and its data), Cloud Run, IAM service account,
+logging bucket config, all 14 Secret Manager entries, API enablement.
 
-What survives: Artifact Registry `tardi` (images), Terraform state bucket
+What survives (state-rm'd first): Artifact Registry `tardi` (images), VPC,
+subnet, reserved IP range, service networking peering, Terraform state bucket
 `tardi-dev-488420-terraform-state`, the local backup directory.
 
 **Do not push to the `dev` branch while dev is torn down.** `deploy-backend`
@@ -56,17 +59,26 @@ call.
 
 What happens:
 
-1. `terraform import` the Artifact Registry back into state (idempotent).
-2. `terraform apply -auto-approve` — recreates everything. Secrets get
+1. `terraform import` the preserved resources (Artifact Registry, VPC, subnet,
+   peering, reserved IP) back into state. Idempotent — anything already in
+   state is skipped; anything missing in GCP is left for apply to recreate.
+2. If the Artifact Registry *was* destroyed last cycle (script bug or manual
+   cleanup), the script falls back to a two-phase apply:
+   a. `terraform apply -target` creates the registry + APIs only.
+   b. `gh workflow run deploy-backend.yml --ref dev` triggers a build+push.
+      The workflow's gcloud-run-deploy step will fail (Cloud Run doesn't
+      exist yet), but the image push happens first and succeeds. The script
+      polls the registry until the image lands.
+3. `terraform apply -auto-approve` — creates everything else. Secrets get
    `PLACEHOLDER` values from the Terraform module (thanks to the
    `ignore_changes = [secret_data]` lifecycle, our restored values later
    won't cause drift). Cloud Run boots against the preserved `tardi/api:latest`
    image.
-3. Read every file in `scripts/.dev-secrets-backup/` and push it as a new
+4. Read every file in `scripts/.dev-secrets-backup/` and push it as a new
    Secret Manager version via `gcloud secrets versions add`.
-4. Bounce Cloud Run (`gcloud run services update --update-labels=wake-ts=…`)
+5. Bounce Cloud Run (`gcloud run services update --update-labels=wake-ts=…`)
    so the new revision picks up the real secret versions.
-5. Poll `/readyz` up to 3 min. Exits non-zero on timeout.
+6. Poll `/readyz` up to 3 min. Exits non-zero on timeout.
 
 Expected end-to-end time: 5–10 min.
 
@@ -95,18 +107,10 @@ scripts/.dev-secrets-backup/
 Each file holds the raw value — no trailing newline, no quotes. Same format
 as what `gcloud secrets versions access latest` returns.
 
-If the Artifact Registry was accidentally destroyed:
-
-```bash
-# Push a fresh image first (the deploy-backend workflow will fail at its
-# gcloud-run-deploy step because the service doesn't exist yet, but the
-# build+push step will have already landed an image in the registry):
-gh workflow run deploy-backend.yml --ref dev
-gh run watch   # wait for image push to finish
-
-# Then re-run bring-up
-./scripts/dev-bringup.sh
-```
+If the Artifact Registry was accidentally destroyed, `dev-bringup.sh` now
+detects this and handles it automatically via a two-phase apply + workflow
+dispatch (see the "Bring up" section above). No manual intervention required
+beyond making sure `gh` is authenticated (`gh auth status`).
 
 ## What the scripts assume
 

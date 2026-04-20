@@ -21,8 +21,15 @@ REGION="us-central1"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_DIR="$REPO_ROOT/scripts/.dev-secrets-backup"
 TF_DIR="$REPO_ROOT/infra/environments/dev"
-REGISTRY_ADDR="module.env.google_artifact_registry_repository.tardi"
-REGISTRY_ID="projects/$PROJECT/locations/$REGION/repositories/tardi"
+# Mirror of PRESERVE_ADDRS in dev-teardown.sh: tuples of "<tf addr>|<gcp id>"
+# that we try to import back so the next apply is idempotent.
+PRESERVE_IMPORTS=(
+  "module.env.google_artifact_registry_repository.tardi|projects/$PROJECT/locations/$REGION/repositories/tardi"
+  "module.env.google_compute_network.vpc|projects/$PROJECT/global/networks/tardi-vpc"
+  "module.env.google_compute_subnetwork.default|projects/$PROJECT/regions/$REGION/subnetworks/tardi-subnet"
+  "module.env.google_compute_global_address.private_ip|projects/$PROJECT/global/addresses/tardi-sql-private-ip"
+  "module.env.google_service_networking_connection.private_vpc|projects/$PROJECT/global/networks/tardi-vpc:servicenetworking.googleapis.com"
+)
 SERVICE="tardi-api-dev"
 READYZ_URL="https://tardi-api-dev-lckw22k4gq-uc.a.run.app/readyz"
 DASHBOARD_URL="https://dev.tardi-467.pages.dev"
@@ -59,21 +66,14 @@ if ! gcloud projects describe "$PROJECT" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Confirm registry is still alive (if gone, we can't provision Cloud Run)
+# Check whether the Artifact Registry was preserved through the last teardown.
+# If it's missing, we need an image pushed to a fresh registry before Cloud Run
+# can be created. We handle that automatically via a two-phase apply below.
+REGISTRY_EXISTS=1
 if ! gcloud artifacts repositories describe tardi \
      --location="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
-  cat <<EOF >&2
-ERROR: Artifact Registry 'tardi' is missing. Cloud Run needs an image to start.
-
-Recovery:
-  1. Let terraform recreate it: remove the import step from this script and run
-     \`terraform apply\`. This will fail at the Cloud Run step.
-  2. Then push an image manually:
-     gh workflow run deploy-backend.yml --ref dev
-     (wait for it to push the image, even though its deploy step will fail)
-  3. Re-run this script.
-EOF
-  exit 1
+  REGISTRY_EXISTS=0
+  echo "    NOTE: Artifact Registry is missing — will do two-phase apply + image push"
 fi
 
 if [[ "$ASSUME_YES" -ne 1 ]]; then
@@ -81,23 +81,64 @@ if [[ "$ASSUME_YES" -ne 1 ]]; then
   [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 1; }
 fi
 
-# --- Step 1: re-import Artifact Registry -------------------------------------
+# --- Step 1: re-import preserved resources -----------------------------------
 
 echo
-echo "==> Importing Artifact Registry back into Terraform state"
+echo "==> Re-importing preserved resources into Terraform state"
 cd "$TF_DIR"
 terraform init -input=false >/dev/null
 
-if terraform state list | grep -qx "$REGISTRY_ADDR"; then
-  echo "    already imported"
-else
-  terraform import "$REGISTRY_ADDR" "$REGISTRY_ID"
-fi
+STATE_LIST=$(terraform state list 2>/dev/null || true)
+
+for pair in "${PRESERVE_IMPORTS[@]}"; do
+  addr="${pair%%|*}"
+  id="${pair#*|}"
+  if grep -qxF "$addr" <<< "$STATE_LIST"; then
+    echo "    already in state: $addr"
+    continue
+  fi
+  if terraform import "$addr" "$id" >/dev/null 2>&1; then
+    echo "    imported:         $addr"
+  else
+    echo "    not importable:   $addr (GCP resource missing — TF will recreate)"
+  fi
+done
 
 # --- Step 2: apply ------------------------------------------------------------
 
+if [[ "$REGISTRY_EXISTS" -eq 0 ]]; then
+  # Two-phase: create registry + APIs first, push an image, then apply the rest.
+  echo
+  echo "==> Phase 1: terraform apply (registry + APIs only)"
+  terraform apply -auto-approve \
+    -target="module.env.google_project_service.apis" \
+    -target="module.env.google_artifact_registry_repository.tardi"
+
+  echo
+  echo "==> Phase 2: trigger deploy-backend to push an image"
+  echo "    (the workflow's gcloud-run-deploy step may fail — expected —"
+  echo "     but the docker push will succeed and give us an image)"
+  command -v gh >/dev/null || { echo "ERROR: gh CLI not found — install with 'brew install gh' or push an image manually" >&2; exit 1; }
+  gh workflow run deploy-backend.yml --ref dev
+  IMAGE_PATH="$REGION-docker.pkg.dev/$PROJECT/tardi/api"
+  echo "    polling $IMAGE_PATH for a pushed image (up to 15 min)"
+  DEADLINE=$(( $(date +%s) + 900 ))
+  while true; do
+    if gcloud artifacts docker images list "$IMAGE_PATH" \
+        --project="$PROJECT" --limit=1 --format="value(IMAGE)" 2>/dev/null | grep -q .; then
+      echo "    image pushed"
+      break
+    fi
+    if [[ $(date +%s) -ge $DEADLINE ]]; then
+      echo "ERROR: no image in registry after 15 min — check: gh run list --workflow=deploy-backend.yml" >&2
+      exit 1
+    fi
+    sleep 15
+  done
+fi
+
 echo
-echo "==> terraform apply"
+echo "==> terraform apply (full)"
 terraform apply -auto-approve
 
 # --- Step 3: restore secret values -------------------------------------------

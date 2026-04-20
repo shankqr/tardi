@@ -18,7 +18,18 @@ REGION="us-central1"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP_DIR="$REPO_ROOT/scripts/.dev-secrets-backup"
 TF_DIR="$REPO_ROOT/infra/environments/dev"
-REGISTRY_ADDR="module.env.google_artifact_registry_repository.tardi"
+# Resources we detach from state before destroy so they survive (or don't hang).
+# Registry: images must survive so bring-up has something for Cloud Run to pull.
+# VPC/peering/private IP: google_service_networking_connection hangs for hours
+# after Cloud SQL destroy (producer-service cleanup lag) — destroying via TF
+# times out, but these resources incur $0/mo when idle. Import back on bring-up.
+PRESERVE_ADDRS=(
+  "module.env.google_artifact_registry_repository.tardi"
+  "module.env.google_service_networking_connection.private_vpc"
+  "module.env.google_compute_global_address.private_ip"
+  "module.env.google_compute_network.vpc"
+  "module.env.google_compute_subnetwork.default"
+)
 
 DUMP_DB=0
 ASSUME_YES=0
@@ -141,16 +152,17 @@ fi
 # --- Step 3: preserve Artifact Registry --------------------------------------
 
 echo
-echo "==> Removing Artifact Registry from Terraform state (preserves images)"
+echo "==> Detaching long-lived resources from Terraform state (preserved through destroy)"
 cd "$TF_DIR"
 terraform init -input=false >/dev/null
 
-if terraform state list | grep -qx "$REGISTRY_ADDR"; then
-  terraform state rm "$REGISTRY_ADDR"
-  echo "    removed $REGISTRY_ADDR from state"
-else
-  echo "    $REGISTRY_ADDR not in state (already removed or never created)"
-fi
+for addr in "${PRESERVE_ADDRS[@]}"; do
+  if terraform state rm "$addr" >/dev/null 2>&1; then
+    echo "    state rm  $addr"
+  else
+    echo "    skip      $addr (not in state)"
+  fi
+done
 
 # --- Step 4: destroy ----------------------------------------------------------
 
@@ -164,12 +176,13 @@ cat <<EOF
 
 ==> Teardown complete.
 
-Preserved:
-  - Artifact Registry repo 'tardi' (images)
+Preserved (still live in GCP, \$0 idle cost each):
+  - Artifact Registry repo 'tardi' (images for Cloud Run cold-start)
+  - VPC + subnet + peering + reserved IP range
   - Terraform state bucket: tardi-dev-488420-terraform-state
   - Local secrets backup:   $BACKUP_DIR
 
-Residual idle cost: ~\$0.07/mo (state bucket + registry).
+Residual idle cost: ~\$0.07/mo (state bucket + registry storage).
 
 Do NOT push to the 'dev' branch while dev is torn down — deploy-backend
 will fail (Cloud Run service no longer exists and migrations can't run).
