@@ -40,3 +40,6 @@ infra/*.tfvars
 
 # Logs
 *.log
+
+# Dev wind-down secret backups
+scripts/.dev-secrets-backup/

@@ -54,6 +54,10 @@ make db-reset        # Reset local PostgreSQL
 - Dev: `tardi-dev-488420`, Prod: `tardi-prod-488420`
 - Shared module: `infra/modules/backend-env/`
 
+### Cost controls
+
+- Dev can be fully torn down and rebuilt on demand via `scripts/dev-teardown.sh` and `scripts/dev-bringup.sh`. Residual cost while torn down: ~$0.07/mo. See `docs/dev-wind-down.md`.
+
 ## CI/CD
 
 - `dev` branch → dev environment, `main` branch → production
