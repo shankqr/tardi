@@ -326,7 +326,13 @@ with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     # so it picks up the fixed config immediately instead of waiting for
     # Docker's exponential backoff.
     if [ "$STATUS" = "stopped" ] || [ "$CONTAINER_STATE" = "restarting" ]; then
-        cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway 2>/dev/null || true
+        # Drain Telegram long-poll before recreate: OpenClaw's telegram plugin
+        # does not close its long-poll socket on SIGTERM, so Telegram's server
+        # holds the slot for ~30-60s. Without this quiesce, the new container's
+        # poller hits 409 Conflict for 5+ minutes and silently drops messages.
+        cd /opt/openclaw && docker compose stop openclaw-gateway 2>/dev/null || true
+        sleep 45
+        docker compose up -d --force-recreate openclaw-gateway 2>/dev/null || true
     fi
 fi
 
@@ -386,7 +392,10 @@ if [ "$REMOTE_VERSION" != "0" ] && [ "$REMOTE_VERSION" != "$LOCAL_VERSION" ]; th
             # Recreate container to pick up new env (restart does not reload env_file)
             # NOTE: Do NOT edit openclaw.json — OpenClaw owns that file and overwrites
             # it on startup. Config changes must go through openclaw CLI after healthy.
-            cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway
+            # Drain Telegram long-poll first: see auth-drift guard above for why.
+            cd /opt/openclaw && docker compose stop openclaw-gateway 2>/dev/null || true
+            sleep 45
+            docker compose up -d --force-recreate openclaw-gateway
 
             # Wait for healthy, then apply post-startup config.
             # OpenClaw takes ~70s to start; wait up to 120s (24 x 5s).
@@ -471,6 +480,10 @@ if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
     fi
 
     echo "updating" > /opt/openclaw/.update_status
+
+    # Drain Telegram long-poll before recreate: see auth-drift guard above for why.
+    docker compose -f /opt/openclaw/docker-compose.yml stop openclaw-gateway 2>/dev/null || true
+    sleep 45
 
     # Recreate container with new image (volume mount preserves all user data)
     if ! docker compose -f /opt/openclaw/docker-compose.yml up -d openclaw-gateway 2>/tmp/openclaw-update.log; then
