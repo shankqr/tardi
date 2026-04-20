@@ -670,6 +670,12 @@
 								{/if}
 							</dd>
 						</div>
+						{#if instance.framework === 'openclaw' && instance.openclaw_version}
+							<div class="flex justify-between">
+								<dt class="text-gray-500 dark:text-gray-400">Version</dt>
+								<dd class="font-mono text-gray-900 dark:text-white">{instance.openclaw_version}</dd>
+							</div>
+						{/if}
 						<div class="flex justify-between">
 							<dt class="text-gray-500 dark:text-gray-400">Last Heartbeat</dt>
 							<dd class="text-gray-900 dark:text-white">{timeAgo(instance.last_heartbeat_at)}</dd>
