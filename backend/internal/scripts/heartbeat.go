@@ -336,6 +336,37 @@ with open('/opt/openclaw/data/openclaw/openclaw.json', 'w') as f:
     fi
 fi
 
+# --- Session reset drift guard (runs every heartbeat) ---
+# OC defaults session.reset.mode to "daily" with atHour=4, which archives every
+# chat session at 04:00 UTC and starts a fresh one on the next inbound message.
+# That means users lose chat memory daily and the agent re-runs BOOTSTRAP.md,
+# overwriting IDENTITY.md/USER.md as if first contact. Force "idle" mode with
+# an effectively-infinite window. Must use the CLI: raw edits to session.* in
+# openclaw.json get sanitized away on next container start. Schema rejects
+# idleMinutes <= 0, so 100y stands in for "never". CLI write is gated on the
+# container being healthy (config set fails if the gateway is down) and on
+# drift actually existing (the CLI triggers an openclaw.json rewrite each call).
+if [ "$STATUS" = "running" ]; then
+    SESSION_RESET_MODE=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.session.reset.mode // "unset"' 2>/dev/null)
+    SESSION_IDLE_MIN=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.session.reset.idleMinutes // 0' 2>/dev/null)
+    if [ "$SESSION_RESET_MODE" != "idle" ]; then
+        docker exec openclaw-gateway openclaw config set session.reset.mode idle >/dev/null 2>&1
+    fi
+    if [ "$SESSION_IDLE_MIN" -lt 525600 ] 2>/dev/null; then
+        docker exec openclaw-gateway openclaw config set session.reset.idleMinutes 52560000 >/dev/null 2>&1
+    fi
+fi
+
+# --- BOOTSTRAP.md cleanup (runs every heartbeat) ---
+# OC's bundled BOOTSTRAP.md tells the agent to delete itself once identity is
+# established, but agents rarely follow through. Left in place, any session
+# reset (manual /new, /reset, etc.) re-runs the bootstrap flow which overwrites
+# IDENTITY.md and USER.md as if the user is a stranger. Workspace is on a host
+# volume, so removing the file from the host is sufficient.
+if [ -f /opt/openclaw/data/openclaw/workspace/BOOTSTRAP.md ]; then
+    rm -f /opt/openclaw/data/openclaw/workspace/BOOTSTRAP.md
+fi
+
 # Sync OPENCLAW_GATEWAY_TOKEN in .env with the actual token OpenClaw is using.
 # Read from the running container's env (authoritative source), falling back to
 # openclaw.json if the container isn't running.

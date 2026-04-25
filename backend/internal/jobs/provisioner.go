@@ -413,6 +413,21 @@ if [ "$HEALTHY" = true ]; then
 {{- end}}
 {{- end}}
 
+    # OC defaults session.reset.mode to "daily" with atHour=4, archiving every
+    # chat session at 04:00 UTC and starting fresh on the next inbound message —
+    # users lose chat memory daily and the agent re-runs BOOTSTRAP.md, clobbering
+    # IDENTITY.md/USER.md as if first contact. Force "idle" mode with an
+    # effectively-infinite window. Must be set via the CLI: raw edits to
+    # session.* in openclaw.json get sanitized away on next container start.
+    # Schema rejects idleMinutes <= 0, so 100y stands in for "never".
+    docker exec openclaw-gateway openclaw config set session.reset.mode idle 2>/dev/null
+    docker exec openclaw-gateway openclaw config set session.reset.idleMinutes 52560000 2>/dev/null
+
+    # OC's bundled BOOTSTRAP.md tells the agent to delete itself once identity
+    # is established, but agents rarely follow through. Left in place, any
+    # session reset re-runs the bootstrap flow which overwrites IDENTITY.md and
+    # USER.md as if the user is a stranger.
+    rm -f /opt/openclaw/data/openclaw/workspace/BOOTSTRAP.md
 fi
 
 log_status "COMPLETED"
