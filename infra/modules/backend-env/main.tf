@@ -38,7 +38,7 @@ resource "google_sql_database_instance" "db" {
     tier              = var.db_tier
     availability_type = "ZONAL"
     disk_size         = var.environment == "prod" ? 20 : 10
-    disk_autoresize   = true
+    disk_autoresize   = false
 
     ip_configuration {
       ipv4_enabled                                  = true
