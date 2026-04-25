@@ -16,7 +16,19 @@ jobs:
   prod-e2e:
     name: Production E2E Test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Test timeout is 25m; deleteExistingInstances polls up to 10m more.
+    # Job timeout must comfortably exceed both, otherwise the runner gets
+    # killed mid-cleanup and the prod VPS leaks.
+    timeout-minutes: 50
+    env:
+      E2E_ENV: prod
+      E2E_BASE_URL: https://app.tardi.ai
+      E2E_API_URL: https://tardi-api-prod-vyqbffpjya-uc.a.run.app
+      FIREBASE_API_KEY: AIzaSyBseyK0nQ9xiS0K7uL_x84AzTjBpUtyKoI
+      E2E_PROD_EMAIL: ${{ secrets.E2E_PROD_EMAIL }}
+      E2E_PROD_PASSWORD: ${{ secrets.E2E_PROD_PASSWORD }}
+      E2E_OPENROUTER_API_KEY: ${{ secrets.E2E_OPENROUTER_API_KEY }}
+      E2E_TELEGRAM_BOT_TOKEN: ${{ secrets.E2E_PROD_TELEGRAM_BOT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -37,15 +49,15 @@ jobs:
       - name: Run prod E2E test
         working-directory: frontend
         run: npx playwright test --project=prod-e2e
-        env:
-          E2E_ENV: prod
-          E2E_BASE_URL: https://app.tardi.ai
-          E2E_API_URL: https://tardi-api-prod-vyqbffpjya-uc.a.run.app
-          FIREBASE_API_KEY: AIzaSyBseyK0nQ9xiS0K7uL_x84AzTjBpUtyKoI
-          E2E_PROD_EMAIL: ${{ secrets.E2E_PROD_EMAIL }}
-          E2E_PROD_PASSWORD: ${{ secrets.E2E_PROD_PASSWORD }}
-          E2E_OPENROUTER_API_KEY: ${{ secrets.E2E_OPENROUTER_API_KEY }}
-          E2E_TELEGRAM_BOT_TOKEN: ${{ secrets.E2E_PROD_TELEGRAM_BOT_TOKEN }}
+
+      # Always-on safety net: even if the test job is cancelled, times out, or
+      # the runner crashes after Playwright started, this step deletes any
+      # non-terminated VPS on the prod test account. Last line of defence
+      # against leaking a paid prod VPS.
+      - name: Sweep any leftover prod VPS (safety net)
+        if: always()
+        working-directory: frontend
+        run: npx tsx e2e/scripts/cleanup-prod.ts
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

@@ -20,6 +20,20 @@ const PROD_PASSWORD = process.env.E2E_PROD_PASSWORD || '';
 
 test.skip(!PROD_EMAIL || !PROD_PASSWORD, 'E2E_PROD_EMAIL / E2E_PROD_PASSWORD not set — skipping');
 
+// Cleanup runs in afterAll so a failure in any step still tears down the VPS.
+// Without this, a single flaky step would leak a prod VPS (~$X/mo per orphan).
+test.afterAll(async () => {
+	if (!PROD_EMAIL || !PROD_PASSWORD) return;
+	console.log('[Prod E2E] afterAll cleanup — deleting any prod-e2e instances to save costs...');
+	try {
+		await deleteExistingInstances(PROD_EMAIL, PROD_PASSWORD);
+		console.log('[Prod E2E] afterAll cleanup complete — no VPS persisted');
+	} catch (err) {
+		console.error('[Prod E2E] afterAll cleanup FAILED — VPS may persist, sweeper will catch it:', err);
+		throw err;
+	}
+});
+
 test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 	let instanceId = '';
 
@@ -532,10 +546,5 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		await page.waitForURL(`**/dashboard/instances/${instanceId}`, { timeout: 10_000 });
 	});
 
-	// ── Cleanup: Delete instance to save Hetzner costs ──
-	await test.step('Delete instance (cleanup)', async () => {
-		console.log('[Prod E2E] Cleaning up — deleting instance to save costs...');
-		await deleteExistingInstances(PROD_EMAIL, PROD_PASSWORD);
-		console.log('[Prod E2E] Instance deleted. All tests complete.');
-	});
+	// Cleanup is handled by test.afterAll above so it runs even when a step fails.
 });

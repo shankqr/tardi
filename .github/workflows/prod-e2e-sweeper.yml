@@ -1,0 +1,54 @@
+name: "Production E2E VPS Sweeper"
+
+# Last-resort safety net for the prod E2E test account.
+#
+# The prod E2E test (prod-e2e.yml) cleans up its own VPS via:
+#   1. test.afterAll in prod-e2e.spec.ts (runs even on step failure)
+#   2. always() workflow step that calls cleanup-prod.ts
+#
+# This sweeper covers the case where BOTH of the above fail to run — e.g.
+# the GitHub runner crashes mid-job, the API is unreachable during cleanup,
+# or someone manually creates a prod-e2e instance and forgets to delete it.
+#
+# It runs hourly and shares the `prod-e2e` concurrency group with the real
+# test (with cancel-in-progress: false) so it always YIELDS to an active
+# test rather than ripping its VPS out from under it.
+
+on:
+  schedule:
+    - cron: "30 * * * *" # Every hour at :30 (off-cycle from main test at :00)
+  workflow_dispatch:
+
+concurrency:
+  group: prod-e2e
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: Sweep prod E2E VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Sweep any prod VPS instances
+        working-directory: frontend
+        run: npx tsx e2e/scripts/cleanup-prod.ts
+        env:
+          E2E_API_URL: https://tardi-api-prod-vyqbffpjya-uc.a.run.app
+          FIREBASE_API_KEY: AIzaSyBseyK0nQ9xiS0K7uL_x84AzTjBpUtyKoI
+          E2E_PROD_EMAIL: ${{ secrets.E2E_PROD_EMAIL }}
+          E2E_PROD_PASSWORD: ${{ secrets.E2E_PROD_PASSWORD }}
