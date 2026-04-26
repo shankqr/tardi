@@ -19,9 +19,9 @@ case "$ENV" in
     PORT=5433
     ;;
   prod)
-    PROJECT="tardi-prod-488420"
+    PROJECT="tardi-prod-2026"
     SECRET="prod-database-url"
-    INSTANCE="tardi-prod-488420:us-central1:tardi-db-prod"
+    INSTANCE="tardi-prod-2026:us-central1:tardi-db-prod"
     PORT=5434
     ;;
   *)

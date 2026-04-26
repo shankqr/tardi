@@ -1,0 +1,12 @@
+name = "tardi-api-proxy"
+main = "index.js"
+compatibility_date = "2026-04-01"
+
+# Bind to api.tardi.ai/* — DNS still resolves through the existing CNAME
+# (proxied=true), which is required so the request hits the CF edge first.
+routes = [
+  { pattern = "api.tardi.ai/*", zone_name = "tardi.ai" },
+]
+
+# Free-tier defaults: 100k requests/day, 10ms CPU per request. Plenty for
+# an API proxy.

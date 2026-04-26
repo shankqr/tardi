@@ -3,7 +3,7 @@
 # ~8,600 Actions minutes/month). Prod-only.
 #
 # Bootstrap after first apply:
-#   printf '<FINE_GRAINED_PAT>' | gcloud secrets versions add prod-synthetic-monitor-gh-token --data-file=- --project=tardi-prod-488420
+#   printf '<FINE_GRAINED_PAT>' | gcloud secrets versions add prod-synthetic-monitor-gh-token --data-file=- --project=tardi-prod-2026
 #
 # The PAT needs `issues: read+write` on shankqr/tardi only.
 

@@ -27,7 +27,7 @@ VITE_FF_GOOGLE_WORKSPACE = "true"
 # Production environment
 [env.production.vars]
 COMING_SOON = "false"
-API_URL = "https://tardi-api-prod-vyqbffpjya-uc.a.run.app"
+API_URL = "https://api.tardi.ai"
 VITE_USE_MOCK_AUTH = "false"
 VITE_USE_MOCK = "false"
 VITE_FIREBASE_API_KEY = "AIzaSyBseyK0nQ9xiS0K7uL_x84AzTjBpUtyKoI"

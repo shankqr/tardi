@@ -51,7 +51,7 @@ make db-reset        # Reset local PostgreSQL
 
 - Terraform in `infra/` targeting GCP
 - Separate root per GCP project (blast-radius isolation)
-- Dev: `tardi-dev-488420`, Prod: `tardi-prod-488420`
+- Dev: `tardi-dev-488420`, Prod: `tardi-prod-2026`
 - Shared module: `infra/modules/backend-env/`
 
 ### Cost controls

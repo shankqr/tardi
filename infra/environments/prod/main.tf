@@ -2,7 +2,7 @@ terraform {
   required_version = ">= 1.5"
 
   backend "gcs" {
-    bucket = "tardi-prod-488420-terraform-state"
+    bucket = "tardi-prod-2026-terraform-state"
     prefix = "terraform/state"
   }
 

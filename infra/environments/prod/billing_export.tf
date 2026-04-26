@@ -1,13 +1,13 @@
 # BigQuery dataset that receives the daily billing export from the
-# Cloud Billing account (017711-880A01-FCEF09).
+# Cloud Billing account (011A70-DCE3D2-3F9CCC).
 #
 # Terraform can create the dataset and enable the bigquery API, but
 # *enabling* the billing export itself is not exposed by the google
 # provider — it has to be turned on once via the console:
 #
-#   https://console.cloud.google.com/billing/017711-880A01-FCEF09/export
+#   https://console.cloud.google.com/billing/011A70-DCE3D2-3F9CCC/export
 #     -> BigQuery export -> Edit settings
-#     -> Project: tardi-prod-488420
+#     -> Project: tardi-prod-2026
 #     -> Dataset: billing_export
 #     -> Enable "Standard usage cost" (and "Pricing" if you want SKU prices)
 #

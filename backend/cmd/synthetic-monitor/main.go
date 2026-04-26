@@ -37,7 +37,7 @@ type config struct {
 
 func loadConfig() (config, error) {
 	cfg := config{
-		apiURL:      getenv("API_URL", "https://tardi-api-prod-vyqbffpjya-uc.a.run.app"),
+		apiURL:      getenv("API_URL", "https://api.tardi.ai"),
 		frontendURL: getenv("FRONTEND_URL", "https://app.tardi.ai"),
 		ghToken:     os.Getenv("GITHUB_TOKEN"),
 		ghRepo:      getenv("GITHUB_REPO", "shankqr/tardi"),

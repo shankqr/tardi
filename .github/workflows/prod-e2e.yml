@@ -23,7 +23,7 @@ jobs:
     env:
       E2E_ENV: prod
       E2E_BASE_URL: https://app.tardi.ai
-      E2E_API_URL: https://tardi-api-prod-vyqbffpjya-uc.a.run.app
+      E2E_API_URL: https://api.tardi.ai
       FIREBASE_API_KEY: AIzaSyBseyK0nQ9xiS0K7uL_x84AzTjBpUtyKoI
       E2E_PROD_EMAIL: ${{ secrets.E2E_PROD_EMAIL }}
       E2E_PROD_PASSWORD: ${{ secrets.E2E_PROD_PASSWORD }}

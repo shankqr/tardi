@@ -1,7 +1,7 @@
 # Synthetic Monitoring
 
 Health checks against prod run on **Cloud Scheduler → Cloud Run Job** (in
-`tardi-prod-488420`), not GitHub Actions. The only thing left in
+`tardi-prod-2026`), not GitHub Actions. The only thing left in
 [.github/workflows/synthetic-monitoring.yml](../.github/workflows/synthetic-monitoring.yml)
 is the hourly Playwright "deep check" smoke test.
 
@@ -41,7 +41,7 @@ with `count = var.environment == "prod" ? 1 : 0` (prod-only).
 | Secret | `prod-synthetic-monitor-gh-token` |
 
 The job runs the `synthetic-monitor` binary baked into the existing
-backend image (`us-central1-docker.pkg.dev/tardi-prod-488420/tardi/api:latest`),
+backend image (`us-central1-docker.pkg.dev/tardi-prod-2026/tardi/api:latest`),
 so it rolls forward automatically on every backend deploy.
 
 ## First-time bootstrap
@@ -59,26 +59,26 @@ so it rolls forward automatically on every backend deploy.
 3. **Populate the secret**:
    ```bash
    printf '<PAT>' | gcloud secrets versions add prod-synthetic-monitor-gh-token \
-     --data-file=- --project=tardi-prod-488420
+     --data-file=- --project=tardi-prod-2026
    ```
 4. **Trigger a test run**:
    ```bash
    gcloud scheduler jobs run tardi-synthetic-monitor \
-     --location=us-central1 --project=tardi-prod-488420
+     --location=us-central1 --project=tardi-prod-2026
    gcloud run jobs executions list --job=tardi-synthetic-monitor \
-     --region=us-central1 --project=tardi-prod-488420 --limit=1
+     --region=us-central1 --project=tardi-prod-2026 --limit=1
    ```
 5. **Tail logs**:
    ```bash
    gcloud logging read \
      'resource.type=cloud_run_job AND resource.labels.job_name=tardi-synthetic-monitor' \
-     --limit=20 --project=tardi-prod-488420 --format='value(jsonPayload.msg,jsonPayload.check,jsonPayload.ok)'
+     --limit=20 --project=tardi-prod-2026 --format='value(jsonPayload.msg,jsonPayload.check,jsonPayload.ok)'
    ```
 
 ## Operational notes
 
 - **Changing cadence**: edit `schedule` in `synthetic_monitor.tf` and `terraform apply`.
-- **Pausing**: `gcloud scheduler jobs pause tardi-synthetic-monitor --location=us-central1 --project=tardi-prod-488420`
+- **Pausing**: `gcloud scheduler jobs pause tardi-synthetic-monitor --location=us-central1 --project=tardi-prod-2026`
 - **Rolling the PAT**: add a new secret version (step 3 above). The job
   reads `latest` on every execution, so no redeploy needed.
 - **Alerting destination**: currently GitHub issues only. To add Sentry
