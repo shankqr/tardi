@@ -4,6 +4,13 @@ compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".svelte-kit/cloudflare"
 
 # Preview environment (dev deployments via --branch=dev)
+#
+# DEV INFRA IS CURRENTLY TORN DOWN. The API_URL below is stale — the dev
+# Cloud Run service does not exist and returns 404. Running `npm run deploy:dev`
+# will succeed at the Cloudflare Pages layer but the deployed frontend will fail
+# every API call. To bring dev back: run `scripts/dev-bringup.sh` (needs gcloud
+# auth as the owner of tardi-dev-488420), then refresh the API_URL with the new
+# Cloud Run hash.
 [env.preview.vars]
 COMING_SOON = "false"
 API_URL = "https://tardi-api-dev-lckw22k4gq-uc.a.run.app"

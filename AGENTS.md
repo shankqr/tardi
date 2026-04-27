@@ -61,7 +61,9 @@ make db-reset        # Reset local PostgreSQL
 
 ### Cost controls
 
-- Dev can be fully torn down and rebuilt on demand via `scripts/dev-teardown.sh` and `scripts/dev-bringup.sh`. Residual cost while torn down: ~$0.07/mo. See `docs/dev-wind-down.md`.
+- **Dev is currently torn down** (as of 2026-04-27). `tardi-api-dev` does not exist; the URL in [frontend/wrangler.toml](frontend/wrangler.toml) `[env.preview.vars]` returns 404. Residual cost while torn down: ~$0.07/mo.
+- To bring dev back up: `scripts/dev-bringup.sh` (must be run from a gcloud config authenticated as the owner of `tardi-dev-488420`, NOT the prod-2026 account). After bringup, refresh `API_URL` in `[env.preview.vars]` with the new Cloud Run hash.
+- See [docs/dev-wind-down.md](docs/dev-wind-down.md) for the teardown/bringup procedure.
 
 ## CI/CD
 
