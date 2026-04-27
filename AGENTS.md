@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 ## Project Overview
 
@@ -10,8 +10,8 @@ Tardi is a dedicated AI agent hosting platform. Users configure an AI agent, sub
 - **Two plans**:
   - **Standard** — $29/mo, shared cloud infra
   - **Pro** — $65/mo, dedicated CPU
-  - Plan tier is read from each Stripe price's `plan_tier` metadata (`standard` | `pro`) in `backend/internal/billing/stripe.go`.
-  - Upgrade Standard → Pro is snapshot-based and preserves data (`backend/internal/jobs/upgrader.go` `executeUpgrade`).
+  - Plan tier is resolved from the Stripe price's `plan_tier` metadata (`standard` | `pro`); see [backend/internal/billing/stripe.go](backend/internal/billing/stripe.go).
+  - Upgrade Standard → Pro is snapshot-based and preserves data ([backend/internal/jobs/upgrader.go](backend/internal/jobs/upgrader.go) `executeUpgrade`).
   - Downgrade Pro → Standard re-provisions on the lower tier — **all agent data is lost** (`executeDowngrade`).
 - **Mock mode**: Both auth (`USE_MOCK_AUTH` in `stores/auth.ts`) and API (`USE_MOCK` in `api/client.ts`) use mock data by default
 
