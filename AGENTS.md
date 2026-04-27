@@ -65,9 +65,33 @@ make db-reset        # Reset local PostgreSQL
 
 ## CI/CD
 
-- `dev` branch → dev environment, `main` branch → production
-- Deploys auto-trigger on push (path-filtered per component)
-- See `docs/cicd.md` for workflow details
+**GitHub Actions is on hold** — the spending limit is $0 and will not be raised. Workflows still exist in [.github/workflows/](.github/workflows/) and remain runnable via `workflow_dispatch` if billing is ever restored, but **nothing auto-runs**:
+
+- Push to `main` does NOT deploy anything.
+- Push to `dev` does NOT deploy anything.
+- PRs do NOT run CI (lint/test/typecheck).
+- Scheduled jobs (synthetic monitor, prod E2E, sweeper) are commented out in the workflow files.
+
+Basic prod uptime monitoring (curl + SSL) still runs on **GCP Cloud Scheduler → Cloud Run Job** — see [infra/modules/backend-env/synthetic_monitor.tf](infra/modules/backend-env/synthetic_monitor.tf). That's unaffected.
+
+### Manual ops (while GH Actions is on hold)
+
+Run all of these from the laptop. Active gcloud config must match the target project (`tardi-dev-488420` or `tardi-prod-2026`).
+
+| Task | Command |
+|---|---|
+| Deploy backend (prod) | `cd backend && docker build -t us-central1-docker.pkg.dev/tardi-prod-2026/tardi/api:latest . && docker push ... && gcloud run services update tardi-api-prod --region=us-central1 --project=tardi-prod-2026 --image=us-central1-docker.pkg.dev/tardi-prod-2026/tardi/api:latest` |
+| Deploy frontend (prod) | `cd frontend && npm run deploy:prod` |
+| Deploy frontend (dev) | `cd frontend && npm run deploy:dev` |
+| Apply infra changes | `cd infra/environments/{dev,prod} && terraform apply` |
+| Sweep leftover prod E2E VPSes | `cd frontend && npx tsx e2e/scripts/cleanup-prod.ts` (needs `E2E_API_URL`, `FIREBASE_API_KEY`, `E2E_PROD_EMAIL`, `E2E_PROD_PASSWORD` from [frontend/.env.e2e.prod](frontend/.env.e2e.prod)) |
+| Run prod E2E test | `cd frontend && npx playwright test --project=prod-e2e` (uses same env file) |
+| Run synthetic monitor (Playwright deep check) | `cd frontend && npx playwright test --project=smoke` |
+| Force-run GCP-side synthetic monitor | `gcloud scheduler jobs run tardi-synthetic-monitor --project=tardi-prod-2026 --location=us-central1` |
+
+Sweep at least weekly to avoid leaking paid Hetzner VPSes from manual prod E2E runs.
+
+See [docs/cicd.md](docs/cicd.md) for the original workflow design (kept for reference).
 
 ## OpenClaw (Agent Runtime) — Critical Rules
 

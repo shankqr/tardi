@@ -15,8 +15,11 @@ name: "Production E2E VPS Sweeper"
 # test rather than ripping its VPS out from under it.
 
 on:
-  schedule:
-    - cron: "30 * * * *" # Every hour at :30 (off-cycle from main test at :00)
+  # Schedule disabled while GitHub Actions billing/spending limit is at $0.
+  # Re-enable by uncommenting once the spending limit is raised.
+  # Until then, sweep manually via the documented script in AGENTS.md.
+  # schedule:
+  #   - cron: "30 * * * *" # Every hour at :30 (off-cycle from main test at :00)
   workflow_dispatch:
 
 concurrency:

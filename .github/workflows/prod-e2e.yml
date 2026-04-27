@@ -1,8 +1,10 @@
 name: "Production E2E"
 
 on:
-  schedule:
-    - cron: "0 6,18 * * *" # Twice daily at 6AM and 6PM UTC
+  # Schedule disabled while GitHub Actions billing/spending limit is at $0.
+  # Re-enable by uncommenting once the spending limit is raised.
+  # schedule:
+  #   - cron: "0 6,18 * * *" # Twice daily at 6AM and 6PM UTC
   workflow_dispatch:
 
 concurrency:

@@ -5,8 +5,10 @@ name: "Synthetic Monitoring"
 # only keeps the Playwright deep check, at a reduced hourly cadence.
 
 on:
-  schedule:
-    - cron: "0 * * * *"
+  # Schedule disabled while GitHub Actions billing/spending limit is at $0.
+  # Re-enable by uncommenting once the spending limit is raised.
+  # schedule:
+  #   - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:
