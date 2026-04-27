@@ -66,15 +66,15 @@ echo
 # --- Step 2: list active OpenClaw VPSes ------------------------------------
 
 echo "==> Active OpenClaw VPSes:"
-# Tab-separated, headerless rows of "<id>\t<ipv4>"
-ROWS=$("$DB_QUERY" "$ENV" "\\pset format unaligned
-\\pset tuples_only on
-\\pset fieldsep '|'
-SELECT id, ipv4
+# db-query.sh always runs psql -c with default formatting. Strip the header
+# (lines 1-2) and the trailing "(N rows)" footer, then squash the leading
+# whitespace and "|" separator into a tab.
+ROWS=$("$DB_QUERY" "$ENV" "SELECT id, ipv4
   FROM vps_instances
  WHERE status = 'active'
    AND framework = 'openclaw'
-   AND ipv4 IS NOT NULL;")
+   AND ipv4 IS NOT NULL;" \
+  | awk 'NR>2 && !/^\($|^\([0-9]+ rows?\)$/ {gsub(/^[[:space:]]+|[[:space:]]+$/, ""); gsub(/[[:space:]]*\|[[:space:]]*/, "|"); if (length($0) > 0) print}')
 
 if [ -z "$ROWS" ]; then
   echo "  (none)"
@@ -97,9 +97,18 @@ FAILED_IPS=()
 while IFS='|' read -r INST_ID IP; do
   [ -z "$IP" ] && continue
   echo "==> $INST_ID ($IP)"
+  # `openclaw config set` writes openclaw.json but the running gateway only
+  # reads it on startup, so we restart and wait for /health before counting
+  # the VPS as updated. ~10-15s of agent unavailability per box.
   if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 "root@$IP" \
        "docker exec openclaw-gateway openclaw models set 'codex/gpt-5.5' >/dev/null 2>&1 && \
-        docker exec openclaw-gateway openclaw config set agents.defaults.model.primary 'codex/gpt-5.5'" \
+        docker exec openclaw-gateway openclaw config set agents.defaults.model.primary 'codex/gpt-5.5' && \
+        docker restart openclaw-gateway >/dev/null && \
+        for i in \$(seq 1 20); do \
+          if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then \
+            echo 'gateway healthy'; exit 0; \
+          fi; sleep 2; \
+        done; echo 'gateway did NOT come back healthy'; exit 1" \
        2>&1 | sed 's/^/    /'; then
     OK_COUNT=$((OK_COUNT + 1))
   else
