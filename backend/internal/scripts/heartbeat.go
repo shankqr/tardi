@@ -357,6 +357,25 @@ if [ "$STATUS" = "running" ]; then
     fi
 fi
 
+# --- Device pairing drift guard (runs every heartbeat) ---
+# OC's localhost CLI (the agent's tool runtime) needs operator.admin / .write
+# / .approvals / .pairing / .talk.secrets scopes to call most tools. On a
+# fresh VPS the device is paired with operator.read only, so the first scope
+# upgrade attempt fails with code=1008 ("pairing required"), the WebSocket
+# handshake closes, the agent's tool call hangs, the typing indicator hits
+# its 2m TTL, and the user sees no reply. OC has no built-in auto-approve
+# for the in-container CLI, so we do it here: list pending requests and
+# approve each. Idempotent — no pending → no-op.
+if [ "$STATUS" = "running" ]; then
+    PENDING_REQS=$(docker exec openclaw-gateway openclaw devices list 2>/dev/null \
+        | awk '/^Pending/,/^Paired/' \
+        | grep -oE '\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b' \
+        | sort -u)
+    for req in $PENDING_REQS; do
+        docker exec openclaw-gateway openclaw devices approve "$req" >/dev/null 2>&1 || true
+    done
+fi
+
 # --- BOOTSTRAP.md cleanup (runs every heartbeat) ---
 # OC's bundled BOOTSTRAP.md tells the agent to delete itself once identity is
 # established, but agents rarely follow through. Left in place, any session
