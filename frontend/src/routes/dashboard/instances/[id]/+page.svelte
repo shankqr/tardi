@@ -684,9 +684,7 @@
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
-					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsyncchange={(s) => aiConfigSyncing = s} />
-
-					<!-- Codex (ChatGPT) — OpenClaw only -->
+					<!-- Codex (ChatGPT) — OpenClaw only — primary onboarding flow -->
 					{#if instance.framework !== 'hermes'}
 					<CodexConnect instance={instance} />
 					{/if}
@@ -725,6 +723,9 @@
 
 							{#if powerUserOpen}
 								<div class="space-y-4 border-t border-gray-200 dark:border-gray-700 p-5">
+									<!-- AI Provider (OpenRouter) — opt-in alternate to Codex -->
+									<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsyncchange={(s) => aiConfigSyncing = s} />
+
 									<div class="flex gap-3">
 										<button
 											onclick={handleRestart}

@@ -363,28 +363,36 @@ func buildHermesConfigSyncScript() string {
 		"echo \"$REMOTE_VERSION\" > /opt/hermes/.config_version\n"
 }
 
+// openclawModelID prefixes the bare catalog id with "openrouter/" when the
+// model is routed through OpenRouter, and returns the bare id otherwise
+// (e.g. "codex/gpt-5.5").
+func openclawModelID(id, provider string) string {
+	if provider == "openrouter" {
+		return "openrouter/" + id
+	}
+	return id
+}
+
 // patchModelConfig uses OpenClaw's config.patch RPC to atomically set the
 // primary model AND register all catalog models in one call. This avoids
 // the CLI "openclaw models set" loop which changes the primary as a side
 // effect of each registration, causing race conditions with the RPC.
 // config.patch applies live (no restart) and persists to the JSON file.
 //
+// Each model's openclaw id is derived from its own provider — openrouter
+// models get an "openrouter/" prefix, native routes (codex/*) use the
+// bare id. The active model's provider is passed separately because it
+// may not appear in the catalog (e.g. user-entered custom id).
+//
 // Retries up to 3 times with backoff because the gateway may be briefly
 // unreachable during a reload.
-func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model string, allModelIDs []string) error {
-	fullModel := model
-	if provider == "openrouter" {
-		fullModel = "openrouter/" + model
-	}
+func patchModelConfig(ctx context.Context, ipv4, authToken, provider, model string, catalog []models.Model) error {
+	fullModel := openclawModelID(model, provider)
 
 	// Build the models map for registration in OC dashboard dropdown
 	modelsMap := map[string]any{}
-	for _, mid := range allModelIDs {
-		fmid := mid
-		if provider == "openrouter" {
-			fmid = "openrouter/" + mid
-		}
-		modelsMap[fmid] = map[string]any{}
+	for _, m := range catalog {
+		modelsMap[openclawModelID(m.ID, m.Provider)] = map[string]any{}
 	}
 
 	patch := map[string]any{
@@ -497,13 +505,11 @@ func SyncConfigHandler(deps Dependencies) http.HandlerFunc {
 					model, _ := agentCfg.Config["model"].(string)
 					provider, _ := agentCfg.Config["provider"].(string)
 					if model != "" {
-						var modelIDs []string
+						var catalog []models.Model
 						if allModels, mErr := db.ListEnabledModels(r.Context(), deps.Pool); mErr == nil {
-							for _, m := range allModels {
-								modelIDs = append(modelIDs, m.ID)
-							}
+							catalog = allModels
 						}
-						if err := patchModelConfig(r.Context(), *inst.IPv4, *inst.OpenClawAuthToken, provider, model, modelIDs); err != nil {
+						if err := patchModelConfig(r.Context(), *inst.IPv4, *inst.OpenClawAuthToken, provider, model, catalog); err != nil {
 							slog.Warn("sync config: model RPC patch failed (script will handle it)",
 								"error", err, "instance_id", instanceID)
 						} else {

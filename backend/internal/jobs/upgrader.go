@@ -239,7 +239,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		}
 		if allModels, lErr := db.ListEnabledModels(ctx, u.pool); lErr == nil {
 			for _, m := range allModels {
-				ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
+				ciData.AllModels = append(ciData.AllModels, CloudInitModel{ID: m.ID, Provider: m.Provider})
 			}
 		}
 		userData, err = RenderCloudInit(ciData)

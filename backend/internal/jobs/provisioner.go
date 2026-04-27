@@ -40,7 +40,17 @@ var stepTimeouts = map[models.ProvisioningStep]time.Duration{
 }
 
 // fallbackDefaultModelID is used when the DB models table is unavailable.
-const fallbackDefaultModelID = "openai/gpt-5.4"
+// Codex (ChatGPT-linked) is the default routing path for new instances —
+// users link via the FE to enable outbound calls.
+const fallbackDefaultModelID = "codex/gpt-5.5"
+const fallbackDefaultProvider = "codex"
+
+// CloudInitModel pairs a catalog model id with its routing provider so the
+// cloud-init template can decide per-model whether to prepend "openrouter/".
+type CloudInitModel struct {
+	ID       string
+	Provider string
+}
 
 // CloudInitData holds all template variables for cloud-init rendering.
 type CloudInitData struct {
@@ -60,7 +70,7 @@ type CloudInitData struct {
 	Domain             string // Optional domain for Cloudflare Proxy (e.g. "abc12345.tardi.ai"); empty = IP-only access
 	PreviewDomain      string // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
 	BackendEgressCIDRs string // Comma-separated CIDRs for backend egress IPs (restricts UFW SSH + OpenClaw access)
-	AllModelIDs        []string // All enabled model IDs from Tardi catalog (for OC dashboard dropdown)
+	AllModels          []CloudInitModel // All enabled catalog models (id + provider) for per-model routing
 }
 
 // cloudInitTemplate is the user-data script for bootstrapping a new VPS
@@ -391,15 +401,15 @@ if [ "$HEALTHY" = true ]; then
     # below finishing.
 
     # Register all Tardi catalog models so OC dashboard dropdown matches frontend.
-    # For OpenRouter, prepend "openrouter/" so OpenClaw routes through OpenRouter
-    # instead of the model's native provider.
+    # Per-model: prepend "openrouter/" only for models routed via OpenRouter;
+    # native routes (e.g. codex/*) use the bare id as-is.
     # Register non-active models first, then set active model last.
-{{- range .AllModelIDs}}
-{{- if ne . $.Model}}
-{{- if eq $.Provider "openrouter"}}
-    docker exec openclaw-gateway openclaw models set "openrouter/{{.}}" 2>/dev/null
+{{- range .AllModels}}
+{{- if ne .ID $.Model}}
+{{- if eq .Provider "openrouter"}}
+    docker exec openclaw-gateway openclaw models set "openrouter/{{.ID}}" 2>/dev/null
 {{- else}}
-    docker exec openclaw-gateway openclaw models set "{{.}}" 2>/dev/null
+    docker exec openclaw-gateway openclaw models set "{{.ID}}" 2>/dev/null
 {{- end}}
 {{- end}}
 {{- end}}
@@ -636,10 +646,14 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		previewDomain = fmt.Sprintf("%s-b.%s", subdomain, p.dnsClient.BaseDomain())
 	}
 
-	// Resolve default model from DB (falls back to hardcoded constant)
+	// Resolve default model from DB (falls back to hardcoded constant).
+	// Provider is paired with the model so per-model routing in cloud-init
+	// stays correct regardless of which provider the catalog default uses.
 	defaultModel := fallbackDefaultModelID
+	defaultProvider := fallbackDefaultProvider
 	if m, err := db.GetDefaultModel(ctx, p.pool); err == nil && m != nil {
 		defaultModel = m.ID
+		defaultProvider = m.Provider
 	} else if err != nil {
 		p.logger.Warn("provisioner: could not fetch default model from DB, using fallback", "error", err)
 	}
@@ -649,7 +663,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	if err != nil {
 		return fmt.Errorf("get agent config: %w", err)
 	}
-	providerName := "openrouter"
+	providerName := defaultProvider
 	modelID := defaultModel
 	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey string
 	var configVersion int
@@ -723,10 +737,11 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 			PreviewDomain:      previewDomain,
 			BackendEgressCIDRs: p.backendEgressCIDRs,
 		}
-		// Fetch all enabled model IDs for OC dashboard dropdown
+		// Fetch all enabled models (id+provider) so the cloud-init template can
+		// route each model correctly (openrouter/ prefix vs bare id).
 		if allModels, err := db.ListEnabledModels(ctx, p.pool); err == nil {
 			for _, m := range allModels {
-				ciData.AllModelIDs = append(ciData.AllModelIDs, m.ID)
+				ciData.AllModels = append(ciData.AllModels, CloudInitModel{ID: m.ID, Provider: m.Provider})
 			}
 		}
 		userData, err = RenderCloudInit(ciData)
