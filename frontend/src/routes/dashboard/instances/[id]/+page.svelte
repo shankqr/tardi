@@ -8,7 +8,6 @@
 		createSnapshot,
 		restoreSnapshot,
 		deleteSnapshot,
-		getAgentConfig,
 		syncConfig,
 		getSyncStatus,
 		runDoctor,
@@ -69,8 +68,6 @@
 	let confirmDeleteId = $state<string | null>(null);
 	let confirmDeleteInput = $state('');
 
-	// API key gate
-	let hasApiKey = $state(false);
 	let dashboardBtnLoading = $state(false);
 
 	// Config sync tracking — when any component is actively syncing config
@@ -389,57 +386,6 @@
 		};
 	});
 
-	// Check API key status on load
-	let configChecked = false;
-	$effect(() => {
-		if (instance?.status === 'active' && !configChecked) {
-			configChecked = true;
-			(async () => {
-				try {
-					const token = await getIdToken();
-					if (!token) {
-						configChecked = false;
-						return;
-					}
-					const cfg = await getAgentConfig(token, instance.id);
-					const hasKey = (k: string): boolean =>
-						!!(
-							cfg.config[k] &&
-							typeof cfg.config[k] === 'string' &&
-							(cfg.config[k] as string).length > 0
-						);
-					hasApiKey =
-						hasKey('openrouter_api_key') ||
-						hasKey('anthropic_api_key') ||
-						hasKey('openai_api_key');
-				} catch {
-					configChecked = false; // allow retry on error
-				}
-			})();
-		}
-	});
-
-	async function recheckConfig() {
-		if (!instance) return;
-		try {
-			const token = await getIdToken();
-			if (!token) return;
-			const cfg = await getAgentConfig(token, instance.id);
-			const hasKey = (k: string): boolean =>
-				!!(
-					cfg.config[k] &&
-					typeof cfg.config[k] === 'string' &&
-					(cfg.config[k] as string).length > 0
-				);
-			hasApiKey =
-				hasKey('openrouter_api_key') ||
-				hasKey('anthropic_api_key') ||
-				hasKey('openai_api_key');
-		} catch {
-			// ignore
-		}
-	}
-
 	function timeAgo(dateStr: string | null): string {
 		if (!dateStr) return 'Never';
 		const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
@@ -688,61 +634,57 @@
 					</dl>
 
 					{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url}
-						{#if hasApiKey}
-							{#if instance.framework === 'hermes'}
-								<a
-									href="/dashboard/instances/{instance.id}/chat"
-									target="_blank"
-									rel="noopener"
-									class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100"
-								>
-									Open Agent Dashboard
-								</a>
-							{:else}
-								<button
-									onclick={async () => {
-										dashboardBtnLoading = true;
-										try {
-											const [, result] = await Promise.all([
-												new Promise(r => setTimeout(r, 2000)),
-												(async () => {
-													const token = await getIdToken();
-													if (!token) return null;
-													const { token: scopedToken } = await getDashboardToken(instance!.id, token);
-													return scopedToken;
-												})()
-											]);
-											if (result) {
-												window.open(`${instance!.dashboard_url!}/#token=${result}`, '_blank');
-											}
-										} catch {
-											alert('Failed to generate dashboard token. Please try again.');
-										} finally {
-											dashboardBtnLoading = false;
-										}
-									}}
-									disabled={dashboardBtnLoading}
-									class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-70"
-								>
-									{#if dashboardBtnLoading}
-										<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-											<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-											<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-										</svg>
-										Opening...
-									{:else}
-										Open Agent Dashboard
-									{/if}
-								</button>
-							{/if}
+						{#if instance.framework === 'hermes'}
+							<a
+								href="/dashboard/instances/{instance.id}/chat"
+								target="_blank"
+								rel="noopener"
+								class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100"
+							>
+								Open Agent Dashboard
+							</a>
 						{:else}
-							<p class="mt-4 text-xs text-gray-400 dark:text-gray-500">Set up your OpenRouter API key below to access the dashboard.</p>
+							<button
+								onclick={async () => {
+									dashboardBtnLoading = true;
+									try {
+										const [, result] = await Promise.all([
+											new Promise(r => setTimeout(r, 2000)),
+											(async () => {
+												const token = await getIdToken();
+												if (!token) return null;
+												const { token: scopedToken } = await getDashboardToken(instance!.id, token);
+												return scopedToken;
+											})()
+										]);
+										if (result) {
+											window.open(`${instance!.dashboard_url!}/#token=${result}`, '_blank');
+										}
+									} catch {
+										alert('Failed to generate dashboard token. Please try again.');
+									} finally {
+										dashboardBtnLoading = false;
+									}
+								}}
+								disabled={dashboardBtnLoading}
+								class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-70"
+							>
+								{#if dashboardBtnLoading}
+									<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+									</svg>
+									Opening...
+								{:else}
+									Open Agent Dashboard
+								{/if}
+							</button>
 						{/if}
 					{/if}
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
-					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsaved={recheckConfig} onsyncchange={(s) => aiConfigSyncing = s} />
+					<AIProviderConfig instanceId={instance.id} disabled={instance.status !== 'active'} onsyncchange={(s) => aiConfigSyncing = s} />
 
 					<!-- Codex (ChatGPT) — OpenClaw only -->
 					{#if instance.framework !== 'hermes'}
