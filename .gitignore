@@ -41,5 +41,8 @@ infra/*.tfvars
 # Logs
 *.log
 
+# Cloudflare Wrangler
+.wrangler/
+
 # Dev wind-down secret backups
 scripts/.dev-secrets-backup/
