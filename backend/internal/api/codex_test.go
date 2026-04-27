@@ -45,37 +45,6 @@ func TestExtractDeviceCode(t *testing.T) {
 	}
 }
 
-func TestExtractLoggedInEmail(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{
-			name: "logged in via ChatGPT with email in parens",
-			in:   "Logged in using ChatGPT (shankqr@gmail.com)",
-			want: "shankqr@gmail.com",
-		},
-		{
-			name: "ANSI-escaped status line",
-			in:   "\x1b[32mLogged in\x1b[0m using ChatGPT (foo+bar@example.co.uk)",
-			want: "foo+bar@example.co.uk",
-		},
-		{
-			name: "no email present",
-			in:   "Not logged in",
-			want: "",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := extractLoggedInEmail(tc.in); got != tc.want {
-				t.Errorf("extractLoggedInEmail(%q) = %q, want %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestCodexLinkState_RateLimitWindow(t *testing.T) {
 	s := NewCodexLinkState()
 	id := uuid.New()

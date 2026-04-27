@@ -122,7 +122,6 @@ type VpsInstance struct {
 	PreviewDNSRecordID       *string
 	CustomCaddyfile          *string
 	CodexLinkedAt            *time.Time
-	CodexAccountEmail        *string
 	CreatedAt                time.Time
 	UpdatedAt                time.Time
 }

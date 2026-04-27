@@ -32,7 +32,6 @@ type InstanceResponse struct {
 	OpenClawVersion      *string `json:"openclaw_version,omitempty"`
 	OpenClawUpdateStatus *string `json:"openclaw_update_status,omitempty"`
 	CodexLinkedAt        *string `json:"codex_linked_at"`
-	CodexAccountEmail    *string `json:"codex_account_email"`
 	PreviewURL           *string `json:"preview_url,omitempty"`
 	CreatedAt            string  `json:"created_at"`
 }
@@ -74,7 +73,6 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 	r.OpenClawAuthToken = inst.OpenClawAuthToken
 	r.OpenClawVersion = inst.OpenClawVersion
 	r.OpenClawUpdateStatus = inst.OpenClawUpdateStatus
-	r.CodexAccountEmail = inst.CodexAccountEmail
 	if inst.CodexLinkedAt != nil {
 		t := inst.CodexLinkedAt.Format(time.RFC3339)
 		r.CodexLinkedAt = &t

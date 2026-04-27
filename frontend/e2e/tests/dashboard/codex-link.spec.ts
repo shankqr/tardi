@@ -9,7 +9,6 @@ import type { Page } from '@playwright/test';
  * cannot be reliably automated).
  */
 
-const MOCK_EMAIL = 'e2e-codex@example.com';
 const MOCK_LINKED_AT = '2026-04-20T08:37:31.000Z';
 
 /**
@@ -26,13 +25,7 @@ async function mockDashboardStateWithCodex(
 		const body = await response.json();
 		if (body?.instances?.length) {
 			for (const inst of body.instances) {
-				if (linked) {
-					inst.codex_linked_at = MOCK_LINKED_AT;
-					inst.codex_account_email = MOCK_EMAIL;
-				} else {
-					inst.codex_linked_at = null;
-					inst.codex_account_email = null;
-				}
+				inst.codex_linked_at = linked ? MOCK_LINKED_AT : null;
 			}
 		}
 		await route.fulfill({
@@ -68,7 +61,7 @@ function mockCodexStart(page: Page, codes: string[]): () => number {
  */
 function mockCodexStatus(
 	page: Page,
-	sequence: Array<{ status: string; email?: string }>,
+	sequence: Array<{ status: string }>,
 ): () => number {
 	let idx = 0;
 	page.route('**/api/instances/*/codex/link/status', (route) => {
@@ -115,9 +108,8 @@ test.describe('Codex linking UI', () => {
 		await card.scrollIntoViewIfNeeded();
 
 		await expect(
-			card.getByText(/Linked to ChatGPT as/, { exact: false }),
+			card.getByText('Linked to ChatGPT'),
 		).toBeVisible({ timeout: 10_000 });
-		await expect(card.getByText(MOCK_EMAIL)).toBeVisible();
 		await expect(card.getByRole('button', { name: 'Unlink' })).toBeVisible();
 	});
 
@@ -129,7 +121,7 @@ test.describe('Codex linking UI', () => {
 		mockCodexStatus(page, [
 			{ status: 'pending' },
 			{ status: 'restarting' },
-			{ status: 'linked', email: MOCK_EMAIL },
+			{ status: 'linked' },
 		]);
 		await page.reload();
 

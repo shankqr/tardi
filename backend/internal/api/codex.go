@@ -33,11 +33,10 @@ const (
 // today emits 4-5 uppercase alphanumerics with a dash; we accept 4-4/4-5/4-6
 // to be forgiving).
 var (
-	ansiEscapeRE     = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	codexCodeRE      = regexp.MustCompile(`[A-Z0-9]{4}-[A-Z0-9]{4,6}`)
-	codexEmailRE     = regexp.MustCompile(`([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})`)
-	codexLinkedRE    = regexp.MustCompile(`\bLINKED\b`)
-	codexPendingRE   = regexp.MustCompile(`\bPENDING\b`)
+	ansiEscapeRE   = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	codexCodeRE    = regexp.MustCompile(`[A-Z0-9]{4}-[A-Z0-9]{4,6}`)
+	codexLinkedRE  = regexp.MustCompile(`\bLINKED\b`)
+	codexPendingRE = regexp.MustCompile(`\bPENDING\b`)
 )
 
 // CodexLinkState holds in-process per-instance state that the codex link
@@ -98,13 +97,6 @@ func (s *CodexLinkState) restartInFlight(id uuid.UUID) bool {
 // or empty if none is present. Strips ANSI escapes before matching.
 func extractDeviceCode(out string) string {
 	return codexCodeRE.FindString(ansiEscapeRE.ReplaceAllString(out, ""))
-}
-
-// extractLoggedInEmail parses `codex login status` output and returns the
-// account email, or empty if the login state can't be parsed.
-func extractLoggedInEmail(out string) string {
-	cleaned := ansiEscapeRE.ReplaceAllString(out, "")
-	return codexEmailRE.FindString(cleaned)
 }
 
 // loadActiveOCInstance parses the instance id from the path, ensures it
@@ -244,10 +236,7 @@ func CodexLinkStatusHandler(deps Dependencies) http.HandlerFunc {
 
 		// Fast path: DB says linked. No SSH needed.
 		if inst.CodexLinkedAt != nil {
-			WriteJSON(w, http.StatusOK, map[string]any{
-				"status": "linked",
-				"email":  inst.CodexAccountEmail,
-			})
+			WriteJSON(w, http.StatusOK, map[string]any{"status": "linked"})
 			return
 		}
 
@@ -291,8 +280,8 @@ fi`, codexAuthHostPath)
 }
 
 // finaliseCodexLink restarts the gateway, waits for /health to come back,
-// reads the account email via `codex login status`, persists the link in
-// the DB, and writes an audit-log entry. Runs off the request goroutine.
+// persists the link in the DB, and writes an audit-log entry. Runs off
+// the request goroutine.
 func finaliseCodexLink(deps Dependencies, instanceID uuid.UUID, host string, key []byte, pw string) {
 	defer deps.CodexState.clearRestart(instanceID)
 
@@ -326,25 +315,14 @@ func finaliseCodexLink(deps Dependencies, instanceID uuid.UUID, host string, key
 		return
 	}
 
-	statusOut, err := deps.SSHRunner.RunCommand(host, key, pw,
-		"docker exec openclaw-gateway codex login status 2>&1", 15*time.Second)
-	if err != nil {
-		slog.Warn("codex finalise: could not read login status", "instance_id", instanceID, "error", err)
-	}
-	email := extractLoggedInEmail(statusOut)
-	var emailPtr *string
-	if email != "" {
-		emailPtr = &email
-	}
-
 	linkedAt := time.Now().UTC()
-	if err := db.SetCodexLinkState(ctx, deps.Pool, instanceID, &linkedAt, emailPtr); err != nil {
+	if err := db.SetCodexLinkState(ctx, deps.Pool, instanceID, &linkedAt); err != nil {
 		slog.Error("codex finalise: persist link state", "instance_id", instanceID, "error", err)
 		return
 	}
 
-	writeCodexAuditLog(ctx, deps, instanceID, "codex_link", emailPtr)
-	slog.Info("codex finalise: linked", "instance_id", instanceID, "email", email)
+	writeCodexAuditLog(ctx, deps, instanceID, "codex_link", nil)
+	slog.Info("codex finalise: linked", "instance_id", instanceID)
 }
 
 // CodexUnlinkHandler removes the persisted auth.json, clears the DB link
@@ -370,7 +348,7 @@ docker restart openclaw-gateway >/dev/null 2>&1`, codexAuthHostPath)
 			return
 		}
 
-		if err := db.SetCodexLinkState(r.Context(), deps.Pool, inst.ID, nil, nil); err != nil {
+		if err := db.SetCodexLinkState(r.Context(), deps.Pool, inst.ID, nil); err != nil {
 			slog.Error("codex unlink: clear DB state", "instance_id", inst.ID, "error", err)
 			// SSH already succeeded; don't fail the user-facing request.
 		}

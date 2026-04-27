@@ -48,7 +48,6 @@ export interface VpsInstance {
 	openclaw_version?: string | null;
 	openclaw_update_status?: string | null;
 	codex_linked_at?: string | null;
-	codex_account_email?: string | null;
 	preview_url?: string | null;
 	created_at: string;
 }
