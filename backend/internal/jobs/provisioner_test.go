@@ -101,6 +101,8 @@ func TestRenderCloudInitIncludesHostAdminHelper(t *testing.T) {
 		"PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"/run/tardi-host-admin:/run/tardi-host-admin:rw",
 		"/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro",
+		"/opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro",
+		"/opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro",
 		"Wants=tardi-host-admin.service",
 	}
 	for _, want := range required {

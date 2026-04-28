@@ -63,6 +63,14 @@ if ! grep -q '/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro' /opt/openclaw/dock
     sed -i '/\/run\/tardi-host-admin:\/run\/tardi-host-admin:rw/a\      - /opt/openclaw/host-admin/bin:/opt/tardi/bin:ro' /opt/openclaw/docker-compose.yml
     HOST_ADMIN_COMPOSE_CHANGED=true
 fi
+if ! grep -q '/opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    sed -i '/\/opt\/openclaw\/host-admin\/bin:\/opt\/tardi\/bin:ro/a\      - /opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro' /opt/openclaw/docker-compose.yml
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
+if ! grep -q '/opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    sed -i '/\/opt\/openclaw\/host-admin\/bin\/tardi-host-admin:\/usr\/local\/bin\/tardi-host-admin:ro/a\      - /opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro' /opt/openclaw/docker-compose.yml
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
 if ! grep -q '^TARDI_HOST_ADMIN_SOCKET=' /opt/openclaw/.env 2>/dev/null; then
     echo "TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock" >> /opt/openclaw/.env
     HOST_ADMIN_COMPOSE_CHANGED=true

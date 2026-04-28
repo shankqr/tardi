@@ -49,6 +49,8 @@ socket directory and a small client are mounted into OpenClaw:
 volumes:
   - /run/tardi-host-admin:/run/tardi-host-admin:rw
   - /opt/openclaw/host-admin/bin:/opt/tardi/bin:ro
+  - /opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro
+  - /opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro
 env:
   TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock
 ```
@@ -56,19 +58,21 @@ env:
 From inside OpenClaw, the agent can run:
 
 ```bash
-/opt/tardi/bin/sudo apt-get update
-/opt/tardi/bin/sudo apt-get install -y ffmpeg build-essential
-/opt/tardi/bin/sudo systemctl restart caddy
-/opt/tardi/bin/tardi-host-admin host.exec 'git clone https://github.com/example/repo /opt/work/repo'
+sudo apt-get update
+sudo apt-get install -y ffmpeg build-essential
+sudo systemctl restart caddy
+tardi-host-admin host.exec 'git clone https://github.com/example/repo /opt/work/repo'
 /opt/tardi/bin/tardi-host-admin desktop.status
 /opt/tardi/bin/tardi-host-admin desktop.install
 /opt/tardi/bin/tardi-host-admin desktop.start
 /opt/tardi/bin/tardi-host-admin desktop.open BINANCE:BTCUSDT
 ```
 
-`/opt/tardi/bin` is prepended to `PATH`, so `sudo <command>` resolves to the
-Tardi shim inside the container. The shim forwards commands to `host.exec`,
-which runs `/bin/bash -lc <command>` as root on the VPS host.
+The helper is exposed at both `/opt/tardi/bin` and `/usr/local/bin`. The
+`/usr/local/bin` file mounts make plain `sudo <command>` and
+`tardi-host-admin ...` work even if a login shell resets `PATH`. The shim
+forwards commands to `host.exec`, which runs `/bin/bash -lc <command>` as root
+on the VPS host.
 
 | Action | Root-side behavior |
 |---|---|

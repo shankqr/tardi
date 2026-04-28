@@ -114,6 +114,15 @@ export async function ensureInstancePage(
 	for (let attempt = 0; attempt < 3; attempt++) {
 		try {
 			await page.goto(`/dashboard/instances/${instId}`, { timeout: 30_000 });
+			await expect(page.getByRole('heading', { name: 'Agent Details' })).toBeVisible({ timeout: 60_000 });
+			const powerUserToggle = page.getByText('Power User').first();
+			if (await powerUserToggle.isVisible({ timeout: 5_000 }).catch(() => false)) {
+				const openRouterKey = page.locator('#openrouter-key');
+				if (!(await openRouterKey.isVisible().catch(() => false))) {
+					await powerUserToggle.scrollIntoViewIfNeeded();
+					await powerUserToggle.click();
+				}
+			}
 			await expect(page.locator('#openrouter-key')).toBeVisible({ timeout: 60_000 });
 			await page.waitForTimeout(5000);
 			return;

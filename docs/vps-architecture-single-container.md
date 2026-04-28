@@ -606,6 +606,10 @@ services:
     volumes:
       - ./data/openclaw:/home/node/.openclaw:rw
       - /var/run/docker.sock:/var/run/docker.sock
+      - /run/tardi-host-admin:/run/tardi-host-admin:rw
+      - /opt/openclaw/host-admin/bin:/opt/tardi/bin:ro
+      - /opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro
+      - /opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro
     env_file:
       - .env
     healthcheck:

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { loginWithCredentials } from '../../fixtures/auth';
 import { waitForOpenClawRunning } from '../../helpers/openclaw-status';
 import {
@@ -13,6 +13,7 @@ import {
 	fetchTerminalTicket,
 	runTerminalCommandViaWs,
 	probeTerminalWsWithBadTicket,
+	type WsRoundtripResult,
 } from '../../helpers/terminal-helpers';
 
 const PROD_EMAIL = process.env.E2E_PROD_EMAIL || '';
@@ -22,6 +23,44 @@ test.skip(!PROD_EMAIL || !PROD_PASSWORD, 'E2E_PROD_EMAIL / E2E_PROD_PASSWORD not
 
 function shellQuote(value: string): string {
 	return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+async function runTerminalCommandViaWsWithRetry(
+	page: Page,
+	instanceId: string,
+	ticket: string,
+	command: string,
+	options: { readWindowMs?: number; attempts?: number } = {}
+): Promise<WsRoundtripResult> {
+	const attempts = options.attempts ?? 3;
+	let lastResult: WsRoundtripResult | undefined;
+
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		lastResult = await runTerminalCommandViaWs(
+			page,
+			API_URL,
+			instanceId,
+			ticket,
+			command,
+			{ readWindowMs: options.readWindowMs }
+		);
+
+		const transientShellFailure =
+			!lastResult.opened ||
+			/failed to open shell|ssh dial|i\/o timeout|connection refused|connection reset/i.test(
+				lastResult.output
+			);
+		if (!transientShellFailure) {
+			return lastResult;
+		}
+
+		console.log(
+			`[Prod E2E] Terminal command hit transient shell failure (attempt ${attempt}/${attempts}), retrying...`
+		);
+		await page.waitForTimeout(15_000);
+	}
+
+	return lastResult!;
 }
 
 // Cleanup runs in afterAll so a failure in any step still tears down the VPS.
@@ -385,7 +424,137 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		console.log('[Prod E2E] API key 1 restored — swap complete');
 	});
 
-	// ── Step 13: Snapshot create, restore, and delete ──
+	// ── Step 13: Web terminal (API + UI round-trip) ──
+	await test.step('Verify web terminal', async () => {
+		// API: ticket endpoint requires auth
+		const unauthRes = await fetchTerminalTicket(PROD_EMAIL, PROD_PASSWORD, instanceId, {
+			authOverride: null,
+		});
+		expect(unauthRes.status).toBe(401);
+
+		// API: ticket endpoint rejects an instance the user does not own
+		const otherRes = await fetchTerminalTicket(
+			PROD_EMAIL,
+			PROD_PASSWORD,
+			'00000000-0000-0000-0000-000000000001'
+		);
+		expect(otherRes.status).toBe(404);
+
+		// API: ticket endpoint returns a signed ticket for the owned instance
+		const ticketRes = await fetchTerminalTicket(PROD_EMAIL, PROD_PASSWORD, instanceId);
+		expect(ticketRes.status).toBe(200);
+		const { ticket } = await ticketRes.json();
+		expect(typeof ticket).toBe('string');
+		expect(ticket.split('.').length).toBe(4);
+
+		// Make sure we are on the app origin so the WS Origin header matches
+		// ALLOWED_ORIGINS in the backend upgrader.
+		await ensureInstancePage(page, instanceId);
+
+		// WS: tampered ticket is rejected before any shell is opened
+		const badProbe = await probeTerminalWsWithBadTicket(
+			page,
+			API_URL,
+			instanceId,
+			'tampered-ticket-value'
+		);
+		expect(badProbe.closed).toBe(true);
+		expect(badProbe.closeCode).not.toBe(1000);
+		console.log(`[Prod E2E] Bad ticket rejected, close code=${badProbe.closeCode}`);
+
+		// WS: full round-trip — whoami on the real VPS should return "root"
+		const roundtrip = await runTerminalCommandViaWsWithRetry(
+			page,
+			instanceId,
+			ticket,
+			'whoami',
+			{ readWindowMs: 20_000 }
+		);
+		console.log(
+			`[Prod E2E] terminal roundtrip opened=${roundtrip.opened} closed=${roundtrip.closed} output.len=${roundtrip.output.length}`
+		);
+		expect(roundtrip.opened).toBe(true);
+		expect(roundtrip.output).toContain('root');
+
+		// UI: Open Terminal button is visible + the /terminal page loads and connects
+		// Open Terminal lives inside the Power User accordion — expand it first.
+		const powerUserToggle = page.getByText('Power User').first();
+		await powerUserToggle.scrollIntoViewIfNeeded();
+		const terminalButton = page.getByRole('link', { name: 'Open Terminal' });
+		if (!(await terminalButton.isVisible().catch(() => false))) {
+			await powerUserToggle.click();
+		}
+		await expect(terminalButton).toBeVisible({ timeout: 15_000 });
+		await terminalButton.click();
+		await page.waitForURL(`**/dashboard/instances/${instanceId}/terminal`, {
+			timeout: 10_000,
+		});
+		await expect(page.getByText('Connected as root')).toBeVisible({ timeout: 45_000 });
+		await expect(page.locator('.xterm-helper-textarea')).toBeAttached({ timeout: 10_000 });
+		console.log('[Prod E2E] Terminal page loaded and WebSocket connected');
+
+		// Return to the agent page so the later cleanup step finds the right UI.
+		await page.getByRole('link', { name: /Back to agent/ }).click();
+		await page.waitForURL(`**/dashboard/instances/${instanceId}`, { timeout: 10_000 });
+	});
+
+	// ── Step 14: OpenClaw root bridge + internet tool install ──
+	await test.step('Verify OpenClaw can use host root bridge and install internet tools', async () => {
+		const ticketRes = await fetchTerminalTicket(PROD_EMAIL, PROD_PASSWORD, instanceId);
+		expect(ticketRes.status).toBe(200);
+		const { ticket } = await ticketRes.json();
+		expect(typeof ticket).toBe('string');
+
+		await ensureInstancePage(page, instanceId);
+
+		const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const marker = `TARDI_OPENCLAW_ROOT_BRIDGE_OK_${runId}`;
+		const workDir = `/tmp/tardi-openclaw-root-e2e-${runId}`;
+		const installPath = `/usr/local/bin/tardi-e2e-spark-${runId}`;
+		const toolOutput = `/tmp/tardi-e2e-spark-${runId}.out`;
+		const proofFile = `/root/tardi-openclaw-root-e2e-${runId}.proof`;
+
+		const openClawScript = `
+set -eu
+echo "[root-bridge] container-user=$(id -u):$(id -g)"
+echo "[root-bridge] sudo-path=$(command -v sudo)"
+sudo id -u
+sudo sh -lc ${shellQuote(`echo ${marker} > ${proofFile} && chmod 600 ${proofFile}`)}
+sudo cat ${shellQuote(proofFile)}
+sudo apt-get update -qq
+sudo sh -lc ${shellQuote('DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git ca-certificates')}
+sudo rm -rf ${shellQuote(workDir)} ${shellQuote(installPath)} ${shellQuote(toolOutput)}
+sudo git clone --depth 1 https://github.com/holman/spark.git ${shellQuote(workDir)}
+sudo install -m 0755 ${shellQuote(`${workDir}/spark`)} ${shellQuote(installPath)}
+sudo sh -lc ${shellQuote(`${installPath} 1 5 22 > ${toolOutput}; test -s ${toolOutput}; cat ${toolOutput}; echo ${marker}_TOOL_RAN`)}
+sudo rm -rf ${shellQuote(workDir)} ${shellQuote(installPath)} ${shellQuote(toolOutput)} ${shellQuote(proofFile)}
+echo ${marker}_DONE
+`;
+		const command = `docker exec openclaw-gateway sh -lc ${shellQuote(openClawScript)}`;
+
+		const result = await runTerminalCommandViaWsWithRetry(
+			page,
+			instanceId,
+			ticket,
+			command,
+			{ readWindowMs: 240_000, attempts: 2 }
+		);
+
+		console.log(
+			`[Prod E2E] OpenClaw root bridge opened=${result.opened} output.len=${result.output.length}`
+		);
+		expect(result.opened).toBe(true);
+		expect(result.output).toMatch(
+			/\[root-bridge\] sudo-path=\/(?:opt\/tardi\/bin|usr\/local\/bin)\/sudo/
+		);
+		expect(result.output).toContain(marker);
+		expect(result.output).toContain(`${marker}_TOOL_RAN`);
+		expect(result.output).toContain(`${marker}_DONE`);
+		expect(result.output).not.toMatch(/permission denied|unknown action|command failed/i);
+		console.log('[Prod E2E] OpenClaw installed and ran a GitHub-hosted tool via host root bridge');
+	});
+
+	// ── Step 15: Snapshot create, restore, and delete ──
 	await test.step('Snapshot lifecycle', async () => {
 		await ensureInstancePage(page, instanceId);
 
@@ -449,7 +618,7 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		console.log(`[Prod E2E] Snapshot "${snapshotName}" deleted`);
 	});
 
-	// ── Step 15: Billing page ──
+	// ── Step 16: Billing page ──
 	await test.step('Verify billing page', async () => {
 		await page.goto('/dashboard/billing');
 		await expect(page.getByRole('heading', { name: /plan details/i })).toBeVisible({ timeout: 15_000 });
@@ -464,7 +633,7 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		console.log('[Prod E2E] Billing page verified');
 	});
 
-	// ── Step 16: Settings page ──
+	// ── Step 17: Settings page ──
 	await test.step('Verify settings page', async () => {
 		await page.goto('/dashboard/settings');
 		await expect(page.getByText(PROD_EMAIL).first()).toBeVisible({ timeout: 15_000 });
@@ -473,136 +642,6 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		const backLink = page.getByRole('link', { name: /back|dashboard/i });
 		await expect(backLink).toBeVisible({ timeout: 5_000 });
 		console.log('[Prod E2E] Settings page verified');
-	});
-
-	// ── Step 17: Web terminal (API + UI round-trip) ──
-	await test.step('Verify web terminal', async () => {
-		// API: ticket endpoint requires auth
-		const unauthRes = await fetchTerminalTicket(PROD_EMAIL, PROD_PASSWORD, instanceId, {
-			authOverride: null,
-		});
-		expect(unauthRes.status).toBe(401);
-
-		// API: ticket endpoint rejects an instance the user does not own
-		const otherRes = await fetchTerminalTicket(
-			PROD_EMAIL,
-			PROD_PASSWORD,
-			'00000000-0000-0000-0000-000000000001'
-		);
-		expect(otherRes.status).toBe(404);
-
-		// API: ticket endpoint returns a signed ticket for the owned instance
-		const ticketRes = await fetchTerminalTicket(PROD_EMAIL, PROD_PASSWORD, instanceId);
-		expect(ticketRes.status).toBe(200);
-		const { ticket } = await ticketRes.json();
-		expect(typeof ticket).toBe('string');
-		expect(ticket.split('.').length).toBe(4);
-
-		// Make sure we are on the app origin so the WS Origin header matches
-		// ALLOWED_ORIGINS in the backend upgrader.
-		await ensureInstancePage(page, instanceId);
-
-		// WS: tampered ticket is rejected before any shell is opened
-		const badProbe = await probeTerminalWsWithBadTicket(
-			page,
-			API_URL,
-			instanceId,
-			'tampered-ticket-value'
-		);
-		expect(badProbe.closed).toBe(true);
-		expect(badProbe.closeCode).not.toBe(1000);
-		console.log(`[Prod E2E] Bad ticket rejected, close code=${badProbe.closeCode}`);
-
-		// WS: full round-trip — whoami on the real VPS should return "root"
-		const roundtrip = await runTerminalCommandViaWs(
-			page,
-			API_URL,
-			instanceId,
-			ticket,
-			'whoami',
-			{ readWindowMs: 15_000 }
-		);
-		console.log(
-			`[Prod E2E] terminal roundtrip opened=${roundtrip.opened} closed=${roundtrip.closed} output.len=${roundtrip.output.length}`
-		);
-		expect(roundtrip.opened).toBe(true);
-		expect(roundtrip.output).toContain('root');
-
-		// UI: Open Terminal button is visible + the /terminal page loads and connects
-		// Open Terminal lives inside the Power User accordion — expand it first.
-		const powerUserToggle = page.getByText('Power User').first();
-		await powerUserToggle.scrollIntoViewIfNeeded();
-		const terminalButton = page.getByRole('link', { name: 'Open Terminal' });
-		if (!(await terminalButton.isVisible().catch(() => false))) {
-			await powerUserToggle.click();
-		}
-		await expect(terminalButton).toBeVisible({ timeout: 15_000 });
-		await terminalButton.click();
-		await page.waitForURL(`**/dashboard/instances/${instanceId}/terminal`, {
-			timeout: 10_000,
-		});
-		await expect(page.getByText('Connected as root')).toBeVisible({ timeout: 45_000 });
-		await expect(page.locator('.xterm-helper-textarea')).toBeAttached({ timeout: 10_000 });
-		console.log('[Prod E2E] Terminal page loaded and WebSocket connected');
-
-		// Return to the agent page so the later cleanup step finds the right UI.
-		await page.getByRole('link', { name: /Back to agent/ }).click();
-		await page.waitForURL(`**/dashboard/instances/${instanceId}`, { timeout: 10_000 });
-	});
-
-	// ── Step 18: OpenClaw root bridge + internet tool install ──
-	await test.step('Verify OpenClaw can use host root bridge and install internet tools', async () => {
-		const ticketRes = await fetchTerminalTicket(PROD_EMAIL, PROD_PASSWORD, instanceId);
-		expect(ticketRes.status).toBe(200);
-		const { ticket } = await ticketRes.json();
-		expect(typeof ticket).toBe('string');
-
-		await ensureInstancePage(page, instanceId);
-
-		const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-		const marker = `TARDI_OPENCLAW_ROOT_BRIDGE_OK_${runId}`;
-		const workDir = `/tmp/tardi-openclaw-root-e2e-${runId}`;
-		const installPath = `/usr/local/bin/tardi-e2e-spark-${runId}`;
-		const toolOutput = `/tmp/tardi-e2e-spark-${runId}.out`;
-		const proofFile = `/root/tardi-openclaw-root-e2e-${runId}.proof`;
-
-		const openClawScript = `
-set -eu
-echo "[root-bridge] container-user=$(id -u):$(id -g)"
-echo "[root-bridge] sudo-path=$(command -v sudo)"
-sudo id -u
-sudo sh -lc ${shellQuote(`echo ${marker} > ${proofFile} && chmod 600 ${proofFile}`)}
-sudo cat ${shellQuote(proofFile)}
-sudo apt-get update -qq
-sudo sh -lc ${shellQuote('DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git ca-certificates')}
-sudo rm -rf ${shellQuote(workDir)} ${shellQuote(installPath)} ${shellQuote(toolOutput)}
-sudo git clone --depth 1 https://github.com/holman/spark.git ${shellQuote(workDir)}
-sudo install -m 0755 ${shellQuote(`${workDir}/spark`)} ${shellQuote(installPath)}
-sudo sh -lc ${shellQuote(`${installPath} 1 5 22 > ${toolOutput}; test -s ${toolOutput}; cat ${toolOutput}; echo ${marker}_TOOL_RAN`)}
-sudo rm -rf ${shellQuote(workDir)} ${shellQuote(installPath)} ${shellQuote(toolOutput)} ${shellQuote(proofFile)}
-echo ${marker}_DONE
-`;
-		const command = `docker exec openclaw-gateway sh -lc ${shellQuote(openClawScript)}`;
-
-		const result = await runTerminalCommandViaWs(
-			page,
-			API_URL,
-			instanceId,
-			ticket,
-			command,
-			{ readWindowMs: 240_000 }
-		);
-
-		console.log(
-			`[Prod E2E] OpenClaw root bridge opened=${result.opened} output.len=${result.output.length}`
-		);
-		expect(result.opened).toBe(true);
-		expect(result.output).toContain('/opt/tardi/bin/sudo');
-		expect(result.output).toContain(marker);
-		expect(result.output).toContain(`${marker}_TOOL_RAN`);
-		expect(result.output).toContain(`${marker}_DONE`);
-		expect(result.output).not.toMatch(/permission denied|unknown action|command failed/i);
-		console.log('[Prod E2E] OpenClaw installed and ran a GitHub-hosted tool via host root bridge');
 	});
 
 	// Cleanup is handled by test.afterAll above so it runs even when a step fails.
