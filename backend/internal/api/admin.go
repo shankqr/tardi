@@ -71,7 +71,7 @@ func AdminSetGlobalVersionHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 		if body.Version == "latest" {
-			WriteError(w, http.StatusBadRequest, "bad_request", "cannot set version to 'latest' — use an explicit version tag (e.g. v0.9.2)")
+			WriteError(w, http.StatusBadRequest, "bad_request", "cannot set version to 'latest' — use an explicit Docker image tag (e.g. 2026.4.26)")
 			return
 		}
 
