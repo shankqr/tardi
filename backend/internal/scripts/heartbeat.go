@@ -424,6 +424,121 @@ if [ "$STATUS" = "running" ]; then
     done
 fi
 
+# --- Telegram channel drift guard (runs every heartbeat) ---
+# OC auto-detects Telegram accounts, but defaults new account entries to
+# pairing/allowlist and streaming replies. Normalize both top-level Telegram
+# config and per-account overrides. OC 2026.4.26 uses streaming.mode instead
+# of the old scalar streaming value.
+if [ "$STATUS" = "running" ]; then
+    python3 - <<'PY' >/tmp/openclaw-channel-drift.log 2>&1 || true
+import datetime
+import json
+
+path = "/opt/openclaw/data/openclaw/openclaw.json"
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+except Exception:
+    raise SystemExit(0)
+
+changed = False
+
+def put(obj, key, value):
+    global changed
+    if obj.get(key) != value:
+        obj[key] = value
+        changed = True
+
+channels = cfg.get("channels")
+tg = channels.get("telegram") if isinstance(channels, dict) else None
+if isinstance(tg, dict) and tg.get("enabled") is not False:
+    put(tg, "enabled", True)
+    put(tg, "allowFrom", ["*"])
+    put(tg, "dmPolicy", "open")
+    put(tg, "groupPolicy", "disabled")
+    put(tg, "streaming", {"mode": "off"})
+
+    accounts = tg.get("accounts")
+    if isinstance(accounts, dict):
+        for account in accounts.values():
+            if isinstance(account, dict) and account.get("enabled") is not False:
+                put(account, "enabled", True)
+                put(account, "allowFrom", ["*"])
+                put(account, "dmPolicy", "open")
+                put(account, "groupPolicy", "disabled")
+                put(account, "streaming", {"mode": "off"})
+
+if changed:
+    cfg.setdefault("meta", {})["lastTouchedAt"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    with open(path, "w") as f:
+        json.dump(cfg, f, indent=2)
+PY
+fi
+
+# --- Codex model provider drift guard (runs every heartbeat) ---
+# Tardi's default model is codex/gpt-5.5. In OC 2026.4.26 that model resolves
+# through the OpenAI provider using the Codex app-server token marker. If the
+# provider entry is missing, channels connect but agent turns never produce a
+# reply because the resolved openai/gpt-5.5 provider is unauthenticated.
+if [ "$STATUS" = "running" ] && [ -s /opt/openclaw/data/codex/auth.json ] && ! grep -q '^OPENAI_API_KEY=.\+' /opt/openclaw/.env 2>/dev/null; then
+    python3 - <<'PY' >/tmp/openclaw-codex-model-drift.log 2>&1 || true
+import datetime
+import json
+
+path = "/opt/openclaw/data/openclaw/openclaw.json"
+try:
+    with open(path) as f:
+        cfg = json.load(f)
+except Exception:
+    raise SystemExit(0)
+
+codex_provider = {
+    "baseUrl": "https://chatgpt.com/backend-api/v1",
+    "apiKey": "codex-app-server",
+    "auth": "token",
+    "api": "openai-codex-responses",
+    "models": [
+        {
+            "id": "gpt-5.5",
+            "name": "GPT-5.5",
+            "api": "openai-codex-responses",
+            "reasoning": True,
+            "input": ["text", "image"],
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            "contextWindow": 272000,
+            "maxTokens": 128000,
+            "compat": {
+                "supportsReasoningEffort": True,
+                "supportsUsageInStreaming": True,
+            },
+        }
+    ],
+}
+
+changed = False
+providers = cfg.setdefault("models", {}).setdefault("providers", {})
+if providers.get("openai") != codex_provider:
+    providers["openai"] = codex_provider
+    changed = True
+
+model_cfg = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("model", {})
+if model_cfg.get("primary") in ("", None, "openai/gpt-5.5", "codex/gpt-5.5"):
+    if model_cfg.get("primary") != "codex/gpt-5.5":
+        model_cfg["primary"] = "codex/gpt-5.5"
+        changed = True
+
+models = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("models", {})
+if models.get("codex/gpt-5.5") != {}:
+    models["codex/gpt-5.5"] = {}
+    changed = True
+
+if changed:
+    cfg.setdefault("meta", {})["lastTouchedAt"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    with open(path, "w") as f:
+        json.dump(cfg, f, indent=2)
+PY
+fi
+
 # --- BOOTSTRAP.md cleanup (runs every heartbeat) ---
 # OC's bundled BOOTSTRAP.md tells the agent to delete itself once identity is
 # established, but agents rarely follow through. Left in place, any session

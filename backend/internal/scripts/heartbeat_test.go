@@ -55,6 +55,23 @@ func TestHeartbeatScript_ContainsHostAdminDriftGuard(t *testing.T) {
 	}
 }
 
+func TestHeartbeatScript_ContainsChannelAndCodexDriftGuards(t *testing.T) {
+	required := []string{
+		"openclaw-channel-drift.log",
+		"tg = channels",
+		"dmPolicy",
+		`"streaming", {"mode": "off"}`,
+		"openclaw-codex-model-drift.log",
+		"codex-app-server",
+		"openai-codex-responses",
+	}
+	for _, want := range required {
+		if !strings.Contains(HeartbeatScript, want) {
+			t.Errorf("HeartbeatScript should contain %q", want)
+		}
+	}
+}
+
 func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T) {
 	required := []string{
 		"desktop.install",

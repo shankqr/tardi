@@ -216,6 +216,32 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
       "openai": { "enabled": true },
       "anthropic": { "enabled": true }
     }
+  },
+  "models": {
+    "providers": {
+      "openai": {
+        "baseUrl": "https://chatgpt.com/backend-api/v1",
+        "apiKey": "codex-app-server",
+        "auth": "token",
+        "api": "openai-codex-responses",
+        "models": [
+          {
+            "id": "gpt-5.5",
+            "name": "GPT-5.5",
+            "api": "openai-codex-responses",
+            "reasoning": true,
+            "input": ["text", "image"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 272000,
+            "maxTokens": 128000,
+            "compat": {
+              "supportsReasoningEffort": true,
+              "supportsUsageInStreaming": true
+            }
+          }
+        ]
+      }
+    }
   }
 }
 CFGEOF
