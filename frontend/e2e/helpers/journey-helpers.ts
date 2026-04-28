@@ -183,8 +183,7 @@ export async function getInstanceFramework(
 
 /**
  * Delete any existing non-terminated instances for the given account.
- * Polls until all instances are terminated or only 'error'/'terminating' remain
- * that won't block a new deploy (max 5 minutes).
+ * Polls until all instances are terminated or in error.
  */
 export async function deleteExistingInstances(
 	email: string,
@@ -204,11 +203,7 @@ export async function deleteExistingInstances(
 		return;
 	}
 
-	const deletableInstances = allNonTerminated.filter(
-		(i: { status: string }) => i.status !== 'terminating'
-	);
-
-	for (const inst of deletableInstances) {
+	for (const inst of allNonTerminated) {
 		console.log(`[E2E] Deleting instance ${inst.id} (status: ${inst.status})`);
 		const delRes = await fetch(`${API_URL}/api/instances/${inst.id}`, {
 			method: 'DELETE',
@@ -218,10 +213,6 @@ export async function deleteExistingInstances(
 			const body = await delRes.text().catch(() => '');
 			console.log(`[E2E] Delete returned ${delRes.status}: ${body}`);
 		}
-	}
-
-	if (!deletableInstances.length) {
-		console.log(`[E2E] ${allNonTerminated.length} instance(s) already terminating, waiting...`);
 	}
 
 	// Poll until no instances block a new deploy (terminated/error are fine)
