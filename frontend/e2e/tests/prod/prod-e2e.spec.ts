@@ -20,6 +20,10 @@ const PROD_PASSWORD = process.env.E2E_PROD_PASSWORD || '';
 
 test.skip(!PROD_EMAIL || !PROD_PASSWORD, 'E2E_PROD_EMAIL / E2E_PROD_PASSWORD not set — skipping');
 
+function shellQuote(value: string): string {
+	return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 // Cleanup runs in afterAll so a failure in any step still tears down the VPS.
 // Without this, a single flaky step would leak a prod VPS (~$X/mo per orphan).
 test.afterAll(async () => {
@@ -544,6 +548,61 @@ test('Prod E2E: full deploy + configure + verify cycle', async ({ page }) => {
 		// Return to the agent page so the later cleanup step finds the right UI.
 		await page.getByRole('link', { name: /Back to agent/ }).click();
 		await page.waitForURL(`**/dashboard/instances/${instanceId}`, { timeout: 10_000 });
+	});
+
+	// ── Step 18: OpenClaw root bridge + internet tool install ──
+	await test.step('Verify OpenClaw can use host root bridge and install internet tools', async () => {
+		const ticketRes = await fetchTerminalTicket(PROD_EMAIL, PROD_PASSWORD, instanceId);
+		expect(ticketRes.status).toBe(200);
+		const { ticket } = await ticketRes.json();
+		expect(typeof ticket).toBe('string');
+
+		await ensureInstancePage(page, instanceId);
+
+		const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const marker = `TARDI_OPENCLAW_ROOT_BRIDGE_OK_${runId}`;
+		const workDir = `/tmp/tardi-openclaw-root-e2e-${runId}`;
+		const installPath = `/usr/local/bin/tardi-e2e-spark-${runId}`;
+		const toolOutput = `/tmp/tardi-e2e-spark-${runId}.out`;
+		const proofFile = `/root/tardi-openclaw-root-e2e-${runId}.proof`;
+
+		const openClawScript = `
+set -eu
+echo "[root-bridge] container-user=$(id -u):$(id -g)"
+echo "[root-bridge] sudo-path=$(command -v sudo)"
+sudo id -u
+sudo sh -lc ${shellQuote(`echo ${marker} > ${proofFile} && chmod 600 ${proofFile}`)}
+sudo cat ${shellQuote(proofFile)}
+sudo apt-get update -qq
+sudo sh -lc ${shellQuote('DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git ca-certificates')}
+sudo rm -rf ${shellQuote(workDir)} ${shellQuote(installPath)} ${shellQuote(toolOutput)}
+sudo git clone --depth 1 https://github.com/holman/spark.git ${shellQuote(workDir)}
+sudo install -m 0755 ${shellQuote(`${workDir}/spark`)} ${shellQuote(installPath)}
+sudo sh -lc ${shellQuote(`${installPath} 1 5 22 > ${toolOutput}; test -s ${toolOutput}; cat ${toolOutput}; echo ${marker}_TOOL_RAN`)}
+sudo rm -rf ${shellQuote(workDir)} ${shellQuote(installPath)} ${shellQuote(toolOutput)} ${shellQuote(proofFile)}
+echo ${marker}_DONE
+`;
+		const command = `docker exec openclaw-gateway sh -lc ${shellQuote(openClawScript)}`;
+
+		const result = await runTerminalCommandViaWs(
+			page,
+			API_URL,
+			instanceId,
+			ticket,
+			command,
+			{ readWindowMs: 240_000 }
+		);
+
+		console.log(
+			`[Prod E2E] OpenClaw root bridge opened=${result.opened} output.len=${result.output.length}`
+		);
+		expect(result.opened).toBe(true);
+		expect(result.output).toContain('/opt/tardi/bin/sudo');
+		expect(result.output).toContain(marker);
+		expect(result.output).toContain(`${marker}_TOOL_RAN`);
+		expect(result.output).toContain(`${marker}_DONE`);
+		expect(result.output).not.toMatch(/permission denied|unknown action|command failed/i);
+		console.log('[Prod E2E] OpenClaw installed and ran a GitHub-hosted tool via host root bridge');
 	});
 
 	// Cleanup is handled by test.afterAll above so it runs even when a step fails.
