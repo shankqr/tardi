@@ -9,6 +9,26 @@ import (
 	"github.com/shanq/tardi/internal/models"
 )
 
+func strPtr(s string) *string {
+	return &s
+}
+
+func effectiveTargetOpenClawVersion(inst models.VpsInstance, openClawTarget, hermesTarget string) *string {
+	if inst.TargetOpenClawVersion != nil && *inst.TargetOpenClawVersion != "" {
+		return inst.TargetOpenClawVersion
+	}
+	if inst.Framework == models.FrameworkHermes {
+		if hermesTarget == "" || hermesTarget == "latest" {
+			return nil
+		}
+		return strPtr(hermesTarget)
+	}
+	if openClawTarget == "" || openClawTarget == "latest" {
+		return nil
+	}
+	return strPtr(openClawTarget)
+}
+
 func DashboardHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := middleware.UserFromContext(r.Context())
@@ -86,9 +106,20 @@ func DashboardHandler(deps Dependencies) http.HandlerFunc {
 			instances[i].Status = models.VpsStatusActive
 		}
 
+		openClawTargetVersion, err := db.GetGlobalTargetVersion(r.Context(), deps.Pool)
+		if err != nil {
+			slog.Warn("dashboard: get global openclaw target version", "error", err)
+		}
+		hermesTargetVersion, err := db.GetGlobalHermesVersion(r.Context(), deps.Pool)
+		if err != nil {
+			slog.Warn("dashboard: get global hermes target version", "error", err)
+		}
+
 		instanceResponses := make([]models.InstanceResponse, 0, len(instances))
 		for _, inst := range instances {
-			instanceResponses = append(instanceResponses, models.ToInstanceResponse(inst))
+			resp := models.ToInstanceResponse(inst)
+			resp.TargetOpenClawVersion = effectiveTargetOpenClawVersion(inst, openClawTargetVersion, hermesTargetVersion)
+			instanceResponses = append(instanceResponses, resp)
 		}
 
 		snapshotResponses := make([]models.SnapshotResponse, 0, len(snapshots))

@@ -15,25 +15,26 @@ type DashboardStateResponse struct {
 
 // InstanceResponse matches frontend's VpsInstance type.
 type InstanceResponse struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	Framework       string  `json:"framework"`
-	Status          string  `json:"status"`
-	Step            *string `json:"step,omitempty"`
-	Provider        string  `json:"provider"`
-	IPv4            *string `json:"ipv4"`
-	Region          string  `json:"region"`
-	RootPassword      *string `json:"root_password,omitempty"`
-	AgentStatus       *string `json:"agent_status"`
-	AgentError        *string `json:"agent_error"`
-	LastHeartbeatAt   *string `json:"last_heartbeat_at"`
-	DashboardURL      *string `json:"dashboard_url"`
-	OpenClawAuthToken    *string `json:"openclaw_auth_token,omitempty"`
-	OpenClawVersion      *string `json:"openclaw_version,omitempty"`
-	OpenClawUpdateStatus *string `json:"openclaw_update_status,omitempty"`
-	CodexLinkedAt        *string `json:"codex_linked_at"`
-	PreviewURL           *string `json:"preview_url,omitempty"`
-	CreatedAt            string  `json:"created_at"`
+	ID                    string  `json:"id"`
+	Name                  string  `json:"name"`
+	Framework             string  `json:"framework"`
+	Status                string  `json:"status"`
+	Step                  *string `json:"step,omitempty"`
+	Provider              string  `json:"provider"`
+	IPv4                  *string `json:"ipv4"`
+	Region                string  `json:"region"`
+	RootPassword          *string `json:"root_password,omitempty"`
+	AgentStatus           *string `json:"agent_status"`
+	AgentError            *string `json:"agent_error"`
+	LastHeartbeatAt       *string `json:"last_heartbeat_at"`
+	DashboardURL          *string `json:"dashboard_url"`
+	OpenClawAuthToken     *string `json:"openclaw_auth_token,omitempty"`
+	OpenClawVersion       *string `json:"openclaw_version,omitempty"`
+	TargetOpenClawVersion *string `json:"target_openclaw_version,omitempty"`
+	OpenClawUpdateStatus  *string `json:"openclaw_update_status,omitempty"`
+	CodexLinkedAt         *string `json:"codex_linked_at"`
+	PreviewURL            *string `json:"preview_url,omitempty"`
+	CreatedAt             string  `json:"created_at"`
 }
 
 // SubscriptionResponse matches frontend's Subscription type.
@@ -72,6 +73,7 @@ func ToInstanceResponse(inst VpsInstance) InstanceResponse {
 	r.AgentError = inst.AgentError
 	r.OpenClawAuthToken = inst.OpenClawAuthToken
 	r.OpenClawVersion = inst.OpenClawVersion
+	r.TargetOpenClawVersion = inst.TargetOpenClawVersion
 	r.OpenClawUpdateStatus = inst.OpenClawUpdateStatus
 	if inst.CodexLinkedAt != nil {
 		t := inst.CodexLinkedAt.Format(time.RFC3339)

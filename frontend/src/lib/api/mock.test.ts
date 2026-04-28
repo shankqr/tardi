@@ -22,6 +22,8 @@ describe('mock data', () => {
 			expect(instance.provider).toBe('hetzner');
 			expect(instance.ipv4).toBe('203.0.113.10');
 			expect(instance.agent_status).toBe('running');
+			expect(instance.openclaw_version).toBe('2026.4.26');
+			expect(instance.target_openclaw_version).toBe('2026.4.26');
 			expect(instance.dashboard_url).toBeTruthy();
 		});
 

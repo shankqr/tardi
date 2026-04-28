@@ -46,6 +46,7 @@ export interface VpsInstance {
 	dashboard_url: string | null;
 	openclaw_auth_token?: string | null;
 	openclaw_version?: string | null;
+	target_openclaw_version?: string | null;
 	openclaw_update_status?: string | null;
 	codex_linked_at?: string | null;
 	preview_url?: string | null;

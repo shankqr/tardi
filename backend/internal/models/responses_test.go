@@ -16,22 +16,23 @@ func TestToInstanceResponse_AllFieldsPopulated(t *testing.T) {
 	id := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
 	inst := VpsInstance{
-		ID:                   id,
-		Name:                 "my-agent",
-		Status:               VpsStatusActive,
-		Step:                 &step,
-		Provider:             "hetzner",
-		IPv4:                 strPtr("1.2.3.4"),
-		Region:               "us-east",
-		AgentStatus:          strPtr("running"),
-		AgentError:           strPtr("some error"),
-		OpenClawAuthToken:    strPtr("tok-abc"),
-		OpenClawVersion:      strPtr("1.2.3"),
-		OpenClawUpdateStatus: strPtr("up_to_date"),
-		Domain:               strPtr("agent1.tardi.ai"),
-		PreviewDomain:        strPtr("preview-agent1.tardi.ai"),
-		LastHeartbeatAt:      &heartbeat,
-		CreatedAt:            now,
+		ID:                    id,
+		Name:                  "my-agent",
+		Status:                VpsStatusActive,
+		Step:                  &step,
+		Provider:              "hetzner",
+		IPv4:                  strPtr("1.2.3.4"),
+		Region:                "us-east",
+		AgentStatus:           strPtr("running"),
+		AgentError:            strPtr("some error"),
+		OpenClawAuthToken:     strPtr("tok-abc"),
+		OpenClawVersion:       strPtr("1.2.3"),
+		TargetOpenClawVersion: strPtr("1.2.4"),
+		OpenClawUpdateStatus:  strPtr("up_to_date"),
+		Domain:                strPtr("agent1.tardi.ai"),
+		PreviewDomain:         strPtr("preview-agent1.tardi.ai"),
+		LastHeartbeatAt:       &heartbeat,
+		CreatedAt:             now,
 	}
 
 	r := ToInstanceResponse(inst)
@@ -68,6 +69,9 @@ func TestToInstanceResponse_AllFieldsPopulated(t *testing.T) {
 	}
 	if r.OpenClawVersion == nil || *r.OpenClawVersion != "1.2.3" {
 		t.Errorf("OpenClawVersion = %v, want %q", r.OpenClawVersion, "1.2.3")
+	}
+	if r.TargetOpenClawVersion == nil || *r.TargetOpenClawVersion != "1.2.4" {
+		t.Errorf("TargetOpenClawVersion = %v, want %q", r.TargetOpenClawVersion, "1.2.4")
 	}
 	if r.OpenClawUpdateStatus == nil || *r.OpenClawUpdateStatus != "up_to_date" {
 		t.Errorf("OpenClawUpdateStatus = %v, want %q", r.OpenClawUpdateStatus, "up_to_date")

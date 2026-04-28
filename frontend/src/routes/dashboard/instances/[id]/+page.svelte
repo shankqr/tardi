@@ -26,6 +26,18 @@
 		$dashboardState?.instances.find((i) => i.id === page.params.id) ?? null
 	);
 
+	const displayOpenClawVersion = $derived(
+		instance?.target_openclaw_version || instance?.openclaw_version || null
+	);
+
+	const isOpenClawVersionPending = $derived(
+		!!instance &&
+			instance.framework === 'openclaw' &&
+			!!instance.openclaw_version &&
+			!!instance.target_openclaw_version &&
+			instance.openclaw_version !== instance.target_openclaw_version
+	);
+
 	const isProvisioning = $derived(
 		instance?.status === 'provisioning' ||
 		instance?.status === 'bootstrapping' ||
@@ -617,10 +629,17 @@
 								{/if}
 							</dd>
 						</div>
-						{#if instance.framework === 'openclaw' && instance.openclaw_version}
+						{#if instance.framework === 'openclaw' && displayOpenClawVersion}
 							<div class="flex justify-between">
 								<dt class="text-gray-500 dark:text-gray-400">Version</dt>
-								<dd class="font-mono text-gray-900 dark:text-white">{instance.openclaw_version}</dd>
+								<dd class="text-right">
+									<div class="font-mono text-gray-900 dark:text-white">{displayOpenClawVersion}</div>
+									{#if isOpenClawVersionPending}
+										<div class="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
+											Updating from <span class="font-mono">{instance.openclaw_version}</span>
+										</div>
+									{/if}
+								</dd>
 							</div>
 						{/if}
 						<div class="flex justify-between">
