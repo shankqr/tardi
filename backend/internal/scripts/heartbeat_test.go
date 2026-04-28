@@ -43,6 +43,8 @@ func TestHeartbeatScript_ContainsHostAdminDriftGuard(t *testing.T) {
 		"/run/tardi-host-admin:/run/tardi-host-admin:rw",
 		"/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro",
 		"TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock",
+		"TARDI_HOST_EXEC_TIMEOUT=1800",
+		"PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	}
 	for _, want := range required {
 		if !strings.Contains(HeartbeatScript, want) {
@@ -51,11 +53,15 @@ func TestHeartbeatScript_ContainsHostAdminDriftGuard(t *testing.T) {
 	}
 }
 
-func TestHostAdminInstallScript_ExposesAllowlistedDesktopActions(t *testing.T) {
+func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T) {
 	required := []string{
 		"desktop.install",
 		"desktop.start",
 		"desktop.open",
+		"host.exec",
+		"MAX_EXEC_SECONDS",
+		"cat > \"$BIN_DIR/sudo\"",
+		"/opt/tardi/bin/tardi-host-admin host.exec",
 		"tardi-host-admin.service",
 		"tardi-desktop.service",
 		"TradingView launch requested",
@@ -64,9 +70,6 @@ func TestHostAdminInstallScript_ExposesAllowlistedDesktopActions(t *testing.T) {
 		if !strings.Contains(HostAdminInstallScript, want) {
 			t.Errorf("HostAdminInstallScript should contain %q", want)
 		}
-	}
-	if strings.Contains(HostAdminInstallScript, "host.exec") {
-		t.Error("HostAdminInstallScript must not expose a generic host.exec action")
 	}
 }
 

@@ -1,9 +1,9 @@
 package scripts
 
 // HostAdminInstallScript installs the root-owned host helper that OpenClaw can
-// call through a Unix socket mounted into the gateway container. The helper is
-// intentionally allowlisted: it exposes desktop lifecycle actions, not a raw
-// root shell.
+// call through a Unix socket mounted into the gateway container. It exposes
+// desktop lifecycle actions plus a generic host.exec root bridge used by the
+// in-container sudo shim.
 const HostAdminInstallScript = `#!/bin/bash
 set -euo pipefail
 
@@ -51,7 +51,8 @@ SOCKET_DIR = "/run/tardi-host-admin"
 SOCKET_PATH = SOCKET_DIR + "/admin.sock"
 LOCK_PATH = SOCKET_DIR + "/action.lock"
 LOG_PATH = "/var/log/tardi-host-admin/actions.log"
-MAX_BODY = 8192
+MAX_BODY = 65536
+MAX_EXEC_SECONDS = 3600
 
 
 class ActionError(Exception):
@@ -87,6 +88,16 @@ def run(args, timeout=120):
 
 def run_bash(script, timeout=120):
     return run(["/bin/bash", "-lc", script], timeout=timeout)
+
+
+def body_timeout(body, default=300):
+    try:
+        timeout = int(body.get("timeout") or default)
+    except (TypeError, ValueError):
+        raise ActionError("invalid timeout", 400)
+    if timeout < 1:
+        raise ActionError("timeout must be positive", 400)
+    return min(timeout, MAX_EXEC_SECONDS)
 
 
 def service_state(name):
@@ -219,6 +230,17 @@ def desktop_open(body):
     return {"message": "TradingView launch requested", "symbol": symbol, "url": url, "output": output}
 
 
+def host_exec(body):
+    cmd = body.get("cmd")
+    if not isinstance(cmd, str) or not cmd.strip():
+        raise ActionError("cmd is required", 400)
+    if len(cmd.encode("utf-8")) > 60000:
+        raise ActionError("cmd is too large", 400)
+    timeout = body_timeout(body)
+    output = run_bash(cmd, timeout=timeout)
+    return {"message": "host command completed", "timeout": timeout, "output": output}
+
+
 ACTIONS = {
     "desktop.status": (desktop_status, False),
     "desktop.install": (desktop_install, True),
@@ -226,6 +248,7 @@ ACTIONS = {
     "desktop.stop": (desktop_stop, True),
     "desktop.restart": (desktop_restart, True),
     "desktop.open": (desktop_open, True),
+    "host.exec": (host_exec, True),
 }
 
 
@@ -320,33 +343,115 @@ cat > "$BIN_DIR/tardi-host-admin" <<'CLIENTEOF'
 set -eu
 
 ACTION="${1:-}"
-SYMBOL="${2:-}"
 SOCKET="${TARDI_HOST_ADMIN_SOCKET:-/run/tardi-host-admin/admin.sock}"
 
 if [ -z "$ACTION" ]; then
-    echo "usage: tardi-host-admin <desktop.status|desktop.install|desktop.start|desktop.stop|desktop.restart|desktop.open> [symbol]" >&2
+    echo "usage: tardi-host-admin <desktop.status|desktop.install|desktop.start|desktop.stop|desktop.restart|desktop.open|host.exec> [args...]" >&2
+    exit 64
+fi
+shift || true
+
+json_string() {
+    printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
+
+ACTION_JSON=$(json_string "$ACTION")
+case "$ACTION" in
+    desktop.open)
+        SYMBOL="${1:-}"
+        SYMBOL_JSON=$(json_string "$SYMBOL")
+        BODY="{\"action\":${ACTION_JSON},\"symbol\":${SYMBOL_JSON}}"
+        ;;
+    host.exec)
+        TIMEOUT="${TARDI_HOST_EXEC_TIMEOUT:-300}"
+        if [ "${1:-}" = "--timeout" ]; then
+            if [ "$#" -lt 3 ]; then
+                echo "usage: tardi-host-admin host.exec [--timeout seconds] <command>" >&2
+                exit 64
+            fi
+            TIMEOUT="$2"
+            shift 2
+        fi
+        case "$TIMEOUT" in
+            ''|*[!0-9]*)
+                echo "host.exec timeout must be an integer number of seconds" >&2
+                exit 64
+                ;;
+        esac
+        CMD="$*"
+        if [ -z "$CMD" ]; then
+            echo "usage: tardi-host-admin host.exec [--timeout seconds] <command>" >&2
+            exit 64
+        fi
+        CMD_JSON=$(json_string "$CMD")
+        BODY="{\"action\":${ACTION_JSON},\"cmd\":${CMD_JSON},\"timeout\":${TIMEOUT}}"
+        ;;
+    *)
+        BODY="{\"action\":${ACTION_JSON}}"
+        ;;
+esac
+
+TMP_BODY=$(mktemp)
+STATUS=$(curl --unix-socket "$SOCKET" -sS \
+    -o "$TMP_BODY" \
+    -w '%{http_code}' \
+    -H 'Content-Type: application/json' \
+    --data-binary "$BODY" \
+    http://tardi-host-admin/v1/run) || {
+    RC=$?
+    rm -f "$TMP_BODY"
+    exit "$RC"
+}
+cat "$TMP_BODY"
+echo
+rm -f "$TMP_BODY"
+case "$STATUS" in
+    2*) exit 0 ;;
+    *) exit 1 ;;
+esac
+CLIENTEOF
+chmod 755 "$BIN_DIR/tardi-host-admin"
+
+cat > "$BIN_DIR/sudo" <<'SUDOEOF'
+#!/bin/sh
+set -eu
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -n|-S|-E|-H|-k|-K|-v)
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [ "$#" -eq 0 ]; then
+    echo "usage: sudo <command...>" >&2
     exit 64
 fi
 
-escape_json() {
-    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+quote_sh() {
+    printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
-ACTION_JSON=$(escape_json "$ACTION")
-if [ -n "$SYMBOL" ]; then
-    SYMBOL_JSON=$(escape_json "$SYMBOL")
-    BODY="{\"action\":\"${ACTION_JSON}\",\"symbol\":\"${SYMBOL_JSON}\"}"
-else
-    BODY="{\"action\":\"${ACTION_JSON}\"}"
-fi
+CMD=""
+for ARG in "$@"; do
+    if [ -z "$CMD" ]; then
+        CMD=$(quote_sh "$ARG")
+    else
+        CMD="$CMD $(quote_sh "$ARG")"
+    fi
+done
 
-curl --unix-socket "$SOCKET" -fsS \
-    -H 'Content-Type: application/json' \
-    --data-binary "$BODY" \
-    http://tardi-host-admin/v1/run
-echo
-CLIENTEOF
-chmod 755 "$BIN_DIR/tardi-host-admin"
+exec /opt/tardi/bin/tardi-host-admin host.exec "$CMD"
+SUDOEOF
+chmod 755 "$BIN_DIR/sudo"
 chown -R root:root /opt/openclaw/host-admin
 
 cat > /etc/systemd/system/tardi-host-admin.service <<'SVCEOF'

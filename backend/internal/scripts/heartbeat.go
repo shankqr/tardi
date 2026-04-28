@@ -44,11 +44,10 @@ if ! grep -q 'data/codex' /opt/openclaw/docker-compose.yml 2>/dev/null; then
 fi
 
 # --- Host admin helper drift guard ---
-# Installs a root-owned, allowlisted action helper and mounts its Unix socket
-# plus client binary into OpenClaw. This is for explicit host-level operations
-# such as installing/starting the private desktop profile; it does not expose a
-# generic sudo/root shell to the container.
-if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/openclaw/host-admin/bin/tardi-host-admin ]; then
+# Installs a root-owned helper and mounts its Unix socket plus client binaries
+# into OpenClaw. The helper includes a generic host.exec root bridge exposed as
+# /opt/tardi/bin/sudo inside the container.
+if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/openclaw/host-admin/bin/tardi-host-admin ] || [ ! -x /opt/openclaw/host-admin/bin/sudo ] || ! grep -q 'host.exec' /opt/openclaw/host-admin/bin/tardi-host-admin 2>/dev/null; then
     if curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/host-admin-script" -o /opt/openclaw/install-host-admin.sh 2>/dev/null; then
         chmod +x /opt/openclaw/install-host-admin.sh
         /opt/openclaw/install-host-admin.sh >/tmp/tardi-host-admin-install.log 2>&1 || true
@@ -66,6 +65,18 @@ if ! grep -q '/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro' /opt/openclaw/dock
 fi
 if ! grep -q '^TARDI_HOST_ADMIN_SOCKET=' /opt/openclaw/.env 2>/dev/null; then
     echo "TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock" >> /opt/openclaw/.env
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
+if ! grep -q '^TARDI_HOST_EXEC_TIMEOUT=' /opt/openclaw/.env 2>/dev/null; then
+    echo "TARDI_HOST_EXEC_TIMEOUT=1800" >> /opt/openclaw/.env
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
+if ! grep -q '^PATH=.*\/opt\/tardi\/bin' /opt/openclaw/.env 2>/dev/null; then
+    if grep -q '^PATH=' /opt/openclaw/.env 2>/dev/null; then
+        sed -i 's|^PATH=.*|PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin|' /opt/openclaw/.env
+    else
+        echo "PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> /opt/openclaw/.env
+    fi
     HOST_ADMIN_COMPOSE_CHANGED=true
 fi
 if [ "$HOST_ADMIN_COMPOSE_CHANGED" = true ]; then

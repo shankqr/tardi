@@ -654,6 +654,9 @@ OPENCLAW_AUTH_TOKEN=<64-char-hex>
 OPENCLAW_GATEWAY_TOKEN=<64-char-hex>  # same value as OPENCLAW_AUTH_TOKEN
 OPENROUTER_API_KEY=<key>
 NODE_ENV=production
+TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock
+TARDI_HOST_EXEC_TIMEOUT=1800
+PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 PREVIEW_DOMAIN=<uuid>-b.tardi.ai      # used by heartbeat to write Caddyfile
 BACKEND_EGRESS_CIDRS=<cidr1>,<cidr2>   # optional, restricts UFW SSH + 18789
 

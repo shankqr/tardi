@@ -174,7 +174,7 @@ log_status "SANDBOX_READY"
 useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
 usermod -aG docker openclaw
 
-# --- Host admin helper (allowlisted root actions via Unix socket) ---
+# --- Host admin helper (root bridge via Unix socket) ---
 for i in $(seq 1 10); do
     if curl -sf -H "Authorization: Bearer {{.AgentToken}}" "{{.APIURL}}/api/agent/host-admin-script" -o /opt/openclaw/install-host-admin.sh; then
         chmod +x /opt/openclaw/install-host-admin.sh
@@ -233,6 +233,8 @@ OPENCLAW_GATEWAY_TOKEN={{.OpenClawAuthToken}}
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
 NODE_ENV=production
 TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock
+TARDI_HOST_EXEC_TIMEOUT=1800
+PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 {{- if .BackendEgressCIDRs}}
 BACKEND_EGRESS_CIDRS={{.BackendEgressCIDRs}}
 {{- end}}

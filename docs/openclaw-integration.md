@@ -38,10 +38,9 @@ OpenClaw Gateway (Docker container, port 18789)
 
 ## Host Admin Helper
 
-OpenClaw still runs as UID 1000 inside the `openclaw-gateway` container. It
-does not get `sudo`, and Telegram elevated execution remains a channel-level
-OpenClaw policy. Host-level tasks that need root go through a root-owned helper
-installed as `tardi-host-admin.service`.
+OpenClaw still runs as UID 1000 inside the `openclaw-gateway` container, but it
+gets an intentional root bridge to the VPS host. Host-level tasks go through a
+root-owned helper installed as `tardi-host-admin.service`.
 
 The helper listens on a Unix socket at `/run/tardi-host-admin/admin.sock`. The
 socket directory and a small client are mounted into OpenClaw:
@@ -57,13 +56,19 @@ env:
 From inside OpenClaw, the agent can run:
 
 ```bash
+/opt/tardi/bin/sudo apt-get update
+/opt/tardi/bin/sudo apt-get install -y ffmpeg build-essential
+/opt/tardi/bin/sudo systemctl restart caddy
+/opt/tardi/bin/tardi-host-admin host.exec 'git clone https://github.com/example/repo /opt/work/repo'
 /opt/tardi/bin/tardi-host-admin desktop.status
 /opt/tardi/bin/tardi-host-admin desktop.install
 /opt/tardi/bin/tardi-host-admin desktop.start
 /opt/tardi/bin/tardi-host-admin desktop.open BINANCE:BTCUSDT
 ```
 
-Allowed actions are intentionally narrow:
+`/opt/tardi/bin` is prepended to `PATH`, so `sudo <command>` resolves to the
+Tardi shim inside the container. The shim forwards commands to `host.exec`,
+which runs `/bin/bash -lc <command>` as root on the VPS host.
 
 | Action | Root-side behavior |
 |---|---|
@@ -71,12 +76,11 @@ Allowed actions are intentionally narrow:
 | `desktop.install` | Install XFCE, TigerVNC, X11 tools, and TradingView Desktop from TradingView's official Debian repo |
 | `desktop.start` / `desktop.stop` / `desktop.restart` | Manage the private `tardi-desktop.service` X11 VNC session |
 | `desktop.open` | Start the desktop session and launch TradingView for a symbol |
+| `host.exec` | Run an arbitrary shell command as root on the VPS host |
 
-This is not a generic `host.exec` or `sudo` bridge. If broader host operations
-are needed, add a new named action in the helper so it can be logged and
-reviewed. TradingView's own Linux docs state that Desktop is distributed as
-Snap and `.deb` packages, and the helper uses their documented Debian repository
-flow.
+The `host.exec` bridge is intentionally broad: package installs, framework
+setup, Docker commands, GitHub clones, service management, and file writes all
+run against the host rather than the OpenClaw container filesystem.
 
 ## Gateway Auth — Token Mode
 
