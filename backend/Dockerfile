@@ -1,11 +1,13 @@
-FROM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /tardi-dashboard-shim ./cmd/dashboard-shim
-RUN CGO_ENABLED=0 go build -o /server ./cmd/server
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /synthetic-monitor ./cmd/synthetic-monitor
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /tardi-dashboard-shim ./cmd/dashboard-shim
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o /synthetic-monitor ./cmd/synthetic-monitor
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
