@@ -222,23 +222,23 @@ func DeleteInstanceHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		excludeStatuses := []models.VpsStatus{models.VpsStatusTerminating, models.VpsStatusTerminated}
-		if err := db.UpdateInstanceStatusConditionalNot(r.Context(), deps.Pool, instanceID, excludeStatuses, models.VpsStatusTerminating); err != nil {
-			if errors.Is(err, db.ErrConflict) {
-				WriteError(w, http.StatusConflict, "invalid_state", "instance is already being terminated")
-				return
-			}
-			slog.Error("delete instance: update status", "error", err)
-			WriteError(w, http.StatusInternalServerError, "internal_error", "failed to terminate instance")
+		if inst.Status == models.VpsStatusTerminated {
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 
-		// Execute deletion in background goroutine
-		deps.BGTasks.Add(1)
-		go func() {
-			defer deps.BGTasks.Done()
-			executeDelete(deps, inst)
-		}()
+		if inst.Status != models.VpsStatusTerminating {
+			excludeStatuses := []models.VpsStatus{models.VpsStatusTerminating, models.VpsStatusTerminated}
+			if err := db.UpdateInstanceStatusConditionalNot(r.Context(), deps.Pool, instanceID, excludeStatuses, models.VpsStatusTerminating); err != nil {
+				if errors.Is(err, db.ErrConflict) {
+					WriteError(w, http.StatusConflict, "invalid_state", "instance is already being terminated")
+					return
+				}
+				slog.Error("delete instance: update status", "error", err)
+				WriteError(w, http.StatusInternalServerError, "internal_error", "failed to terminate instance")
+				return
+			}
+		}
 
 		// Audit log
 		_ = db.InsertAuditLog(r.Context(), deps.Pool, &models.AuditLogEntry{
@@ -250,6 +250,7 @@ func DeleteInstanceHandler(deps Dependencies) http.HandlerFunc {
 		})
 
 		slog.Info("instance terminating", "instance_id", instanceID)
+		executeDelete(deps, inst)
 		w.WriteHeader(http.StatusOK)
 	}
 }
