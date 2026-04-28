@@ -1,6 +1,8 @@
 package scripts
 
 import (
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -33,4 +35,84 @@ func TestHeartbeatScript_ContainsSSHDriftGuard(t *testing.T) {
 	if !strings.Contains(HeartbeatScript, "PasswordAuthentication") {
 		t.Error("HeartbeatScript should contain SSH drift guard for PasswordAuthentication")
 	}
+}
+
+func TestHeartbeatScript_ContainsHostAdminDriftGuard(t *testing.T) {
+	required := []string{
+		"/api/agent/host-admin-script",
+		"/run/tardi-host-admin:/run/tardi-host-admin:rw",
+		"/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro",
+		"TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock",
+	}
+	for _, want := range required {
+		if !strings.Contains(HeartbeatScript, want) {
+			t.Errorf("HeartbeatScript should contain host admin setup %q", want)
+		}
+	}
+}
+
+func TestHostAdminInstallScript_ExposesAllowlistedDesktopActions(t *testing.T) {
+	required := []string{
+		"desktop.install",
+		"desktop.start",
+		"desktop.open",
+		"tardi-host-admin.service",
+		"tardi-desktop.service",
+		"TradingView launch requested",
+	}
+	for _, want := range required {
+		if !strings.Contains(HostAdminInstallScript, want) {
+			t.Errorf("HostAdminInstallScript should contain %q", want)
+		}
+	}
+	if strings.Contains(HostAdminInstallScript, "host.exec") {
+		t.Error("HostAdminInstallScript must not expose a generic host.exec action")
+	}
+}
+
+func TestHostAdminInstallScript_Syntax(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+
+	path := t.TempDir() + "/install-host-admin.sh"
+	if err := os.WriteFile(path, []byte(HostAdminInstallScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("bash", "-n", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("HostAdminInstallScript failed bash -n: %v\n%s", err, out)
+	}
+}
+
+func TestHostAdminPython_Syntax(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available")
+	}
+
+	server, ok := extractHostAdminHeredoc("cat > \"$INSTALL_DIR/server.py\" <<'PYEOF'\n", "\nPYEOF\n")
+	if !ok {
+		t.Fatal("server.py heredoc not found")
+	}
+	path := t.TempDir() + "/server.py"
+	if err := os.WriteFile(path, []byte(server), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("python3", "-c", "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("host admin server.py failed syntax parse: %v\n%s", err, out)
+	}
+}
+
+func extractHostAdminHeredoc(start, end string) (string, bool) {
+	i := strings.Index(HostAdminInstallScript, start)
+	if i < 0 {
+		return "", false
+	}
+	i += len(start)
+	j := strings.Index(HostAdminInstallScript[i:], end)
+	if j < 0 {
+		return "", false
+	}
+	return HostAdminInstallScript[i : i+j], true
 }

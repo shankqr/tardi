@@ -54,22 +54,22 @@ type CloudInitModel struct {
 
 // CloudInitData holds all template variables for cloud-init rendering.
 type CloudInitData struct {
-	AgentToken        string // Tardi API auth token
-	APIURL            string // Tardi backend URL
-	InstanceID        string // VPS instance UUID
-	OpenRouterAPIKey  string // Default LLM provider (required)
-	AnthropicAPIKey   string // Optional direct Anthropic access
-	OpenAIAPIKey      string // Optional direct OpenAI access
-	OpenClawAuthToken string // Auto-generated, for OpenClaw's own auth
-	OpenClawImageTag  string // e.g. "latest" or "v1.2.3"
-	Provider          string // AI provider: openrouter, anthropic, openai
-	Model             string // Model ID for the provider
-	ConfigVersion     int    // Initial config version to prevent redundant first sync
-	RootPassword      string // Explicitly set root password (overrides Hetzner's auto-generated one)
-	SSHPublicKey       string // Ed25519 public key for key-based SSH auth (injected into authorized_keys)
-	Domain             string // Optional domain for Cloudflare Proxy (e.g. "abc12345.tardi.ai"); empty = IP-only access
-	PreviewDomain      string // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
-	BackendEgressCIDRs string // Comma-separated CIDRs for backend egress IPs (restricts UFW SSH + OpenClaw access)
+	AgentToken         string           // Tardi API auth token
+	APIURL             string           // Tardi backend URL
+	InstanceID         string           // VPS instance UUID
+	OpenRouterAPIKey   string           // Default LLM provider (required)
+	AnthropicAPIKey    string           // Optional direct Anthropic access
+	OpenAIAPIKey       string           // Optional direct OpenAI access
+	OpenClawAuthToken  string           // Auto-generated, for OpenClaw's own auth
+	OpenClawImageTag   string           // e.g. "latest" or "v1.2.3"
+	Provider           string           // AI provider: openrouter, anthropic, openai
+	Model              string           // Model ID for the provider
+	ConfigVersion      int              // Initial config version to prevent redundant first sync
+	RootPassword       string           // Explicitly set root password (overrides Hetzner's auto-generated one)
+	SSHPublicKey       string           // Ed25519 public key for key-based SSH auth (injected into authorized_keys)
+	Domain             string           // Optional domain for Cloudflare Proxy (e.g. "abc12345.tardi.ai"); empty = IP-only access
+	PreviewDomain      string           // Optional preview domain (e.g. "abc12345-b.tardi.ai") for user-built apps on port 3000
+	BackendEgressCIDRs string           // Comma-separated CIDRs for backend egress IPs (restricts UFW SSH + OpenClaw access)
 	AllModels          []CloudInitModel // All enabled catalog models (id + provider) for per-model routing
 }
 
@@ -174,6 +174,16 @@ log_status "SANDBOX_READY"
 useradd -r -m -u 1000 -s /usr/sbin/nologin openclaw || true
 usermod -aG docker openclaw
 
+# --- Host admin helper (allowlisted root actions via Unix socket) ---
+for i in $(seq 1 10); do
+    if curl -sf -H "Authorization: Bearer {{.AgentToken}}" "{{.APIURL}}/api/agent/host-admin-script" -o /opt/openclaw/install-host-admin.sh; then
+        chmod +x /opt/openclaw/install-host-admin.sh
+        /opt/openclaw/install-host-admin.sh && break
+    fi
+    sleep 5
+done
+log_status "HOST_ADMIN_READY"
+
 # --- Directory structure ---
 mkdir -p /opt/openclaw/data/openclaw /opt/openclaw/data/gogcli /opt/openclaw/data/codex
 chown -R 1000:1000 /opt/openclaw/data
@@ -222,6 +232,7 @@ OPENCLAW_AUTH_TOKEN={{.OpenClawAuthToken}}
 OPENCLAW_GATEWAY_TOKEN={{.OpenClawAuthToken}}
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
 NODE_ENV=production
+TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock
 {{- if .BackendEgressCIDRs}}
 BACKEND_EGRESS_CIDRS={{.BackendEgressCIDRs}}
 {{- end}}
@@ -304,6 +315,8 @@ services:
       - ./data/gogcli:/home/node/.config/gogcli:rw
       - ./data/codex:/home/node/.codex:rw
       - /var/run/docker.sock:/var/run/docker.sock
+      - /run/tardi-host-admin:/run/tardi-host-admin:rw
+      - /opt/openclaw/host-admin/bin:/opt/tardi/bin:ro
     env_file:
       - .env
     healthcheck:
@@ -328,8 +341,9 @@ log_status "IMAGES_PULLED"
 cat > /etc/systemd/system/openclaw-stack.service <<'SVCEOF'
 [Unit]
 Description=OpenClaw Agent Stack
-After=docker.service
+After=docker.service tardi-host-admin.service
 Requires=docker.service
+Wants=tardi-host-admin.service
 
 [Service]
 Type=oneshot

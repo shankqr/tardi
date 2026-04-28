@@ -36,6 +36,48 @@ OpenClaw Gateway (Docker container, port 18789)
 - **Caddy runs as a host binary** (not a Docker container) — simple HTTP reverse proxy
 - **OpenClaw is the only Docker container** (plus sandbox image for code execution)
 
+## Host Admin Helper
+
+OpenClaw still runs as UID 1000 inside the `openclaw-gateway` container. It
+does not get `sudo`, and Telegram elevated execution remains a channel-level
+OpenClaw policy. Host-level tasks that need root go through a root-owned helper
+installed as `tardi-host-admin.service`.
+
+The helper listens on a Unix socket at `/run/tardi-host-admin/admin.sock`. The
+socket directory and a small client are mounted into OpenClaw:
+
+```yaml
+volumes:
+  - /run/tardi-host-admin:/run/tardi-host-admin:rw
+  - /opt/openclaw/host-admin/bin:/opt/tardi/bin:ro
+env:
+  TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock
+```
+
+From inside OpenClaw, the agent can run:
+
+```bash
+/opt/tardi/bin/tardi-host-admin desktop.status
+/opt/tardi/bin/tardi-host-admin desktop.install
+/opt/tardi/bin/tardi-host-admin desktop.start
+/opt/tardi/bin/tardi-host-admin desktop.open BINANCE:BTCUSDT
+```
+
+Allowed actions are intentionally narrow:
+
+| Action | Root-side behavior |
+|---|---|
+| `desktop.status` | Report helper, VNC/XFCE, and TradingView status |
+| `desktop.install` | Install XFCE, TigerVNC, X11 tools, and TradingView Desktop from TradingView's official Debian repo |
+| `desktop.start` / `desktop.stop` / `desktop.restart` | Manage the private `tardi-desktop.service` X11 VNC session |
+| `desktop.open` | Start the desktop session and launch TradingView for a symbol |
+
+This is not a generic `host.exec` or `sudo` bridge. If broader host operations
+are needed, add a new named action in the helper so it can be logged and
+reviewed. TradingView's own Linux docs state that Desktop is distributed as
+Snap and `.deb` packages, and the helper uses their documented Debian repository
+flow.
+
 ## Gateway Auth — Token Mode
 
 The gateway uses `auth.mode: "token"` with `OPENCLAW_GATEWAY_TOKEN` env var. This was chosen over two alternatives that don't work:

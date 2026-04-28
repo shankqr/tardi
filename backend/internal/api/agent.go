@@ -374,6 +374,27 @@ func AgentHeartbeatScriptHandler(deps Dependencies) http.HandlerFunc {
 	}
 }
 
+// AgentHostAdminScriptHandler serves the installer for the VPS-side host
+// admin helper. Called by OpenClaw cloud-init and the heartbeat drift guard.
+// Authenticated by agent token.
+func AgentHostAdminScriptHandler(deps Dependencies) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := extractAgentToken(r)
+		if token == "" {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "missing agent token")
+			return
+		}
+
+		if _, err := db.GetInstanceByAgentToken(r.Context(), deps.Pool, token); err != nil {
+			WriteError(w, http.StatusUnauthorized, "unauthorized", "invalid agent token")
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/x-shellscript")
+		w.Write([]byte(scripts.HostAdminInstallScript))
+	}
+}
+
 // AgentDashboardShimHandler serves the compiled tardi-dashboard-shim binary.
 // Cloud-init downloads it during provisioning and the heartbeat refreshes it
 // when the sha256 changes. Authenticated by agent token.

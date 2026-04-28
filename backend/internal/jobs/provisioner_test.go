@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -77,6 +78,32 @@ func TestSanitizeLabelValue(t *testing.T) {
 		got := SanitizeLabelValue(tt.input)
 		if got != tt.want {
 			t.Errorf("SanitizeLabelValue(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestRenderCloudInitIncludesHostAdminHelper(t *testing.T) {
+	got, err := RenderCloudInit(CloudInitData{
+		AgentToken:        "agent-token",
+		APIURL:            "https://api.example.com",
+		InstanceID:        "instance-id",
+		OpenClawAuthToken: "openclaw-token",
+		OpenClawImageTag:  "latest",
+	})
+	if err != nil {
+		t.Fatalf("RenderCloudInit() error = %v", err)
+	}
+
+	required := []string{
+		"/api/agent/host-admin-script",
+		"TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock",
+		"/run/tardi-host-admin:/run/tardi-host-admin:rw",
+		"/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro",
+		"Wants=tardi-host-admin.service",
+	}
+	for _, want := range required {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered cloud-init missing %q", want)
 		}
 	}
 }

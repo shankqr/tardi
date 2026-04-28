@@ -24,7 +24,7 @@ type Dependencies struct {
 	Registry  *provider.Registry
 	Resumer   *jobs.Resumer
 	Upgrader  *jobs.Upgrader
-	DNSClient *dns.Client   // nil if Cloudflare DNS not configured
+	DNSClient *dns.Client     // nil if Cloudflare DNS not configured
 	BGTasks   *sync.WaitGroup // Tracks background goroutines (snapshots, restores) for graceful shutdown
 
 	// SSHRunner executes shell commands on user VPSes. Defaults to
@@ -83,6 +83,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/agent/config", AgentConfigHandler(deps))
 	mux.HandleFunc("POST /api/agent/heartbeat", AgentHeartbeatHandler(deps))
 	mux.HandleFunc("GET /api/agent/heartbeat-script", AgentHeartbeatScriptHandler(deps))
+	mux.HandleFunc("GET /api/agent/host-admin-script", AgentHostAdminScriptHandler(deps))
 	mux.HandleFunc("GET /api/agent/dashboard-shim", AgentDashboardShimHandler(deps))
 	mux.HandleFunc("GET /api/agent/dashboard-shim-sha", AgentDashboardShimSHAHandler(deps))
 

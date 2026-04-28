@@ -43,6 +43,35 @@ if ! grep -q 'data/codex' /opt/openclaw/docker-compose.yml 2>/dev/null; then
     cd /opt/openclaw && docker compose up -d 2>/dev/null || true
 fi
 
+# --- Host admin helper drift guard ---
+# Installs a root-owned, allowlisted action helper and mounts its Unix socket
+# plus client binary into OpenClaw. This is for explicit host-level operations
+# such as installing/starting the private desktop profile; it does not expose a
+# generic sudo/root shell to the container.
+if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/openclaw/host-admin/bin/tardi-host-admin ]; then
+    if curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/host-admin-script" -o /opt/openclaw/install-host-admin.sh 2>/dev/null; then
+        chmod +x /opt/openclaw/install-host-admin.sh
+        /opt/openclaw/install-host-admin.sh >/tmp/tardi-host-admin-install.log 2>&1 || true
+    fi
+fi
+
+HOST_ADMIN_COMPOSE_CHANGED=false
+if ! grep -q '/run/tardi-host-admin:/run/tardi-host-admin:rw' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    sed -i '/\/var\/run\/docker\.sock:\/var\/run\/docker\.sock/a\      - /run/tardi-host-admin:/run/tardi-host-admin:rw' /opt/openclaw/docker-compose.yml
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
+if ! grep -q '/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    sed -i '/\/run\/tardi-host-admin:\/run\/tardi-host-admin:rw/a\      - /opt/openclaw/host-admin/bin:/opt/tardi/bin:ro' /opt/openclaw/docker-compose.yml
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
+if ! grep -q '^TARDI_HOST_ADMIN_SOCKET=' /opt/openclaw/.env 2>/dev/null; then
+    echo "TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock" >> /opt/openclaw/.env
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
+if [ "$HOST_ADMIN_COMPOSE_CHANGED" = true ]; then
+    cd /opt/openclaw && docker compose up -d 2>/dev/null || true
+fi
+
 # Check OpenClaw gateway health
 HEALTH=$(curl -sf http://localhost:18789/health 2>/dev/null)
 if [ $? -eq 0 ]; then
