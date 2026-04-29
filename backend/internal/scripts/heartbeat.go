@@ -11,6 +11,19 @@ package scripts
 const HeartbeatScript = `#!/bin/bash
 source /opt/openclaw/.env
 
+# --- Download latest heartbeat script ---
+# ScriptPusher is best-effort because old VPS SSH access can drift. Once a VPS
+# has a heartbeat with this block, it can keep itself current through the API.
+SCRIPT_RESPONSE=$(curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/heartbeat-script" 2>/dev/null)
+if [ $? -eq 0 ] && [ -n "$SCRIPT_RESPONSE" ]; then
+    CURRENT_SCRIPT=$(cat /opt/openclaw/heartbeat.sh 2>/dev/null || echo "")
+    if [ "$SCRIPT_RESPONSE" != "$CURRENT_SCRIPT" ]; then
+        echo "$SCRIPT_RESPONSE" > /opt/openclaw/heartbeat.sh
+        chmod +x /opt/openclaw/heartbeat.sh
+        exec /bin/bash /opt/openclaw/heartbeat.sh
+    fi
+fi
+
 # --- SSH key-based auth drift guard ---
 # Ensure password auth stays disabled and key auth is enforced.
 # The SSH public key is injected by cloud-init (new VPSes) or ScriptPusher (existing VPSes).

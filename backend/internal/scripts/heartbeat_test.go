@@ -31,6 +31,19 @@ func TestHeartbeatScript_ContainsHeartbeatEndpoint(t *testing.T) {
 	}
 }
 
+func TestHeartbeatScript_SelfUpdatesFromAPI(t *testing.T) {
+	required := []string{
+		"/api/agent/heartbeat-script",
+		"CURRENT_SCRIPT=$(cat /opt/openclaw/heartbeat.sh",
+		"exec /bin/bash /opt/openclaw/heartbeat.sh",
+	}
+	for _, want := range required {
+		if !strings.Contains(HeartbeatScript, want) {
+			t.Errorf("HeartbeatScript should contain self-update step %q", want)
+		}
+	}
+}
+
 func TestHeartbeatScript_ContainsSSHDriftGuard(t *testing.T) {
 	if !strings.Contains(HeartbeatScript, "PasswordAuthentication") {
 		t.Error("HeartbeatScript should contain SSH drift guard for PasswordAuthentication")

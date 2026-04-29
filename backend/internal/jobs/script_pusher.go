@@ -21,9 +21,9 @@ import (
 const scriptPusherLockID int64 = 0x7461726469_6862 // "tardi_hb"
 
 // ScriptPusher pushes updated heartbeat scripts to all active VPSes on deploy.
-// It runs once on startup: computes a hash of the current HeartbeatScript,
-// compares against the last-deployed hash in platform_settings, and if changed,
-// SSHes into all active VPSes to overwrite /opt/openclaw/heartbeat.sh.
+// It runs once on startup: computes a hash of the current heartbeat and helper
+// scripts, compares against the last-deployed hash in platform_settings, and if
+// changed, SSHes into all active VPSes to overwrite /opt/openclaw/heartbeat.sh.
 type ScriptPusher struct {
 	pool          *pgxpool.Pool
 	logger        *slog.Logger
@@ -49,7 +49,8 @@ func (sp *ScriptPusher) Start(ctx context.Context) {
 }
 
 func (sp *ScriptPusher) push(ctx context.Context) {
-	currentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(scripts.HeartbeatScript)))
+	currentHashInput := scripts.HeartbeatScript + "\n" + scripts.HostAdminInstallScript
+	currentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(currentHashInput)))
 
 	// Acquire a dedicated connection so the advisory lock stays held.
 	conn, err := sp.pool.Acquire(ctx)
@@ -132,6 +133,13 @@ if ! grep -q 'PasswordAuthentication no' /etc/ssh/sshd_config.d/60-tardi.conf 2>
     systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
 fi`, sp.sshPublicKey, sp.sshPublicKey)
 	}
+
+	cmd += `
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl start openclaw-heartbeat.service >/dev/null 2>&1 || true
+else
+    nohup /bin/bash /opt/openclaw/heartbeat.sh >/tmp/tardi-heartbeat-refresh.log 2>&1 &
+fi`
 
 	sem := make(chan struct{}, 5) // max 5 concurrent SSH connections
 	var wg sync.WaitGroup
