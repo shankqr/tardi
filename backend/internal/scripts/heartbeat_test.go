@@ -40,13 +40,17 @@ func TestHeartbeatScript_ContainsSSHDriftGuard(t *testing.T) {
 func TestHeartbeatScript_ContainsHostAdminDriftGuard(t *testing.T) {
 	required := []string{
 		"/api/agent/host-admin-script",
+		"OPENCLAW_GID",
+		`- "${OPENCLAW_GID}"`,
 		"/run/tardi-host-admin:/run/tardi-host-admin:rw",
 		"/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro",
 		"/opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro",
 		"/opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro",
+		"/opt/openclaw/host-admin/bin/sudo:/usr/bin/sudo:ro",
 		"TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock",
 		"TARDI_HOST_EXEC_TIMEOUT=1800",
 		"PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"tardi-host-admin-container-check.log",
 	}
 	for _, want := range required {
 		if !strings.Contains(HeartbeatScript, want) {
@@ -79,8 +83,11 @@ func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T)
 		"desktop.open",
 		"host.exec",
 		"MAX_EXEC_SECONDS",
+		"TARDI_HOST_ADMIN_SUDO_VERSION=20260429",
+		"TARDI_HOST_ADMIN_BIN",
+		"Unix socket unavailable",
 		"cat > \"$BIN_DIR/sudo\"",
-		"/opt/tardi/bin/tardi-host-admin host.exec",
+		"exec \"$CLIENT\" host.exec",
 		"tardi-host-admin.service",
 		"tardi-desktop.service",
 		"TradingView launch requested",
@@ -123,6 +130,46 @@ func TestHostAdminPython_Syntax(t *testing.T) {
 	out, err := exec.Command("python3", "-c", "import ast, pathlib, sys; ast.parse(pathlib.Path(sys.argv[1]).read_text())", path).CombinedOutput()
 	if err != nil {
 		t.Fatalf("host admin server.py failed syntax parse: %v\n%s", err, out)
+	}
+}
+
+func TestHostAdminClientScripts_Syntax(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available")
+	}
+
+	tests := []struct {
+		name  string
+		start string
+		end   string
+	}{
+		{
+			name:  "tardi-host-admin",
+			start: "cat > \"$BIN_DIR/tardi-host-admin\" <<'CLIENTEOF'\n",
+			end:   "\nCLIENTEOF\n",
+		},
+		{
+			name:  "sudo",
+			start: "cat > \"$BIN_DIR/sudo\" <<'SUDOEOF'\n",
+			end:   "\nSUDOEOF\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script, ok := extractHostAdminHeredoc(tt.start, tt.end)
+			if !ok {
+				t.Fatalf("%s heredoc not found", tt.name)
+			}
+			path := t.TempDir() + "/" + tt.name
+			if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			out, err := exec.Command("sh", "-n", path).CombinedOutput()
+			if err != nil {
+				t.Fatalf("%s failed sh -n: %v\n%s", tt.name, err, out)
+			}
+		})
 	}
 }
 

@@ -249,8 +249,11 @@ chown 1000:1000 /opt/openclaw/data/openclaw/openclaw.json
 
 # --- Environment file ---
 DOCKER_GID=$(getent group docker | cut -d: -f3)
+OPENCLAW_GID=$(getent group openclaw | cut -d: -f3 || true)
+[ -n "$OPENCLAW_GID" ] || OPENCLAW_GID=1000
 cat > /opt/openclaw/.env <<ENVEOF
 DOCKER_GID=${DOCKER_GID}
+OPENCLAW_GID=${OPENCLAW_GID}
 AGENT_TOKEN={{.AgentToken}}
 API_URL={{.APIURL}}
 INSTANCE_ID={{.InstanceID}}
@@ -338,6 +341,7 @@ services:
     user: "1000:1000"
     group_add:
       - "${DOCKER_GID}"
+      - "${OPENCLAW_GID}"
     volumes:
       - ./data/openclaw:/home/node/.openclaw:rw
       - ./data/gogcli:/home/node/.config/gogcli:rw
@@ -347,6 +351,7 @@ services:
       - /opt/openclaw/host-admin/bin:/opt/tardi/bin:ro
       - /opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro
       - /opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro
+      - /opt/openclaw/host-admin/bin/sudo:/usr/bin/sudo:ro
     env_file:
       - .env
     healthcheck:

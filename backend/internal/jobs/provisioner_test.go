@@ -96,13 +96,16 @@ func TestRenderCloudInitIncludesHostAdminHelper(t *testing.T) {
 
 	required := []string{
 		"/api/agent/host-admin-script",
+		"OPENCLAW_GID=${OPENCLAW_GID}",
 		"TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock",
 		"TARDI_HOST_EXEC_TIMEOUT=1800",
 		"PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		`- "${OPENCLAW_GID}"`,
 		"/run/tardi-host-admin:/run/tardi-host-admin:rw",
 		"/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro",
 		"/opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro",
 		"/opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro",
+		"/opt/openclaw/host-admin/bin/sudo:/usr/bin/sudo:ro",
 		"Wants=tardi-host-admin.service",
 	}
 	for _, want := range required {

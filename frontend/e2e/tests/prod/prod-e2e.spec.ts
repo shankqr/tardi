@@ -552,7 +552,7 @@ echo ${marker}_DONE
 		);
 		expect(result.opened).toBe(true);
 		expect(result.output).toMatch(
-			/\[root-bridge\] sudo-path=\/(?:opt\/tardi\/bin|usr\/local\/bin)\/sudo/
+			/\[root-bridge\] sudo-path=\/(?:opt\/tardi\/bin|usr\/local\/bin|usr\/bin)\/sudo/
 		);
 		expect(result.output).toContain(marker);
 		expect(result.output).toContain(`${marker}_TOOL_RAN`);

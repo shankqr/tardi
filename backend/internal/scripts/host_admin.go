@@ -341,6 +341,7 @@ chmod 755 "$INSTALL_DIR/server.py"
 cat > "$BIN_DIR/tardi-host-admin" <<'CLIENTEOF'
 #!/bin/sh
 set -eu
+# TARDI_HOST_ADMIN_CLIENT_VERSION=20260429
 
 ACTION="${1:-}"
 SOCKET="${TARDI_HOST_ADMIN_SOCKET:-/run/tardi-host-admin/admin.sock}"
@@ -391,6 +392,11 @@ case "$ACTION" in
         ;;
 esac
 
+if [ ! -S "$SOCKET" ]; then
+    echo "tardi-host-admin: Unix socket unavailable at $SOCKET" >&2
+    exit 69
+fi
+
 TMP_BODY=$(mktemp)
 STATUS=$(curl --unix-socket "$SOCKET" -sS \
     -o "$TMP_BODY" \
@@ -400,6 +406,7 @@ STATUS=$(curl --unix-socket "$SOCKET" -sS \
     http://tardi-host-admin/v1/run) || {
     RC=$?
     rm -f "$TMP_BODY"
+    echo "tardi-host-admin: request failed via $SOCKET (curl exit $RC)" >&2
     exit "$RC"
 }
 cat "$TMP_BODY"
@@ -415,6 +422,7 @@ chmod 755 "$BIN_DIR/tardi-host-admin"
 cat > "$BIN_DIR/sudo" <<'SUDOEOF'
 #!/bin/sh
 set -eu
+# TARDI_HOST_ADMIN_SUDO_VERSION=20260429
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -449,7 +457,16 @@ for ARG in "$@"; do
     fi
 done
 
-exec /opt/tardi/bin/tardi-host-admin host.exec "$CMD"
+CLIENT="${TARDI_HOST_ADMIN_BIN:-/opt/tardi/bin/tardi-host-admin}"
+if [ ! -x "$CLIENT" ] && [ -x /usr/local/bin/tardi-host-admin ]; then
+    CLIENT=/usr/local/bin/tardi-host-admin
+fi
+if [ ! -x "$CLIENT" ]; then
+    echo "sudo: tardi-host-admin client unavailable" >&2
+    exit 69
+fi
+
+exec "$CLIENT" host.exec "$CMD"
 SUDOEOF
 chmod 755 "$BIN_DIR/sudo"
 chown -R root:root /opt/openclaw/host-admin

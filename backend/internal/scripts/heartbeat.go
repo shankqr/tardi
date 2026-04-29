@@ -47,7 +47,7 @@ fi
 # Installs a root-owned helper and mounts its Unix socket plus client binaries
 # into OpenClaw. The helper includes a generic host.exec root bridge exposed as
 # /opt/tardi/bin/sudo inside the container.
-if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/openclaw/host-admin/bin/tardi-host-admin ] || [ ! -x /opt/openclaw/host-admin/bin/sudo ] || ! grep -q 'host.exec' /opt/openclaw/host-admin/bin/tardi-host-admin 2>/dev/null; then
+if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/openclaw/host-admin/bin/tardi-host-admin ] || [ ! -x /opt/openclaw/host-admin/bin/sudo ] || ! grep -q 'host.exec' /opt/openclaw/host-admin/bin/tardi-host-admin 2>/dev/null || ! grep -q 'TARDI_HOST_ADMIN_SUDO_VERSION=20260429' /opt/openclaw/host-admin/bin/sudo 2>/dev/null; then
     if curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/host-admin-script" -o /opt/openclaw/install-host-admin.sh 2>/dev/null; then
         chmod +x /opt/openclaw/install-host-admin.sh
         /opt/openclaw/install-host-admin.sh >/tmp/tardi-host-admin-install.log 2>&1 || true
@@ -55,8 +55,24 @@ if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/openclaw/host-admin/
 fi
 
 HOST_ADMIN_COMPOSE_CHANGED=false
+OPENCLAW_GID=$(getent group openclaw | cut -d: -f3 || true)
+[ -n "$OPENCLAW_GID" ] || OPENCLAW_GID=1000
+ENV_OPENCLAW_GID=$(grep '^OPENCLAW_GID=' /opt/openclaw/.env 2>/dev/null | cut -d= -f2- || true)
+if [ "$ENV_OPENCLAW_GID" != "$OPENCLAW_GID" ]; then
+    sed -i '/^OPENCLAW_GID=/d' /opt/openclaw/.env
+    echo "OPENCLAW_GID=$OPENCLAW_GID" >> /opt/openclaw/.env
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
 if ! grep -q '/run/tardi-host-admin:/run/tardi-host-admin:rw' /opt/openclaw/docker-compose.yml 2>/dev/null; then
     sed -i '/\/var\/run\/docker\.sock:\/var\/run\/docker\.sock/a\      - /run/tardi-host-admin:/run/tardi-host-admin:rw' /opt/openclaw/docker-compose.yml
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
+if ! grep -q '"${OPENCLAW_GID}"' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    if grep -q -- '- "${DOCKER_GID}"' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+        sed -i '/- "${DOCKER_GID}"/a\      - "${OPENCLAW_GID}"' /opt/openclaw/docker-compose.yml
+    else
+        sed -i '/group_add:/a\      - "${OPENCLAW_GID}"' /opt/openclaw/docker-compose.yml
+    fi
     HOST_ADMIN_COMPOSE_CHANGED=true
 fi
 if ! grep -q '/opt/openclaw/host-admin/bin:/opt/tardi/bin:ro' /opt/openclaw/docker-compose.yml 2>/dev/null; then
@@ -69,6 +85,10 @@ if ! grep -q '/opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi
 fi
 if ! grep -q '/opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro' /opt/openclaw/docker-compose.yml 2>/dev/null; then
     sed -i '/\/opt\/openclaw\/host-admin\/bin\/tardi-host-admin:\/usr\/local\/bin\/tardi-host-admin:ro/a\      - /opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro' /opt/openclaw/docker-compose.yml
+    HOST_ADMIN_COMPOSE_CHANGED=true
+fi
+if ! grep -q '/opt/openclaw/host-admin/bin/sudo:/usr/bin/sudo:ro' /opt/openclaw/docker-compose.yml 2>/dev/null; then
+    sed -i '/\/opt\/openclaw\/host-admin\/bin\/sudo:\/usr\/local\/bin\/sudo:ro/a\      - /opt/openclaw/host-admin/bin/sudo:/usr/bin/sudo:ro' /opt/openclaw/docker-compose.yml
     HOST_ADMIN_COMPOSE_CHANGED=true
 fi
 if ! grep -q '^TARDI_HOST_ADMIN_SOCKET=' /opt/openclaw/.env 2>/dev/null; then
@@ -88,7 +108,17 @@ if ! grep -q '^PATH=.*\/opt\/tardi\/bin' /opt/openclaw/.env 2>/dev/null; then
     HOST_ADMIN_COMPOSE_CHANGED=true
 fi
 if [ "$HOST_ADMIN_COMPOSE_CHANGED" = true ]; then
-    cd /opt/openclaw && docker compose up -d 2>/dev/null || true
+    cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway 2>/dev/null || true
+fi
+if [ "$(docker inspect -f '{{.State.Status}}' openclaw-gateway 2>/dev/null || true)" = "running" ]; then
+    if ! timeout 20s docker exec openclaw-gateway /opt/tardi/bin/tardi-host-admin host.exec true >/tmp/tardi-host-admin-container-check.log 2>&1; then
+        if curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/host-admin-script" -o /opt/openclaw/install-host-admin.sh 2>/dev/null; then
+            chmod +x /opt/openclaw/install-host-admin.sh
+            /opt/openclaw/install-host-admin.sh >/tmp/tardi-host-admin-install.log 2>&1 || true
+        fi
+        systemctl restart tardi-host-admin.service >/dev/null 2>&1 || true
+        cd /opt/openclaw && docker compose up -d --force-recreate openclaw-gateway 2>/dev/null || true
+    fi
 fi
 
 # Check OpenClaw gateway health

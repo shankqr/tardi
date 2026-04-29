@@ -51,6 +51,9 @@ volumes:
   - /opt/openclaw/host-admin/bin:/opt/tardi/bin:ro
   - /opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro
   - /opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro
+  - /opt/openclaw/host-admin/bin/sudo:/usr/bin/sudo:ro
+group_add:
+  - "${OPENCLAW_GID}"
 env:
   TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock
 ```
@@ -68,11 +71,12 @@ tardi-host-admin host.exec 'git clone https://github.com/example/repo /opt/work/
 /opt/tardi/bin/tardi-host-admin desktop.open BINANCE:BTCUSDT
 ```
 
-The helper is exposed at both `/opt/tardi/bin` and `/usr/local/bin`. The
-`/usr/local/bin` file mounts make plain `sudo <command>` and
-`tardi-host-admin ...` work even if a login shell resets `PATH`. The shim
-forwards commands to `host.exec`, which runs `/bin/bash -lc <command>` as root
-on the VPS host.
+The helper is exposed at `/opt/tardi/bin`, `/usr/local/bin`, and `/usr/bin`.
+The file mounts make plain `sudo <command>`, hardcoded `/usr/bin/sudo`, and
+`tardi-host-admin ...` work even if a login shell resets `PATH`. The container
+is also added to the host `openclaw` group so it can connect to the root-owned
+Unix socket. The shim forwards commands to `host.exec`, which runs
+`/bin/bash -lc <command>` as root on the VPS host.
 
 | Action | Root-side behavior |
 |---|---|

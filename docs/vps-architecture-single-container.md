@@ -603,6 +603,7 @@ services:
     user: "1000:1000"
     group_add:
       - "${DOCKER_GID}"
+      - "${OPENCLAW_GID}"
     volumes:
       - ./data/openclaw:/home/node/.openclaw:rw
       - /var/run/docker.sock:/var/run/docker.sock
@@ -610,6 +611,7 @@ services:
       - /opt/openclaw/host-admin/bin:/opt/tardi/bin:ro
       - /opt/openclaw/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro
       - /opt/openclaw/host-admin/bin/sudo:/usr/local/bin/sudo:ro
+      - /opt/openclaw/host-admin/bin/sudo:/usr/bin/sudo:ro
     env_file:
       - .env
     healthcheck:
@@ -651,6 +653,7 @@ services:
 
 ```bash
 DOCKER_GID=<gid>
+OPENCLAW_GID=<gid>
 AGENT_TOKEN=<64-char-hex>
 API_URL=https://api-dev.tardi.ai  # or api.tardi.ai for prod
 INSTANCE_ID=<uuid>
