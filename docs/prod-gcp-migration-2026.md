@@ -1,6 +1,6 @@
 # Prod GCP Migration Runbook — `tardi-prod-488420` → `tardi-prod-2026`
 
-**Status:** Cutover done 2026-04-26. New prod live at `api.tardi.ai` (CF Worker proxy → `tardi-api-prod-loy7nru5uq-uc.a.run.app`); frontend at `app.tardi.ai` deployed to Cloudflare Pages. **A4 SKIPPED — reusing old Firebase from `tardi-prod-488420`** (backend only calls `VerifyIDToken`, cross-project safe; old project must stay alive in Phase F). Soak (F) starts now. Notable deviations from plan: (1) GitHub Actions billing exhausted, deploys (backend/infra/frontend workflows) hit "spending limit" and were done manually — Cloud Run deploy via gcloud, frontend via wrangler from laptop; (2) CF Worker proxy added at `infra/cloudflare/api-proxy/` because the runbook's "Cloudflare-only path" assumed CF would rewrite Host header to the run.app hostname automatically — it doesn't (Cloud Run rejects requests for hostnames it doesn't have a domain mapping for). Active gcloud configuration: `tardi-prod-2026` (account `gigachadtrader69@gmail.com`); old account stays on `default` config.
+**Status:** Cutover done 2026-04-26. New prod live at `api.tardi.ai` (CF Worker proxy → `tardi-api-prod-loy7nru5uq-uc.a.run.app`); frontend at `app.tardi.ai` deployed to Cloudflare Pages. **A4 SKIPPED — reusing old Firebase from `tardi-prod-488420`** (backend only calls `VerifyIDToken`, cross-project safe; old project must stay alive for Firebase Auth). Old paid prod resources were removed on 2026-04-29: Cloud Run service, Cloud SQL, Cloud Scheduler job, Cloud Run Job, Artifact Registry repos, Secret Manager secrets, and old prod GCS buckets. `tardi-prod-488420` is now unlinked from old billing account `017711-880A01-FCEF09` (`billingEnabled: false`). Notable deviations from plan: (1) GitHub Actions billing exhausted, deploys (backend/infra/frontend workflows) hit "spending limit" and were done manually — Cloud Run deploy via gcloud, frontend via wrangler from laptop; (2) CF Worker proxy added at `infra/cloudflare/api-proxy/` because the runbook's "Cloudflare-only path" assumed CF would rewrite Host header to the run.app hostname automatically — it doesn't (Cloud Run rejects requests for hostnames it doesn't have a domain mapping for). Active gcloud configuration: `tardi-prod-2026` (account `gigachadtrader69@gmail.com`); old account stays on `default` config.
 
 When resuming, update the **Status** line above and the per-phase checkboxes so progress is visible at a glance.
 
@@ -58,7 +58,7 @@ Branch/approval gating stays at the GitHub Environment level (`production` / `in
 
 - [x] **A4. Firebase + Google OAuth — SKIPPED (reusing old prod Firebase).**
   - Decision 2026-04-26: keep existing Firebase under `tardi-prod-488420` because backend only calls `VerifyIDToken` (cross-project safe — fetches public JWKS, no IAM needed). Frontend Firebase config unchanged. Existing E2E user `clawmyway+prodtesting@gmail.com` continues to work.
-  - **Implication for Phase F:** old project must stay alive indefinitely. F3 must NOT run `gcloud projects delete tardi-prod-488420` — only destroy non-Firebase resources (Cloud Run, Cloud SQL, VPC, Artifact Registry, Secret Manager, Cloud Scheduler, BigQuery). Project keeps billing account attached; Firebase Auth standard tier is free up to 50K MAU.
+  - **Implication for Phase F:** old project must stay alive indefinitely. F3 must NOT run `gcloud projects delete tardi-prod-488420` — only destroy non-Firebase resources (Cloud Run, Cloud SQL, VPC, Artifact Registry, Secret Manager, Cloud Scheduler, BigQuery). As of 2026-04-29, old billing is unlinked (`billingEnabled: false`) and the project remains only for Firebase Auth.
 
 ---
 
@@ -156,13 +156,16 @@ Verify: `curl https://tardi-api-prod-<NEW-HASH>-uc.a.run.app/readyz` → 200. Mi
 
 - [ ] **F2. Hetzner cleanup (day 1 of soak)** — delete all old prod's Hetzner servers via console. Confirms the "no existing users" assumption.
 
-- [ ] **F3. Teardown order (after soak):** — **MODIFIED for Firebase reuse: do NOT delete the project.** Old project must stay alive for Firebase Auth.
-  1. `gcloud scheduler jobs pause tardi-synthetic-monitor --project=tardi-prod-488420 --location=us-central1` — watch 24h.
-  2. Snapshot final state: `gcloud storage cp gs://tardi-prod-488420-terraform-state/terraform/state ./old-prod-final-state.tfstate`
-  3. Disable Cloud SQL deletion protection: `gcloud sql instances patch tardi-db-prod --no-deletion-protection --project=tardi-prod-488420`
-  4. From throwaway branch `teardown/prod-488420` (with old project_id and old backend bucket restored): `terraform destroy`. Tears down Cloud Run, Cloud SQL, VPC, Artifact Registry, Secret Manager, Cloud Scheduler, BigQuery, monitoring. **Firebase is not in TF — survives untouched.**
-  5. `gcloud storage rm --recursive gs://tardi-prod-488420-terraform-state` (state bucket no longer needed; Firebase isn't TF-managed).
-  6. ~~`gcloud projects delete tardi-prod-488420`~~ — **SKIPPED.** Project retains Firebase Auth + billing account attachment indefinitely. Verify monthly billing via `gcloud billing accounts get-iam-policy` is ~$0 (Firebase Auth free tier).
+- [x] **F3. Teardown order:** — **DONE 2026-04-29, modified for Firebase reuse: do NOT delete the project.** Old project remains for Firebase Auth only.
+  1. Paused and deleted `tardi-synthetic-monitor` Cloud Scheduler job.
+  2. Deleted `tardi-synthetic-monitor` Cloud Run Job.
+  3. Deleted `tardi-api-prod` Cloud Run service.
+  4. Deleted `tardi-db-prod` Cloud SQL instance without a final backup, to avoid billable backup storage.
+  5. Deleted old prod Artifact Registry repos `tardi` and `cloud-run-source-deploy`.
+  6. Cleared soft-delete/versioning and deleted old prod GCS buckets: `run-sources-tardi-prod-488420-us-central1`, `tardi-prod-488420-terraform-state`, `tardi-prod-488420_cloudbuild`.
+  7. Deleted all old prod Secret Manager secrets.
+  8. Unlinked `tardi-prod-488420` from old billing account `017711-880A01-FCEF09`; verified `billingEnabled: false`.
+  9. ~~`gcloud projects delete tardi-prod-488420`~~ — **SKIPPED.** Project remains for Firebase Auth.
 
 ---
 

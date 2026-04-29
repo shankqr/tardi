@@ -1,5 +1,12 @@
 # Dev environment wind-down
 
+> **Current status (2026-04-29):** `tardi-dev-488420` is fully torn down and
+> unlinked from the old billing account `017711-880A01-FCEF09`
+> (`billingEnabled: false`). The preserved dev GCS buckets, including
+> `tardi-dev-488420-terraform-state`, were deleted to stop all residual cost.
+> Re-enabling dev now requires relinking billing and recreating bootstrap
+> state before running the bringup script.
+
 Two scripts let you tear down the dev GCP environment to near-zero idle cost
 and rebuild it on demand when you need to test something.
 
@@ -15,7 +22,8 @@ and rebuild it on demand when you need to test something.
 | State | Est. monthly |
 |---|---|
 | Running (current baseline) | ~$15–23 |
-| Torn down | ~$0.07 (state bucket + preserved registry) |
+| Torn down with preserved state | ~$0.07 (state bucket + preserved registry) |
+| Fully zeroed out | $0 (billing disabled, preserved buckets deleted) |
 
 ## Tear down
 
@@ -51,6 +59,11 @@ pushes to Cloudflare Pages still work but the dashboard will 5xx on any API
 call.
 
 ## Bring up
+
+The commands below assume the project is still billing-enabled and the
+Terraform state bucket still exists. From the current fully-zeroed state,
+first relink billing for `tardi-dev-488420` and recreate the backend bucket
+expected by [infra/environments/dev/main.tf](../infra/environments/dev/main.tf).
 
 ```bash
 ./scripts/dev-bringup.sh         # prompts for confirmation

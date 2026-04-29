@@ -61,8 +61,9 @@ make db-reset        # Reset local PostgreSQL
 
 ### Cost controls
 
-- **Dev is currently torn down** (as of 2026-04-27). `tardi-api-dev` does not exist; the URL in [frontend/wrangler.toml](frontend/wrangler.toml) `[env.preview.vars]` returns 404. Residual cost while torn down: ~$0.07/mo.
-- To bring dev back up: `scripts/dev-bringup.sh` (must be run from a gcloud config authenticated as the owner of `tardi-dev-488420`, NOT the prod-2026 account). After bringup, refresh `API_URL` in `[env.preview.vars]` with the new Cloud Run hash.
+- **Old GCP billing is zeroed out** (as of 2026-04-29). `tardi-dev-488420` and `tardi-prod-488420` are unlinked from the old billing account `017711-880A01-FCEF09` (`billingEnabled: false`). Old prod's Cloud Run, Cloud SQL, Cloud Scheduler job, Cloud Run Job, Artifact Registry repos, Secret Manager secrets, and old GCS buckets were deleted. The old prod project remains only because frontend Firebase Auth still uses `tardi-prod-488420`.
+- **Dev is fully torn down** (as of 2026-04-29). `tardi-api-dev` does not exist; the URL in [frontend/wrangler.toml](frontend/wrangler.toml) `[env.preview.vars]` returns 404. The old dev Terraform state buckets were deleted and billing is disabled, so bringup now requires relinking billing and recreating bootstrap state before `scripts/dev-bringup.sh` can work.
+- To bring dev back up: relink billing for `tardi-dev-488420` from a gcloud config authenticated as the owner of that project (NOT the prod-2026 account), recreate the Terraform state bucket expected by [infra/environments/dev/main.tf](infra/environments/dev/main.tf), then run `scripts/dev-bringup.sh`. After bringup, refresh `API_URL` in `[env.preview.vars]` with the new Cloud Run hash.
 - See [docs/dev-wind-down.md](docs/dev-wind-down.md) for the teardown/bringup procedure.
 
 ## CI/CD
