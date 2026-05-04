@@ -234,8 +234,10 @@ func CodexLinkStatusHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Fast path: DB says linked. No SSH needed.
-		if inst.CodexLinkedAt != nil {
+		// Fast path: DB says linked. No SSH needed. When the heartbeat has
+		// detected stale Codex auth, keep probing the VPS so a relink flow can
+		// observe the fresh auth.json and restart the gateway.
+		if inst.CodexLinkedAt != nil && (inst.AgentError == nil || *inst.AgentError != "codex_reauth_required") {
 			WriteJSON(w, http.StatusOK, map[string]any{"status": "linked"})
 			return
 		}

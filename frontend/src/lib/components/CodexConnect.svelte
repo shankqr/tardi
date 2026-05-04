@@ -17,12 +17,15 @@
 
 	// Seed from DB state so first paint is correct without an SSH round-trip.
 	const seededLinked = $derived(Boolean(instance.codex_linked_at));
+	const reauthRequired = $derived(instance.agent_error === 'codex_reauth_required');
 	let phase = $state<Phase>('idle');
 	$effect(() => {
 		// Whenever the dashboard re-renders with a fresh snapshot, reset
 		// to "linked" if the DB says so. Only reset away from transient
 		// states, never overwrite an active flow.
-		if (seededLinked && (phase === 'idle' || phase === 'failed')) {
+		if (reauthRequired && (phase === 'idle' || phase === 'linked' || phase === 'failed')) {
+			phase = 'idle';
+		} else if (seededLinked && (phase === 'idle' || phase === 'failed')) {
 			phase = 'linked';
 		}
 	});
@@ -243,12 +246,18 @@
 				{/if}
 			</div>
 		{:else}
+			{#if reauthRequired}
+				<div class="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+					<p class="font-medium">ChatGPT needs to be re-linked</p>
+					<p class="mt-1">Your agent can receive messages, but replies are paused until Codex is authorized again.</p>
+				</div>
+			{/if}
 			<button
 				onclick={handleStart}
 				disabled={phase === 'starting' || !isActive}
 				class="rounded-lg bg-gray-900 dark:bg-white px-4 py-2 text-sm font-medium text-white dark:text-gray-900 hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-50"
 			>
-				{phase === 'starting' ? 'Starting…' : 'Link Codex Account'}
+				{phase === 'starting' ? 'Starting…' : reauthRequired ? 'Relink Codex Account' : 'Link Codex Account'}
 			</button>
 		{/if}
 

@@ -19,6 +19,7 @@ const MOCK_LINKED_AT = '2026-04-20T08:37:31.000Z';
 async function mockDashboardStateWithCodex(
 	page: Page,
 	linked: boolean,
+	agentError: string | null = null,
 ): Promise<void> {
 	await page.route('**/api/dashboard/state', async (route, request) => {
 		const response = await route.fetch();
@@ -26,6 +27,7 @@ async function mockDashboardStateWithCodex(
 		if (body?.instances?.length) {
 			for (const inst of body.instances) {
 				inst.codex_linked_at = linked ? MOCK_LINKED_AT : null;
+				inst.agent_error = agentError;
 			}
 		}
 		await route.fulfill({
@@ -111,6 +113,34 @@ test.describe('Codex linking UI', () => {
 			card.getByText('Linked to ChatGPT'),
 		).toBeVisible({ timeout: 10_000 });
 		await expect(card.getByRole('button', { name: 'Unlink' })).toBeVisible();
+	});
+
+	test('shows relink action when linked Codex auth needs reauthorization', async ({
+		authedPage: page,
+	}) => {
+		await mockDashboardStateWithCodex(page, true, 'codex_reauth_required');
+		mockCodexStart(page, ['RELY-NK123']);
+		mockCodexStatus(page, [
+			{ status: 'pending' },
+			{ status: 'restarting' },
+			{ status: 'linked' },
+		]);
+		await page.reload();
+
+		if (!(await navigateToInstance(page))) {
+			test.skip(true, 'No active instance found');
+			return;
+		}
+
+		const card = page.locator('div', {
+			has: page.getByRole('heading', { name: 'Codex (ChatGPT)' }),
+		}).first();
+		await card.scrollIntoViewIfNeeded();
+
+		await expect(card.getByText('ChatGPT needs to be re-linked')).toBeVisible();
+		await card.getByRole('button', { name: 'Relink Codex Account' }).click();
+		await expect(card.getByText('RELY-NK123')).toBeVisible({ timeout: 10_000 });
+		await expect(card.getByText(/Linked to ChatGPT/)).toBeVisible({ timeout: 10_000 });
 	});
 
 	test('full link flow: click → device code → restarting → linked', async ({

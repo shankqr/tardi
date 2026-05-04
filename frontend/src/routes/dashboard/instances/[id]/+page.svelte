@@ -835,6 +835,9 @@
 							{:else if instance.agent_error === 'invalid_api_key'}
 								<p class="font-medium">Invalid API key</p>
 								<p class="mt-1">Your AI provider API key appears invalid. Update it in Settings below.</p>
+							{:else if instance.agent_error === 'codex_reauth_required'}
+								<p class="font-medium">ChatGPT relink required</p>
+								<p class="mt-1">Use the Codex panel above to reconnect ChatGPT and resume replies.</p>
 							{:else}
 								<p>{instance.agent_error}</p>
 							{/if}

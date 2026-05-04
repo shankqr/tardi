@@ -33,8 +33,8 @@ export const mockDashboardState: DashboardState = {
 			last_heartbeat_at: new Date(Date.now() - 15000).toISOString(),
 			dashboard_url: 'https://abcd1234.tardi.ai',
 			openclaw_auth_token: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
-			openclaw_version: '2026.4.26',
-			target_openclaw_version: '2026.4.26',
+			openclaw_version: '2026.5.2',
+			target_openclaw_version: '2026.5.2',
 			preview_url: 'https://abcd1234-b.tardi.ai',
 			created_at: '2026-01-15T10:30:00Z'
 		}

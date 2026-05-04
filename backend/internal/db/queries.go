@@ -1039,7 +1039,14 @@ func UpdateSubscriptionPlanTier(ctx context.Context, pool *pgxpool.Pool, subID u
 // account. Pass nil to clear the link.
 func SetCodexLinkState(ctx context.Context, pool *pgxpool.Pool, instanceID uuid.UUID, linkedAt *time.Time) error {
 	_, err := pool.Exec(ctx, `
-		UPDATE vps_instances SET codex_linked_at = $1, updated_at = now() WHERE id = $2
+		UPDATE vps_instances
+		SET codex_linked_at = $1,
+		    agent_error = CASE
+		        WHEN $1::timestamptz IS NOT NULL AND agent_error = 'codex_reauth_required' THEN NULL
+		        ELSE agent_error
+		    END,
+		    updated_at = now()
+		WHERE id = $2
 	`, linkedAt, instanceID)
 	if err != nil {
 		return fmt.Errorf("set codex link state: %w", err)

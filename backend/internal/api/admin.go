@@ -29,12 +29,12 @@ func AdminGetVersionHandler(deps Dependencies) http.HandlerFunc {
 		}
 
 		type instanceVersion struct {
-			ID                   string  `json:"id"`
-			Name                 string  `json:"name"`
-			OpenClawVersion      *string `json:"openclaw_version"`
+			ID                    string  `json:"id"`
+			Name                  string  `json:"name"`
+			OpenClawVersion       *string `json:"openclaw_version"`
 			TargetOpenClawVersion *string `json:"target_openclaw_version"`
-			OpenClawUpdateStatus *string `json:"openclaw_update_status"`
-			OpenClawUpdateError  *string `json:"openclaw_update_error"`
+			OpenClawUpdateStatus  *string `json:"openclaw_update_status"`
+			OpenClawUpdateError   *string `json:"openclaw_update_error"`
 		}
 
 		var versions []instanceVersion
@@ -71,7 +71,7 @@ func AdminSetGlobalVersionHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 		if body.Version == "latest" {
-			WriteError(w, http.StatusBadRequest, "bad_request", "cannot set version to 'latest' — use an explicit Docker image tag (e.g. 2026.4.26)")
+			WriteError(w, http.StatusBadRequest, "bad_request", "cannot set version to 'latest' — use an explicit Docker image tag (e.g. 2026.5.2)")
 			return
 		}
 
@@ -106,12 +106,12 @@ func AdminGetHermesVersionHandler(deps Dependencies) http.HandlerFunc {
 		}
 
 		type instanceVersion struct {
-			ID                   string  `json:"id"`
-			Name                 string  `json:"name"`
-			OpenClawVersion      *string `json:"version"`
+			ID                    string  `json:"id"`
+			Name                  string  `json:"name"`
+			OpenClawVersion       *string `json:"version"`
 			TargetOpenClawVersion *string `json:"target_version"`
-			OpenClawUpdateStatus *string `json:"update_status"`
-			OpenClawUpdateError  *string `json:"update_error"`
+			OpenClawUpdateStatus  *string `json:"update_status"`
+			OpenClawUpdateError   *string `json:"update_error"`
 		}
 
 		var versions []instanceVersion
@@ -221,7 +221,7 @@ func AdminSetInstanceVersionHandler(deps Dependencies) http.HandlerFunc {
 
 		slog.Info("admin: instance openclaw version override set", "instance_id", instanceID, "version", body.Version)
 		WriteJSON(w, http.StatusOK, map[string]any{
-			"instance_id":            instanceID.String(),
+			"instance_id":             instanceID.String(),
 			"target_openclaw_version": body.Version,
 		})
 	}
