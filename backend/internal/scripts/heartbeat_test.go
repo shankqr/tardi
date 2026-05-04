@@ -31,6 +31,12 @@ func TestHeartbeatScript_ContainsHeartbeatEndpoint(t *testing.T) {
 	}
 }
 
+func TestHeartbeatScript_CapturesOpenClawVersionSuffix(t *testing.T) {
+	if !strings.Contains(HeartbeatScript, `[0-9]{4}\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?`) {
+		t.Error("HeartbeatScript should preserve OpenClaw version suffixes like 2026.5.3-1")
+	}
+}
+
 func TestHeartbeatScript_SelfUpdatesFromAPI(t *testing.T) {
 	required := []string{
 		"/api/agent/heartbeat-script",

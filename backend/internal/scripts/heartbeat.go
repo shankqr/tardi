@@ -188,7 +188,7 @@ CURRENT_IMAGE_ID=$(docker inspect --format='{{.Image}}' openclaw-gateway 2>/dev/
 CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://' | tr -d '[:space:]')
 RUNTIME_VERSION=""
 if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
-	RUNTIME_VERSION=$(timeout 10s docker exec openclaw-gateway openclaw --version 2>/dev/null | grep -Eo '[0-9]{4}\.[0-9]+\.[0-9]+' | head -1 || true)
+	RUNTIME_VERSION=$(timeout 10s docker exec openclaw-gateway openclaw --version 2>/dev/null | grep -Eo '[0-9]{4}\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?' | head -1 || true)
 fi
 [ -n "$RUNTIME_VERSION" ] && CURRENT_TAG="$RUNTIME_VERSION"
 [ -z "$CURRENT_TAG" ] && CURRENT_TAG="unknown"
