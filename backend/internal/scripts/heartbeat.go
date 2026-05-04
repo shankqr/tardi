@@ -155,15 +155,19 @@ fi
 # so the shared CLI login at /home/node/.codex must be copied into every
 # per-agent codex-home before model calls can use the linked ChatGPT account.
 CODEX_AUTH_SYNC_CHANGED=false
+CODEX_AGENT_AUTH_PRESENT=false
 if [ -s /opt/openclaw/data/codex/auth.json ]; then
-    for d in /opt/openclaw/data/openclaw/agents/*/agent; do
-        [ -d "$d" ] || continue
-        mkdir -p "$d/codex-home"
+	for d in /opt/openclaw/data/openclaw/agents/*/agent; do
+		[ -d "$d" ] || continue
+		mkdir -p "$d/codex-home"
         if ! cmp -s /opt/openclaw/data/codex/auth.json "$d/codex-home/auth.json" 2>/dev/null; then
             install -m 600 -o 1000 -g 1000 /opt/openclaw/data/codex/auth.json "$d/codex-home/auth.json" 2>/dev/null || true
-            CODEX_AUTH_SYNC_CHANGED=true
-        fi
-    done
+			CODEX_AUTH_SYNC_CHANGED=true
+		fi
+		if [ -s "$d/codex-home/auth.json" ]; then
+			CODEX_AGENT_AUTH_PRESENT=true
+		fi
+	done
 fi
 if [ "$CODEX_AUTH_SYNC_CHANGED" = true ] && [ "$STATUS" = "running" ]; then
     docker restart openclaw-gateway >/dev/null 2>&1 || true
@@ -188,12 +192,16 @@ UPDATE_ERROR=$(cat /opt/openclaw/.update_error 2>/dev/null || echo "")
 # Check for provider errors in recent docker logs
 AGENT_ERROR=""
 if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
-    RECENT_LOGS=$(docker logs openclaw-gateway --tail 100 --since 10m 2>&1)
-    if echo "$RECENT_LOGS" | grep -qi "refresh token was already used\|please log out and sign in again\|missing bearer or basic authentication\|unexpected status 401 unauthorized.*codex/gpt\|codex.*login"; then
-        AGENT_ERROR="codex_reauth_required"
-    elif echo "$RECENT_LOGS" | grep -qi "key limit exceeded"; then
-        AGENT_ERROR="openrouter_credits_exhausted"
-    elif echo "$RECENT_LOGS" | grep -qi "invalid.*api.*key\|authentication.*failed"; then
+	RECENT_LOGS=$(docker logs openclaw-gateway --tail 100 --since 10m 2>&1)
+	if echo "$RECENT_LOGS" | grep -qi "refresh token was already used\|please log out and sign in again"; then
+		AGENT_ERROR="codex_reauth_required"
+	elif echo "$RECENT_LOGS" | grep -qi "missing bearer or basic authentication\|unexpected status 401 unauthorized.*codex/gpt\|unexpected status 401 unauthorized.*openai-codex/gpt"; then
+		if [ ! -s /opt/openclaw/data/codex/auth.json ] || [ "$CODEX_AGENT_AUTH_PRESENT" != true ]; then
+			AGENT_ERROR="codex_reauth_required"
+		fi
+	elif echo "$RECENT_LOGS" | grep -qi "key limit exceeded"; then
+		AGENT_ERROR="openrouter_credits_exhausted"
+	elif echo "$RECENT_LOGS" | grep -qi "invalid.*api.*key\|authentication.*failed"; then
         AGENT_ERROR="invalid_api_key"
     fi
 fi
