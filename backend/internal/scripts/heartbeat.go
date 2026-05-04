@@ -150,6 +150,32 @@ else
     fi
 fi
 
+# --- Codex per-agent auth drift guard ---
+# OC 2026.5.x runs each Codex app-server with CODEX_HOME under the agent dir,
+# so the shared CLI login at /home/node/.codex must be copied into every
+# per-agent codex-home before model calls can use the linked ChatGPT account.
+CODEX_AUTH_SYNC_CHANGED=false
+if [ -s /opt/openclaw/data/codex/auth.json ]; then
+    for d in /opt/openclaw/data/openclaw/agents/*/agent; do
+        [ -d "$d" ] || continue
+        mkdir -p "$d/codex-home"
+        if ! cmp -s /opt/openclaw/data/codex/auth.json "$d/codex-home/auth.json" 2>/dev/null; then
+            install -m 600 -o 1000 -g 1000 /opt/openclaw/data/codex/auth.json "$d/codex-home/auth.json" 2>/dev/null || true
+            CODEX_AUTH_SYNC_CHANGED=true
+        fi
+    done
+fi
+if [ "$CODEX_AUTH_SYNC_CHANGED" = true ] && [ "$STATUS" = "running" ]; then
+    docker restart openclaw-gateway >/dev/null 2>&1 || true
+    for i in $(seq 1 30); do
+        if curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+            STATUS="running"
+            break
+        fi
+        sleep 2
+    done
+fi
+
 # Detect current running OpenClaw version (image tag)
 CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' openclaw-gateway 2>/dev/null)
 CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://' | tr -d '[:space:]')
@@ -521,10 +547,10 @@ PY
 fi
 
 # --- Codex model provider drift guard (runs every heartbeat) ---
-# Tardi's default model is codex/gpt-5.5. In OC 2026.4.26 that model resolves
-# through the OpenAI provider using the Codex app-server token marker. If the
+# Tardi's default model is openai-codex/gpt-5.5. In modern OC versions that model
+# resolves through the OpenAI Codex provider using the Codex app-server token marker. If the
 # provider entry is missing, channels connect but agent turns never produce a
-# reply because the resolved openai/gpt-5.5 provider is unauthenticated.
+# reply because the resolved OpenAI API route is unauthenticated.
 if [ "$STATUS" = "running" ] && [ -s /opt/openclaw/data/codex/auth.json ] && ! grep -q '^OPENAI_API_KEY=.\+' /opt/openclaw/.env 2>/dev/null; then
     python3 - <<'PY' >/tmp/openclaw-codex-model-drift.log 2>&1 || true
 import datetime
@@ -538,7 +564,7 @@ except Exception:
     raise SystemExit(0)
 
 codex_provider = {
-    "baseUrl": "https://chatgpt.com/backend-api/v1",
+    "baseUrl": "https://chatgpt.com/backend-api",
     "apiKey": "codex-app-server",
     "auth": "token",
     "api": "openai-codex-responses",
@@ -562,20 +588,27 @@ codex_provider = {
 
 changed = False
 providers = cfg.setdefault("models", {}).setdefault("providers", {})
-if providers.get("openai") != codex_provider:
-    providers["openai"] = codex_provider
+if providers.get("openai-codex") != codex_provider:
+    providers["openai-codex"] = codex_provider
     changed = True
 
 model_cfg = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("model", {})
-if model_cfg.get("primary") in ("", None, "openai/gpt-5.5", "codex/gpt-5.5"):
-    if model_cfg.get("primary") != "codex/gpt-5.5":
-        model_cfg["primary"] = "codex/gpt-5.5"
+legacy_model_refs = ("", None, "openai/gpt-5.5", "codex/gpt-5.5", "openai-codex/gpt-5.5")
+if model_cfg.get("primary") in legacy_model_refs:
+    if model_cfg.get("primary") != "openai-codex/gpt-5.5":
+        model_cfg["primary"] = "openai-codex/gpt-5.5"
         changed = True
 
 models = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("models", {})
-if models.get("codex/gpt-5.5") != {}:
-    models["codex/gpt-5.5"] = {}
+if models.get("openai-codex/gpt-5.5") != {}:
+    models["openai-codex/gpt-5.5"] = {}
     changed = True
+
+for agent in cfg.setdefault("agents", {}).get("list", []):
+    if isinstance(agent, dict) and agent.get("model") in legacy_model_refs:
+        if agent.get("model") != "openai-codex/gpt-5.5":
+            agent["model"] = "openai-codex/gpt-5.5"
+            changed = True
 
 if changed:
     cfg.setdefault("meta", {})["lastTouchedAt"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")

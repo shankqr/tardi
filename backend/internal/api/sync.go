@@ -365,7 +365,7 @@ func buildHermesConfigSyncScript() string {
 
 // openclawModelID prefixes the bare catalog id with "openrouter/" when the
 // model is routed through OpenRouter, and returns the bare id otherwise
-// (e.g. "codex/gpt-5.5").
+// (e.g. "openai-codex/gpt-5.5").
 func openclawModelID(id, provider string) string {
 	if provider == "openrouter" {
 		return "openrouter/" + id

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: ./scripts/backfill-codex-default.sh <dev|prod> [--apply]
 #
-# Switches all existing OpenClaw instances to codex/gpt-5.5 as primary:
+# Switches all existing OpenClaw instances to openai-codex/gpt-5.5 as primary:
 #   1. UPDATEs agent_configs rows so model/provider match the new default
 #      (so future re-syncs don't revert).
 #   2. SSHes into every active OpenClaw VPS and pushes the change live via
@@ -51,15 +51,15 @@ echo "==> agent_configs rows that will change:"
        config->>'provider' AS old_provider,
        config->>'model'    AS old_model
   FROM agent_configs
- WHERE COALESCE(config->>'model','') <> 'codex/gpt-5.5'
-    OR COALESCE(config->>'provider','') <> 'codex';"
+ WHERE COALESCE(config->>'model','') <> 'openai-codex/gpt-5.5'
+    OR COALESCE(config->>'provider','') <> 'openai-codex';"
 
 if [ "$DRY_RUN" = false ]; then
   echo "==> Applying agent_configs UPDATE..."
   "$DB_QUERY" "$ENV" "UPDATE agent_configs
        SET config = jsonb_set(
-                      jsonb_set(COALESCE(config, '{}'::jsonb), '{model}', '\"codex/gpt-5.5\"'),
-                      '{provider}', '\"codex\"');"
+                      jsonb_set(COALESCE(config, '{}'::jsonb), '{model}', '\"openai-codex/gpt-5.5\"'),
+                      '{provider}', '\"openai-codex\"');"
 fi
 echo
 
@@ -101,8 +101,8 @@ while IFS='|' read -r INST_ID IP; do
   # reads it on startup, so we restart and wait for /health before counting
   # the VPS as updated. ~10-15s of agent unavailability per box.
   if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 "root@$IP" \
-       "docker exec openclaw-gateway openclaw models set 'codex/gpt-5.5' >/dev/null 2>&1 && \
-        docker exec openclaw-gateway openclaw config set agents.defaults.model.primary 'codex/gpt-5.5' && \
+       "docker exec openclaw-gateway openclaw models set 'openai-codex/gpt-5.5' >/dev/null 2>&1 && \
+        docker exec openclaw-gateway openclaw config set agents.defaults.model.primary 'openai-codex/gpt-5.5' && \
         docker restart openclaw-gateway >/dev/null && \
         for i in \$(seq 1 20); do \
           if docker exec openclaw-gateway curl -sf http://localhost:18789/health >/dev/null 2>&1; then \

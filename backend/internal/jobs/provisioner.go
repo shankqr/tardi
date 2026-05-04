@@ -42,8 +42,8 @@ var stepTimeouts = map[models.ProvisioningStep]time.Duration{
 // fallbackDefaultModelID is used when the DB models table is unavailable.
 // Codex (ChatGPT-linked) is the default routing path for new instances —
 // users link via the FE to enable outbound calls.
-const fallbackDefaultModelID = "codex/gpt-5.5"
-const fallbackDefaultProvider = "codex"
+const fallbackDefaultModelID = "openai-codex/gpt-5.5"
+const fallbackDefaultProvider = "openai-codex"
 
 // CloudInitModel pairs a catalog model id with its routing provider so the
 // cloud-init template can decide per-model whether to prepend "openrouter/".
@@ -219,8 +219,8 @@ cat > /opt/openclaw/data/openclaw/openclaw.json <<CFGEOF
   },
   "models": {
     "providers": {
-      "openai": {
-        "baseUrl": "https://chatgpt.com/backend-api/v1",
+      "openai-codex": {
+        "baseUrl": "https://chatgpt.com/backend-api",
         "apiKey": "codex-app-server",
         "auth": "token",
         "api": "openai-codex-responses",

@@ -178,20 +178,29 @@ func CodexLinkStartHandler(deps Dependencies) http.HandlerFunc {
 
 		cfg := &dependenciesConfigAccessor{deps: deps}
 		host, key, pw := sshCreds(inst, cfg)
+		relinkMode := "false"
+		if inst.AgentError != nil && *inst.AgentError == "codex_reauth_required" {
+			relinkMode = "true"
+		}
 
-		script := `set -e
+		script := fmt.Sprintf(`set -e
 docker exec openclaw-gateway pkill -f 'codex login' 2>/dev/null || true
 if ! docker exec openclaw-gateway sh -c 'command -v codex' >/dev/null 2>&1; then
     docker exec -u 0 openclaw-gateway npm install -g @openai/codex >/dev/null 2>&1 || true
 fi
-docker exec -d openclaw-gateway sh -c 'rm -f ` + codexLoginLogPath + `; codex login --device-auth > ` + codexLoginLogPath + ` 2>&1'
+if [ "%s" = "true" ]; then
+    docker exec openclaw-gateway codex logout >/dev/null 2>&1 || true
+    rm -f %s
+    rm -f /opt/openclaw/data/openclaw/agents/*/agent/codex-home/auth.json 2>/dev/null || true
+fi
+docker exec -d openclaw-gateway sh -c 'rm -f `+codexLoginLogPath+`; codex login --device-auth > `+codexLoginLogPath+` 2>&1'
 for i in $(seq 1 40); do
     sleep 0.5
-    if docker exec openclaw-gateway grep -qE 'codex/device' ` + codexLoginLogPath + ` 2>/dev/null; then
+    if docker exec openclaw-gateway grep -qE 'codex/device' `+codexLoginLogPath+` 2>/dev/null; then
         break
     fi
 done
-docker exec openclaw-gateway cat ` + codexLoginLogPath + ` 2>/dev/null || true`
+docker exec openclaw-gateway cat `+codexLoginLogPath+` 2>/dev/null || true`, relinkMode, codexAuthHostPath)
 
 		out, err := deps.SSHRunner.RunCommand(host, key, pw, script, 45*time.Second)
 		if err != nil {
@@ -290,7 +299,16 @@ func finaliseCodexLink(deps Dependencies, instanceID uuid.UUID, host string, key
 	ctx, cancel := context.WithTimeout(context.Background(), codexRestartGoroutineCap)
 	defer cancel()
 
-	if _, err := deps.SSHRunner.RunCommand(host, key, pw, "docker restart openclaw-gateway", 30*time.Second); err != nil {
+	script := fmt.Sprintf(`set -e
+if [ -s %s ]; then
+    for d in /opt/openclaw/data/openclaw/agents/*/agent; do
+        [ -d "$d" ] || continue
+        mkdir -p "$d/codex-home"
+        install -m 600 -o 1000 -g 1000 %s "$d/codex-home/auth.json"
+    done
+fi
+docker restart openclaw-gateway`, codexAuthHostPath, codexAuthHostPath)
+	if _, err := deps.SSHRunner.RunCommand(host, key, pw, script, 30*time.Second); err != nil {
 		slog.Error("codex finalise: gateway restart failed", "instance_id", instanceID, "error", err)
 		return
 	}
@@ -342,6 +360,7 @@ func CodexUnlinkHandler(deps Dependencies) http.HandlerFunc {
 		script := fmt.Sprintf(`docker exec openclaw-gateway pkill -f 'codex login' 2>/dev/null || true
 docker exec openclaw-gateway codex logout 2>/dev/null || true
 rm -f %s
+rm -f /opt/openclaw/data/openclaw/agents/*/agent/codex-home/auth.json 2>/dev/null || true
 docker restart openclaw-gateway >/dev/null 2>&1`, codexAuthHostPath)
 
 		if _, err := deps.SSHRunner.RunCommand(host, key, pw, script, 60*time.Second); err != nil {

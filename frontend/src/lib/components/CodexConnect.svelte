@@ -161,7 +161,7 @@
 		<h3 class="text-sm font-semibold text-gray-900 dark:text-white">Codex (ChatGPT)</h3>
 	</div>
 	<p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
-		Link your ChatGPT account to use <code>codex/gpt-5.5</code> models — no API key needed. Requires
+		Link your ChatGPT account to use <code>openai-codex/gpt-5.5</code> models — no API key needed. Requires
 		<a href="https://chatgpt.com/settings/security" target="_blank" rel="noopener noreferrer" class="underline">Device Code Authorization</a>
 		to be on.
 	</p>
