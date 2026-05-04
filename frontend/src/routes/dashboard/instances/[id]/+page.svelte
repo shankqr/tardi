@@ -849,6 +849,9 @@
 							{:else if instance.agent_error === 'codex_reauth_required'}
 								<p class="font-medium">ChatGPT relink required</p>
 								<p class="mt-1">Use the Codex panel above to reconnect ChatGPT and resume replies.</p>
+							{:else if instance.agent_error === 'codex_usage_limit_exceeded'}
+								<p class="font-medium">ChatGPT Codex usage limit reached</p>
+								<p class="mt-1">Your linked ChatGPT account has hit its Codex usage limit. Check <a href="https://chatgpt.com/codex/settings/usage" target="_blank" rel="noopener" class="underline font-medium hover:text-red-900 dark:hover:text-red-300">Codex usage settings</a> or wait for the limit to reset.</p>
 							{:else}
 								<p>{instance.agent_error}</p>
 							{/if}

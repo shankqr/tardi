@@ -85,8 +85,11 @@ func TestHeartbeatScript_ContainsChannelAndCodexDriftGuards(t *testing.T) {
 		"dmPolicy",
 		`"streaming", {"mode": "off"}`,
 		"openclaw-codex-model-drift.log",
+		"openclaw-codex-plugin-drift.log",
+		"clawhub:@openclaw/codex",
 		"codex-app-server",
 		"openai-codex-responses",
+		"codex_usage_limit_exceeded",
 	}
 	for _, want := range required {
 		if !strings.Contains(HeartbeatScript, want) {

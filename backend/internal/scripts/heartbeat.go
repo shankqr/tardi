@@ -180,6 +180,99 @@ if [ "$CODEX_AUTH_SYNC_CHANGED" = true ] && [ "$STATUS" = "running" ]; then
     done
 fi
 
+# --- Codex plugin drift guard ---
+# OC 2026.5.3 moved the Codex app-server harness out of the stock image and
+# into the official @openclaw/codex plugin. Tardi users with linked ChatGPT
+# accounts need that harness for openai-codex/gpt-5.5 replies.
+CODEX_PLUGIN_CHANGED=false
+CODEX_PLUGIN_LOG=/tmp/openclaw-codex-plugin-drift.log
+if [ "$STATUS" = "running" ] && [ -s /opt/openclaw/data/codex/auth.json ] && ! grep -q '^OPENAI_API_KEY=.\+' /opt/openclaw/.env 2>/dev/null; then
+    CODEX_PRIMARY=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.agents.defaults.model.primary // empty' 2>/dev/null || true)
+    CODEX_RUNTIME=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.agents.defaults.agentRuntime.id // empty' 2>/dev/null || true)
+    CODEX_PLUGIN_ENABLED=$(cat /opt/openclaw/data/openclaw/openclaw.json 2>/dev/null | jq -r '.plugins.entries.codex.enabled // empty' 2>/dev/null || true)
+
+    if [ "$CODEX_PRIMARY" = "openai-codex/gpt-5.5" ] || [ "$CODEX_PRIMARY" = "codex/gpt-5.5" ] || [ "$CODEX_RUNTIME" = "codex" ]; then
+        CODEX_PLUGIN_MISSING=false
+        if [ ! -f /opt/openclaw/data/openclaw/extensions/codex/dist/index.js ] || [ ! -d /opt/openclaw/data/openclaw/extensions/codex/node_modules/zod ] || [ ! -e /opt/openclaw/data/openclaw/extensions/codex/node_modules/openclaw ]; then
+            CODEX_PLUGIN_MISSING=true
+        fi
+
+        if [ "$CODEX_PLUGIN_MISSING" = true ]; then
+            docker exec openclaw-gateway sh -lc '
+set -eu
+
+install_codex_deps() {
+    cd /home/node/.openclaw/extensions/codex
+    node - <<'"'"'NODE'"'"'
+const fs = require("fs");
+const p = "package.json";
+const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+delete pkg.devDependencies;
+pkg.peerDependencies = pkg.peerDependencies || {};
+pkg.peerDependencies.openclaw = ">=2026.5.3-1";
+pkg.openclaw = pkg.openclaw || {};
+pkg.openclaw.compat = pkg.openclaw.compat || {};
+pkg.openclaw.compat.pluginApi = ">=2026.5.3-1";
+fs.writeFileSync(p, JSON.stringify(pkg, null, 2));
+NODE
+    npm install --omit=dev --no-audit --no-fund >/tmp/tardi-codex-npm-install.log 2>&1
+    mkdir -p node_modules
+    rm -rf node_modules/openclaw
+    ln -s /app node_modules/openclaw
+}
+
+if openclaw plugins install clawhub:@openclaw/codex >/tmp/tardi-codex-plugin-install.log 2>&1; then
+    install_codex_deps
+    exit 0
+fi
+
+if ! grep -q "requires plugin API" /tmp/tardi-codex-plugin-install.log 2>/dev/null; then
+    cat /tmp/tardi-codex-plugin-install.log 2>/dev/null || true
+    exit 1
+fi
+
+TMP=/tmp/tardi-openclaw-codex-plugin
+rm -rf "$TMP"
+mkdir -p "$TMP"
+cd "$TMP"
+npm pack @openclaw/codex@2026.5.3 >/tmp/tardi-codex-npm-pack.log 2>&1
+mkdir pkg
+tar -xzf openclaw-codex-2026.5.3.tgz -C pkg --strip-components=1
+node - <<'"'"'NODE'"'"'
+const fs = require("fs");
+const p = "pkg/package.json";
+const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+delete pkg.devDependencies;
+pkg.peerDependencies = pkg.peerDependencies || {};
+pkg.peerDependencies.openclaw = ">=2026.5.3-1";
+pkg.openclaw = pkg.openclaw || {};
+pkg.openclaw.compat = pkg.openclaw.compat || {};
+pkg.openclaw.compat.pluginApi = ">=2026.5.3-1";
+fs.writeFileSync(p, JSON.stringify(pkg, null, 2));
+NODE
+openclaw plugins install --force --dangerously-force-unsafe-install "$TMP/pkg" >/tmp/tardi-codex-plugin-install.log 2>&1
+install_codex_deps
+' >"$CODEX_PLUGIN_LOG" 2>&1 && CODEX_PLUGIN_CHANGED=true
+        fi
+
+        if [ "$CODEX_RUNTIME" != "codex" ] || [ "$CODEX_PLUGIN_ENABLED" != "true" ]; then
+            printf '%s' '{"agents":{"defaults":{"agentRuntime":{"id":"codex"}}},"plugins":{"entries":{"codex":{"enabled":true}}}}' \
+                | docker exec -i openclaw-gateway openclaw config patch --stdin >>"$CODEX_PLUGIN_LOG" 2>&1 && CODEX_PLUGIN_CHANGED=true
+        fi
+
+        if [ "$CODEX_PLUGIN_CHANGED" = true ]; then
+            docker restart openclaw-gateway >/dev/null 2>&1 || true
+            for i in $(seq 1 40); do
+                if curl -sf http://localhost:18789/health >/dev/null 2>&1; then
+                    STATUS="running"
+                    break
+                fi
+                sleep 3
+            done
+        fi
+    fi
+fi
+
 # Detect current running OpenClaw version.
 # For auto-updating instances the compose image may be :latest, so report the
 # runtime's semantic version to Tardi instead of the moving Docker tag.
@@ -207,6 +300,8 @@ if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
 		if [ ! -s /opt/openclaw/data/codex/auth.json ] || [ "$CODEX_AGENT_AUTH_PRESENT" != true ]; then
 			AGENT_ERROR="codex_reauth_required"
 		fi
+	elif echo "$RECENT_LOGS" | grep -qi "you've hit your usage limit\|codex.*usage limit"; then
+		AGENT_ERROR="codex_usage_limit_exceeded"
 	elif echo "$RECENT_LOGS" | grep -qi "key limit exceeded"; then
 		AGENT_ERROR="openrouter_credits_exhausted"
 	elif echo "$RECENT_LOGS" | grep -qi "invalid.*api.*key\|authentication.*failed"; then
