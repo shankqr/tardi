@@ -137,6 +137,7 @@ test.describe('Codex linking UI', () => {
 		}).first();
 		await card.scrollIntoViewIfNeeded();
 
+		await expect(page.getByText('Degraded')).toHaveCount(0);
 		await expect(card.getByText('ChatGPT needs to be re-linked')).toBeVisible();
 		await card.getByRole('button', { name: 'Relink Codex Account' }).click();
 		await expect(card.getByText('RELY-NK123')).toBeVisible({ timeout: 10_000 });

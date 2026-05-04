@@ -38,6 +38,10 @@
 			instance.openclaw_version !== instance.target_openclaw_version
 	);
 
+	const hasBlockingAgentError = $derived(
+		Boolean(instance?.agent_error && instance.agent_error !== 'codex_reauth_required')
+	);
+
 	const isProvisioning = $derived(
 		instance?.status === 'provisioning' ||
 		instance?.status === 'bootstrapping' ||
@@ -593,7 +597,7 @@
 										Applying Config
 									</span>
 								{:else if instance.agent_status === 'running'}
-									{#if instance.agent_error}
+									{#if hasBlockingAgentError}
 										<span class="inline-flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
 											<span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
 											Degraded
@@ -827,7 +831,7 @@
 						</div>
 					{/if}
 
-					{#if !isConfigSyncing && !isProvisioning && !activationCooloff && instance.agent_error}
+					{#if !isConfigSyncing && !isProvisioning && !activationCooloff && hasBlockingAgentError}
 						<div class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-3 text-sm text-red-800 dark:text-red-400">
 							{#if instance.agent_error === 'openrouter_credits_exhausted'}
 								<p class="font-medium">OpenRouter API credits exhausted</p>
