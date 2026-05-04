@@ -163,7 +163,7 @@ UPDATE_ERROR=$(cat /opt/openclaw/.update_error 2>/dev/null || echo "")
 AGENT_ERROR=""
 if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
     RECENT_LOGS=$(docker logs openclaw-gateway --tail 100 --since 10m 2>&1)
-    if echo "$RECENT_LOGS" | grep -qi "refresh token was already used\|please log out and sign in again\|codex.*login"; then
+    if echo "$RECENT_LOGS" | grep -qi "refresh token was already used\|please log out and sign in again\|missing bearer or basic authentication\|unexpected status 401 unauthorized.*codex/gpt\|codex.*login"; then
         AGENT_ERROR="codex_reauth_required"
     elif echo "$RECENT_LOGS" | grep -qi "key limit exceeded"; then
         AGENT_ERROR="openrouter_credits_exhausted"
