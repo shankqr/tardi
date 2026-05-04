@@ -193,7 +193,7 @@ if [ "$STATUS" = "running" ] && [ -s /opt/openclaw/data/codex/auth.json ] && ! g
 
     if [ "$CODEX_PRIMARY" = "openai-codex/gpt-5.5" ] || [ "$CODEX_PRIMARY" = "codex/gpt-5.5" ] || [ "$CODEX_RUNTIME" = "codex" ]; then
         CODEX_PLUGIN_MISSING=false
-        if [ ! -f /opt/openclaw/data/openclaw/extensions/codex/dist/index.js ] || [ ! -d /opt/openclaw/data/openclaw/extensions/codex/node_modules/zod ] || [ ! -e /opt/openclaw/data/openclaw/extensions/codex/node_modules/openclaw ]; then
+        if [ ! -f /opt/openclaw/data/openclaw/extensions/codex/dist/index.js ] || [ ! -d /opt/openclaw/data/openclaw/extensions/codex/node_modules/zod ] || { [ ! -e /opt/openclaw/data/openclaw/extensions/codex/node_modules/openclaw ] && [ ! -L /opt/openclaw/data/openclaw/extensions/codex/node_modules/openclaw ]; }; then
             CODEX_PLUGIN_MISSING=true
         fi
 
