@@ -89,6 +89,21 @@ func TestHeartbeatScript_ContainsChannelAndCodexDriftGuards(t *testing.T) {
 	}
 }
 
+func TestHeartbeatScript_Syntax(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+
+	path := t.TempDir() + "/heartbeat.sh"
+	if err := os.WriteFile(path, []byte(HeartbeatScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("bash", "-n", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("HeartbeatScript failed bash -n: %v\n%s", err, out)
+	}
+}
+
 func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T) {
 	required := []string{
 		"desktop.install",

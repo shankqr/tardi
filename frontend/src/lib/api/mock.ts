@@ -34,7 +34,7 @@ export const mockDashboardState: DashboardState = {
 			dashboard_url: 'https://abcd1234.tardi.ai',
 			openclaw_auth_token: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
 			openclaw_version: '2026.5.2',
-			target_openclaw_version: '2026.5.2',
+			target_openclaw_version: 'latest',
 			preview_url: 'https://abcd1234-b.tardi.ai',
 			created_at: '2026-01-15T10:30:00Z'
 		}

@@ -180,9 +180,17 @@ if [ "$CODEX_AUTH_SYNC_CHANGED" = true ] && [ "$STATUS" = "running" ]; then
     done
 fi
 
-# Detect current running OpenClaw version (image tag)
+# Detect current running OpenClaw version.
+# For auto-updating instances the compose image may be :latest, so report the
+# runtime's semantic version to Tardi instead of the moving Docker tag.
 CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' openclaw-gateway 2>/dev/null)
+CURRENT_IMAGE_ID=$(docker inspect --format='{{.Image}}' openclaw-gateway 2>/dev/null)
 CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://' | tr -d '[:space:]')
+RUNTIME_VERSION=""
+if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
+	RUNTIME_VERSION=$(timeout 10s docker exec openclaw-gateway openclaw --version 2>/dev/null | grep -Eo '[0-9]{4}\.[0-9]+\.[0-9]+' | head -1 || true)
+fi
+[ -n "$RUNTIME_VERSION" ] && CURRENT_TAG="$RUNTIME_VERSION"
 [ -z "$CURRENT_TAG" ] && CURRENT_TAG="unknown"
 
 # Read update status if mid-update
@@ -758,22 +766,62 @@ fi
 
 # --- OpenClaw version update ---
 TARGET_VERSION=$(echo "$RESPONSE" | jq -r '.target_openclaw_version // empty' 2>/dev/null)
+TARGET_IMAGE_REF=""
+UPDATE_NEEDED=false
 
-if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
-   && [ "$UPDATE_STATUS" != "pulling" ] && [ "$UPDATE_STATUS" != "updating" ]; then
+if [ -n "$TARGET_VERSION" ] && [ "$UPDATE_STATUS" != "pulling" ] && [ "$UPDATE_STATUS" != "updating" ]; then
+    if [ "$TARGET_VERSION" = "latest" ]; then
+        TARGET_IMAGE_REF="ghcr.io/openclaw/openclaw:latest"
+        PREVIOUS_IMAGE_REF=$(grep -E '^[[:space:]]*image:[[:space:]]*ghcr.io/openclaw/openclaw:' /opt/openclaw/docker-compose.yml 2>/dev/null | head -1 | awk '{print $2}')
+        [ -n "$PREVIOUS_IMAGE_REF" ] || PREVIOUS_IMAGE_REF="$CURRENT_IMAGE"
 
+        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ${TARGET_IMAGE_REF}|" \
+            /opt/openclaw/docker-compose.yml
+
+        echo "checking" > /opt/openclaw/.update_status
+        rm -f /opt/openclaw/.update_error
+
+        # Pull every heartbeat when tracking :latest. Docker is no-op when the
+        # digest has not changed; comparing image IDs prevents unnecessary
+        # restarts while still picking up newly published images quickly.
+        if ! docker compose -f /opt/openclaw/docker-compose.yml pull openclaw-gateway 2>/tmp/openclaw-pull.log; then
+            echo "failed" > /opt/openclaw/.update_status
+            echo "pull failed: $(tail -1 /tmp/openclaw-pull.log)" > /opt/openclaw/.update_error
+            if [ "$PREVIOUS_IMAGE_REF" != "$TARGET_IMAGE_REF" ]; then
+                sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ${PREVIOUS_IMAGE_REF}|" \
+                    /opt/openclaw/docker-compose.yml
+            fi
+            exit 0
+        fi
+
+        TARGET_IMAGE_ID=$(docker image inspect "$TARGET_IMAGE_REF" --format '{{.Id}}' 2>/dev/null || true)
+        if [ -n "$TARGET_IMAGE_ID" ] && [ "$TARGET_IMAGE_ID" != "$CURRENT_IMAGE_ID" ]; then
+            UPDATE_NEEDED=true
+        else
+            echo "completed" > /opt/openclaw/.update_status
+            rm -f /opt/openclaw/.update_error
+        fi
+    elif [ "$TARGET_VERSION" != "$CURRENT_TAG" ]; then
+        TARGET_IMAGE_REF="ghcr.io/openclaw/openclaw:${TARGET_VERSION}"
+        PREVIOUS_IMAGE_REF=$(grep -E '^[[:space:]]*image:[[:space:]]*ghcr.io/openclaw/openclaw:' /opt/openclaw/docker-compose.yml 2>/dev/null | head -1 | awk '{print $2}')
+        [ -n "$PREVIOUS_IMAGE_REF" ] || PREVIOUS_IMAGE_REF="$CURRENT_IMAGE"
+        UPDATE_NEEDED=true
+    fi
+fi
+
+if [ "$UPDATE_NEEDED" = true ]; then
     echo "pulling" > /opt/openclaw/.update_status
     rm -f /opt/openclaw/.update_error
 
-    # Update docker-compose.yml to use the new tag
-    sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ghcr.io/openclaw/openclaw:${TARGET_VERSION}|" \
+    # Update docker-compose.yml to use the target image reference.
+    sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ${TARGET_IMAGE_REF}|" \
         /opt/openclaw/docker-compose.yml
 
     # Pull the new image (rollback on failure)
     if ! docker compose -f /opt/openclaw/docker-compose.yml pull openclaw-gateway 2>/tmp/openclaw-pull.log; then
         echo "failed" > /opt/openclaw/.update_status
         echo "pull failed: $(tail -1 /tmp/openclaw-pull.log)" > /opt/openclaw/.update_error
-        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ghcr.io/openclaw/openclaw:${CURRENT_TAG}|" \
+        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ${PREVIOUS_IMAGE_REF}|" \
             /opt/openclaw/docker-compose.yml
         exit 0
     fi
@@ -788,7 +836,7 @@ if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
     if ! docker compose -f /opt/openclaw/docker-compose.yml up -d openclaw-gateway 2>/tmp/openclaw-update.log; then
         echo "failed" > /opt/openclaw/.update_status
         echo "up failed: $(tail -1 /tmp/openclaw-update.log)" > /opt/openclaw/.update_error
-        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ghcr.io/openclaw/openclaw:${CURRENT_TAG}|" \
+        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ${PREVIOUS_IMAGE_REF}|" \
             /opt/openclaw/docker-compose.yml
         docker compose -f /opt/openclaw/docker-compose.yml up -d openclaw-gateway 2>/dev/null
         exit 0
@@ -818,7 +866,7 @@ if [ -n "$TARGET_VERSION" ] && [ "$TARGET_VERSION" != "$CURRENT_TAG" ] \
         # ROLLBACK: revert to previous version
         echo "failed" > /opt/openclaw/.update_status
         echo "health check failed after update" > /opt/openclaw/.update_error
-        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ghcr.io/openclaw/openclaw:${CURRENT_TAG}|" \
+        sed -i "s|image: ghcr.io/openclaw/openclaw:.*|image: ${PREVIOUS_IMAGE_REF}|" \
             /opt/openclaw/docker-compose.yml
         docker compose -f /opt/openclaw/docker-compose.yml up -d openclaw-gateway 2>/dev/null
     fi

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -66,12 +67,9 @@ func AdminSetGlobalVersionHandler(deps Dependencies) http.HandlerFunc {
 			WriteError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 			return
 		}
+		body.Version = strings.TrimSpace(body.Version)
 		if body.Version == "" {
 			WriteError(w, http.StatusBadRequest, "bad_request", "version is required")
-			return
-		}
-		if body.Version == "latest" {
-			WriteError(w, http.StatusBadRequest, "bad_request", "cannot set version to 'latest' — use an explicit Docker image tag (e.g. 2026.5.2)")
 			return
 		}
 

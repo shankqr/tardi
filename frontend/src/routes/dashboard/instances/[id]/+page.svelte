@@ -27,7 +27,11 @@
 	);
 
 	const displayOpenClawVersion = $derived(
-		instance?.target_openclaw_version || instance?.openclaw_version || null
+		instance?.openclaw_version || instance?.target_openclaw_version || null
+	);
+
+	const isOpenClawAutoUpdateEnabled = $derived(
+		instance?.framework === 'openclaw' && instance?.target_openclaw_version === 'latest'
 	);
 
 	const isOpenClawVersionPending = $derived(
@@ -35,6 +39,7 @@
 			instance.framework === 'openclaw' &&
 			!!instance.openclaw_version &&
 			!!instance.target_openclaw_version &&
+			instance.target_openclaw_version !== 'latest' &&
 			instance.openclaw_version !== instance.target_openclaw_version
 	);
 
@@ -642,6 +647,8 @@
 										<div class="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
 											Updating from <span class="font-mono">{instance.openclaw_version}</span>
 										</div>
+									{:else if isOpenClawAutoUpdateEnabled}
+										<div class="mt-0.5 text-xs text-blue-600 dark:text-blue-400">Auto-updates enabled</div>
 									{/if}
 								</dd>
 							</div>
