@@ -121,6 +121,7 @@ func TestHermesHeartbeatScript_UsesDockerStackAndLatestUpdates(t *testing.T) {
 		"container_name: hermes-agent",
 		"network_mode: host",
 		"nousresearch/hermes-agent:latest",
+		`default: "${NEW_MODEL}"`,
 		"docker compose -f /opt/hermes/docker-compose.yml pull hermes-agent",
 		"docker compose -f /opt/hermes/docker-compose.yml up -d hermes-agent",
 		`[ "$TARGET_VERSION" = "latest" ]`,

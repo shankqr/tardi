@@ -361,7 +361,7 @@ if [ -n "$API_CONFIG_VERSION" ] && [ "$API_CONFIG_VERSION" != "$LOCAL_CONFIG_VER
             cat > /opt/hermes/data/config.yaml <<CFGEOF
 model:
   provider: "${NEW_PROVIDER}"
-  model: "${NEW_MODEL}"
+  default: "${NEW_MODEL}"
 terminal:
   backend: docker
 CFGEOF

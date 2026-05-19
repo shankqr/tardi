@@ -332,7 +332,7 @@ func buildHermesConfigSyncScript() string {
 		"    cat > /opt/hermes/data/config.yaml <<CFGEOF\n" +
 		"model:\n" +
 		"  provider: \"${NEW_PROVIDER}\"\n" +
-		"  model: \"${NEW_MODEL}\"\n" +
+		"  default: \"${NEW_MODEL}\"\n" +
 		"terminal:\n" +
 		"  backend: docker\n" +
 		"CFGEOF\n" +

@@ -141,7 +141,7 @@ func TestRenderHermesCloudInitUsesDockerStack(t *testing.T) {
 		"TERMINAL_ENV=docker",
 		"hermes-stack.service",
 		"docker compose up -d --remove-orphans",
-		"model:\n  provider: \"openrouter\"\n  model: \"anthropic/claude-sonnet-4\"",
+		"model:\n  provider: \"openrouter\"\n  default: \"anthropic/claude-sonnet-4\"",
 	}
 	for _, want := range required {
 		if !strings.Contains(got, want) {
