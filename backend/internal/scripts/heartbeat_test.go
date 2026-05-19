@@ -113,6 +113,52 @@ func TestHeartbeatScript_Syntax(t *testing.T) {
 	}
 }
 
+func TestHermesHeartbeatScript_UsesDockerStackAndLatestUpdates(t *testing.T) {
+	required := []string{
+		"source /opt/hermes/.env",
+		"CURRENT_SCRIPT=$(cat /opt/hermes/heartbeat.sh",
+		"exec /bin/bash /opt/hermes/heartbeat.sh",
+		"container_name: hermes-agent",
+		"network_mode: host",
+		"nousresearch/hermes-agent:latest",
+		"docker compose -f /opt/hermes/docker-compose.yml pull hermes-agent",
+		"docker compose -f /opt/hermes/docker-compose.yml up -d hermes-agent",
+		`[ "$TARGET_VERSION" = "latest" ]`,
+		"hermes-stack.service",
+	}
+	for _, want := range required {
+		if !strings.Contains(HermesHeartbeatScript, want) {
+			t.Errorf("HermesHeartbeatScript should contain %q", want)
+		}
+	}
+
+	forbidden := []string{
+		"raw.githubusercontent.com/NousResearch/hermes-agent",
+		"systemctl restart hermes-agent",
+		"su - hermes -c",
+	}
+	for _, bad := range forbidden {
+		if strings.Contains(HermesHeartbeatScript, bad) {
+			t.Errorf("HermesHeartbeatScript should not contain native install/update path %q", bad)
+		}
+	}
+}
+
+func TestHermesHeartbeatScript_Syntax(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+
+	path := t.TempDir() + "/heartbeat-hermes.sh"
+	if err := os.WriteFile(path, []byte(HermesHeartbeatScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("bash", "-n", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("HermesHeartbeatScript failed bash -n: %v\n%s", err, out)
+	}
+}
+
 func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T) {
 	required := []string{
 		"desktop.install",

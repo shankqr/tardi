@@ -144,12 +144,9 @@ func AdminSetHermesVersionHandler(deps Dependencies) http.HandlerFunc {
 			WriteError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 			return
 		}
+		body.Version = strings.TrimSpace(body.Version)
 		if body.Version == "" {
 			WriteError(w, http.StatusBadRequest, "bad_request", "version is required")
-			return
-		}
-		if body.Version == "latest" {
-			WriteError(w, http.StatusBadRequest, "bad_request", "cannot set version to 'latest' — use an explicit version tag (e.g. v2026.4.8)")
 			return
 		}
 

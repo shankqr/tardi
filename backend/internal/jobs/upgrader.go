@@ -167,7 +167,9 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
 		return
 	}
-	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey, providerName, modelID string
+	providerName := fallbackDefaultProvider
+	modelID := fallbackDefaultModelID
+	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey string
 	var configVersion int
 	if agentCfg != nil {
 		configVersion = agentCfg.Version
@@ -180,10 +182,10 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			openAIAPIKey = v
 		}
-		if v, ok := agentCfg.Config["provider"].(string); ok {
+		if v, ok := agentCfg.Config["provider"].(string); ok && v != "" {
 			providerName = v
 		}
-		if v, ok := agentCfg.Config["model"].(string); ok {
+		if v, ok := agentCfg.Config["model"].(string); ok && v != "" {
 			modelID = v
 		}
 	}
@@ -206,7 +208,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 			APIURL:             u.apiURL,
 			InstanceID:         inst.ID.String(),
 			APIServerKey:       frameworkAuthToken,
-			HermesImageTag:     "latest",
+			HermesImageTag:     resolveHermesVersion(ctx, u.pool),
 			Provider:           providerName,
 			Model:              modelID,
 			OpenRouterAPIKey:   openRouterAPIKey,
@@ -340,7 +342,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 
 	// Step 9: Mark instance active (plan tier already updated by webhook)
 	_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusActive)
-	_ = db.UpdateInstanceOpenClawVersion(ctx, u.pool, inst.ID, resolveImageTag(ctx, u.pool, u.openClawImageTag), nil, nil)
+	_ = db.UpdateInstanceOpenClawVersion(ctx, u.pool, inst.ID, resolveFrameworkVersion(ctx, u.pool, framework, u.openClawImageTag), nil, nil)
 
 	u.logger.Info("upgrader: instance upgraded successfully",
 		"instance_id", inst.ID,

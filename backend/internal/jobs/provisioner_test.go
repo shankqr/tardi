@@ -114,3 +114,50 @@ func TestRenderCloudInitIncludesHostAdminHelper(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderHermesCloudInitUsesDockerStack(t *testing.T) {
+	got, err := RenderHermesCloudInit(HermesCloudInitData{
+		AgentToken:     "agent-token",
+		APIURL:         "https://api.example.com",
+		InstanceID:     "instance-id",
+		APIServerKey:   "api-server-key",
+		HermesImageTag: "latest",
+		Provider:       "openrouter",
+		Model:          "anthropic/claude-sonnet-4",
+	})
+	if err != nil {
+		t.Fatalf("RenderHermesCloudInit() error = %v", err)
+	}
+
+	required := []string{
+		"image: nousresearch/hermes-agent:latest",
+		"container_name: hermes-agent",
+		"network_mode: host",
+		"./data:/opt/data:rw",
+		"/var/run/docker.sock:/var/run/docker.sock",
+		"command: gateway run",
+		"HERMES_DASHBOARD=1",
+		"HERMES_DASHBOARD_HOST=127.0.0.1",
+		"TERMINAL_ENV=docker",
+		"hermes-stack.service",
+		"docker compose up -d --remove-orphans",
+		"model:\n  provider: \"openrouter\"\n  model: \"anthropic/claude-sonnet-4\"",
+	}
+	for _, want := range required {
+		if !strings.Contains(got, want) {
+			t.Errorf("rendered Hermes cloud-init missing %q", want)
+		}
+	}
+
+	forbidden := []string{
+		"raw.githubusercontent.com/NousResearch/hermes-agent",
+		"hermes-agent.service",
+		"hermes-dashboard.service",
+		"hermes config set",
+	}
+	for _, bad := range forbidden {
+		if strings.Contains(got, bad) {
+			t.Errorf("rendered Hermes cloud-init should not contain native install path %q", bad)
+		}
+	}
+}

@@ -1006,15 +1006,19 @@ func (p *Provisioner) stepInstallAgent(ctx context.Context, job *models.Provisio
 	}
 }
 
-// waitForCloudInitCompleted polls /opt/openclaw/.init-status via SSH
-// until it contains the "COMPLETED" marker written by cloud-init's
-// final log_status call, or until a 3-minute budget elapses.
+// waitForCloudInitCompleted polls the framework-specific init-status file via
+// SSH until it contains the "COMPLETED" marker written by cloud-init's final
+// log_status call, or until a 3-minute budget elapses.
 func (p *Provisioner) waitForCloudInitCompleted(ctx context.Context, inst *models.VpsInstance) error {
 	if inst.IPv4 == nil || *inst.IPv4 == "" {
 		return fmt.Errorf("no IPv4")
 	}
 	if inst.RootPassword == nil {
 		return fmt.Errorf("no root password")
+	}
+	statusPath := "/opt/openclaw/.init-status"
+	if inst.Framework == models.FrameworkHermes {
+		statusPath = "/opt/hermes/.init-status"
 	}
 	deadline := time.Now().Add(3 * time.Minute)
 	for time.Now().Before(deadline) {
@@ -1024,7 +1028,7 @@ func (p *Provisioner) waitForCloudInitCompleted(ctx context.Context, inst *model
 		case <-time.After(5 * time.Second):
 		}
 		out, err := sshexec.RunCommand(*inst.IPv4, p.sshPrivateKey, *inst.RootPassword,
-			"grep -q COMPLETED /opt/openclaw/.init-status && echo DONE || echo PENDING",
+			fmt.Sprintf("grep -q COMPLETED %s && echo DONE || echo PENDING", statusPath),
 			10*time.Second)
 		if err != nil {
 			p.logger.Debug("provisioner: init-status probe failed, retrying",
@@ -1048,8 +1052,11 @@ func (p *Provisioner) stepActivate(ctx context.Context, job *models.Provisioning
 	// shows "Setting up..." until the first heartbeat fires (up to 5 min later).
 	running := "running"
 	_ = db.UpdateInstanceHeartbeat(ctx, p.pool, job.VpsInstanceID, &running, nil)
-	// Record the initial OpenClaw version (use resolved tag, not static env var)
-	_ = db.UpdateInstanceOpenClawVersion(ctx, p.pool, job.VpsInstanceID, resolveImageTag(ctx, p.pool, p.openClawImageTag), nil, nil)
+	inst, err := GetInstanceInternal(ctx, p.pool, job.VpsInstanceID)
+	if err != nil {
+		return fmt.Errorf("get instance for version: %w", err)
+	}
+	_ = db.UpdateInstanceOpenClawVersion(ctx, p.pool, job.VpsInstanceID, resolveFrameworkVersion(ctx, p.pool, inst.Framework, p.openClawImageTag), nil, nil)
 	return nil
 }
 

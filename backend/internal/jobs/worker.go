@@ -9,6 +9,7 @@ import (
 
 	"github.com/shanq/tardi/internal/db"
 	"github.com/shanq/tardi/internal/dns"
+	"github.com/shanq/tardi/internal/models"
 	"github.com/shanq/tardi/internal/provider"
 )
 
@@ -72,16 +73,22 @@ func resolveImageTag(ctx context.Context, pool *pgxpool.Pool, fallback string) s
 	return v
 }
 
-// resolveHermesVersion reads the pinned Hermes version from the database.
-// Falls back to v0.9.0 (v2026.4.13) when no version is pinned — the first
-// Hermes release with the built-in web dashboard that Tardi exposes via the
-// dashboard-shim auth gate.
+// resolveHermesVersion reads the target Hermes Docker image tag from the database.
+// "latest" is intentional: Hermes VPSes track the official Docker image and
+// heartbeat only recreates the container when the pulled image digest changes.
 func resolveHermesVersion(ctx context.Context, pool *pgxpool.Pool) string {
 	v, err := db.GetGlobalHermesVersion(ctx, pool)
-	if err != nil || v == "" || v == "latest" {
-		return "v2026.4.13"
+	if err != nil || v == "" {
+		return "latest"
 	}
 	return v
+}
+
+func resolveFrameworkVersion(ctx context.Context, pool *pgxpool.Pool, framework models.AgentFramework, openClawImageTag string) string {
+	if framework == models.FrameworkHermes {
+		return resolveHermesVersion(ctx, pool)
+	}
+	return resolveImageTag(ctx, pool, openClawImageTag)
 }
 
 func (w *Worker) poll(ctx context.Context) {

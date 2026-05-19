@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	resumeTimeout     = 20 * time.Minute
+	resumeTimeout      = 20 * time.Minute
 	serverPollInterval = 5 * time.Second
 )
 
@@ -127,6 +127,8 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusError)
 		return
 	}
+	providerName := fallbackDefaultProvider
+	modelID := fallbackDefaultModelID
 	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey string
 	if agentCfg != nil {
 		if v, ok := agentCfg.Config["openrouter_api_key"].(string); ok {
@@ -137,6 +139,12 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 		}
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			openAIAPIKey = v
+		}
+		if v, ok := agentCfg.Config["provider"].(string); ok && v != "" {
+			providerName = v
+		}
+		if v, ok := agentCfg.Config["model"].(string); ok && v != "" {
+			modelID = v
 		}
 	}
 
@@ -153,7 +161,9 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 			APIURL:             r.apiURL,
 			InstanceID:         inst.ID.String(),
 			APIServerKey:       frameworkAuthToken,
-			HermesImageTag:     "latest",
+			HermesImageTag:     resolveHermesVersion(ctx, r.pool),
+			Provider:           providerName,
+			Model:              modelID,
 			OpenRouterAPIKey:   openRouterAPIKey,
 			AnthropicAPIKey:    anthropicAPIKey,
 			OpenAIAPIKey:       openAIAPIKey,
@@ -242,8 +252,7 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 
 	// Mark instance active
 	_ = db.UpdateInstanceStatus(ctx, r.pool, inst.ID, models.VpsStatusActive)
-	// Record the initial OpenClaw version (use resolved tag, not static env var)
-	_ = db.UpdateInstanceOpenClawVersion(ctx, r.pool, inst.ID, resolveImageTag(ctx, r.pool, r.openClawImageTag), nil, nil)
+	_ = db.UpdateInstanceOpenClawVersion(ctx, r.pool, inst.ID, resolveFrameworkVersion(ctx, r.pool, framework, r.openClawImageTag), nil, nil)
 
 	r.logger.Info("resumer: instance resumed successfully",
 		"instance_id", inst.ID,

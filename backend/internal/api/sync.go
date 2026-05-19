@@ -100,10 +100,10 @@ func openclawRPC(ctx context.Context, ipv4, authToken, method string, params any
 	}
 
 	var connectResp struct {
-		Type    string          `json:"type"`
-		ID      string          `json:"id"`
-		OK      bool            `json:"ok"`
-		Error   json.RawMessage `json:"error"`
+		Type  string          `json:"type"`
+		ID    string          `json:"id"`
+		OK    bool            `json:"ok"`
+		Error json.RawMessage `json:"error"`
 	}
 	if err := json.Unmarshal(msg, &connectResp); err != nil {
 		return nil, fmt.Errorf("parse connect response: %w", err)
@@ -298,6 +298,9 @@ func buildHermesConfigSyncScript() string {
 		"# Update heartbeat script\n" +
 		"curl -sf -H \"Authorization: Bearer ${AGENT_TOKEN}\" \"${API_URL}/api/agent/heartbeat-script\" -o /opt/hermes/heartbeat.sh\n" +
 		"chmod +x /opt/hermes/heartbeat.sh\n" +
+		"if [ ! -f /opt/hermes/docker-compose.yml ]; then\n" +
+		"    bash /opt/hermes/heartbeat.sh >/tmp/hermes-heartbeat-migrate.log 2>&1 || true\n" +
+		"fi\n" +
 		"\n" +
 		"CONFIG=$(curl -sf \"${API_URL}/api/agent/config\" -H \"Authorization: Bearer ${AGENT_TOKEN}\")\n" +
 		"if [ $? -ne 0 ] || [ -z \"$CONFIG\" ]; then\n" +
@@ -312,6 +315,7 @@ func buildHermesConfigSyncScript() string {
 		"NEW_MODEL=$(echo \"$CONFIG\" | jq -r '.config.model // empty')\n" +
 		"REMOTE_VERSION=$(echo \"$CONFIG\" | jq -r '.version // 0')\n" +
 		"\n" +
+		"mkdir -p /opt/hermes/data\n" +
 		"cp /opt/hermes/.env /opt/hermes/.env.bak\n" +
 		"grep -v -E '_API_KEY=' /opt/hermes/.env > /opt/hermes/.env.tmp\n" +
 		"[ -n \"$NEW_OR_KEY\" ] && echo \"OPENROUTER_API_KEY=$NEW_OR_KEY\" >> /opt/hermes/.env.tmp\n" +
@@ -319,20 +323,21 @@ func buildHermesConfigSyncScript() string {
 		"[ -n \"$NEW_OA_KEY\" ] && echo \"OPENAI_API_KEY=$NEW_OA_KEY\" >> /opt/hermes/.env.tmp\n" +
 		"mv /opt/hermes/.env.tmp /opt/hermes/.env\n" +
 		"chmod 600 /opt/hermes/.env\n" +
+		"cp /opt/hermes/.env /opt/hermes/data/.env\n" +
+		"chown 1000:1000 /opt/hermes/data/.env 2>/dev/null || true\n" +
+		"chmod 600 /opt/hermes/data/.env\n" +
 		"\n" +
 		"# Update config.yaml with new model\n" +
 		"if [ -n \"$NEW_MODEL\" ]; then\n" +
 		"    cat > /opt/hermes/data/config.yaml <<CFGEOF\n" +
 		"model:\n" +
-		"  default: \"${NEW_PROVIDER}/${NEW_MODEL}\"\n" +
+		"  provider: \"${NEW_PROVIDER}\"\n" +
+		"  model: \"${NEW_MODEL}\"\n" +
 		"terminal:\n" +
 		"  backend: docker\n" +
-		"api_server:\n" +
-		"  enabled: true\n" +
-		"  host: \"0.0.0.0\"\n" +
-		"  port: 8642\n" +
 		"CFGEOF\n" +
 		"    chown 1000:1000 /opt/hermes/data/config.yaml\n" +
+		"    chmod 640 /opt/hermes/data/config.yaml\n" +
 		"fi\n" +
 		"\n" +
 		"# Update SOUL.md if provided\n" +
@@ -348,8 +353,8 @@ func buildHermesConfigSyncScript() string {
 		"fi\n" +
 		"rm -f /opt/hermes/.env.bak\n" +
 		"\n" +
-		"# Restart Hermes systemd service to pick up config changes\n" +
-		"systemctl restart hermes-agent\n" +
+		"# Recreate Hermes container to pick up env/config changes\n" +
+		"docker compose -f /opt/hermes/docker-compose.yml up -d --force-recreate hermes-agent\n" +
 		"HEALTHY=false\n" +
 		"for i in $(seq 1 24); do\n" +
 		"    sleep 5\n" +
@@ -360,7 +365,14 @@ func buildHermesConfigSyncScript() string {
 		"done\n" +
 		"rm -f /opt/hermes/.env.bak\n" +
 		"\n" +
-		"echo \"$REMOTE_VERSION\" > /opt/hermes/.config_version\n"
+		"if [ \"$HEALTHY\" = true ]; then\n" +
+		"    echo \"$REMOTE_VERSION\" > /opt/hermes/.config_version\n" +
+		"    bash /opt/hermes/heartbeat.sh >/dev/null 2>&1 &\n" +
+		"    echo \"config sync complete (version=$REMOTE_VERSION)\"\n" +
+		"else\n" +
+		"    echo \"ERROR: Hermes container did not become healthy after recreate\"\n" +
+		"    exit 1\n" +
+		"fi\n"
 }
 
 // openclawModelID prefixes the bare catalog id with "openrouter/" when the
@@ -626,4 +638,3 @@ func SyncStatusHandler(deps Dependencies) http.HandlerFunc {
 		})
 	}
 }
-

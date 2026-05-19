@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,7 +24,7 @@ const scriptPusherLockID int64 = 0x7461726469_6862 // "tardi_hb"
 // ScriptPusher pushes updated heartbeat scripts to all active VPSes on deploy.
 // It runs once on startup: computes a hash of the current heartbeat and helper
 // scripts, compares against the last-deployed hash in platform_settings, and if
-// changed, SSHes into all active VPSes to overwrite /opt/openclaw/heartbeat.sh.
+// changed, SSHes into all active VPSes to overwrite the framework heartbeat.
 type ScriptPusher struct {
 	pool          *pgxpool.Pool
 	logger        *slog.Logger
@@ -49,7 +50,7 @@ func (sp *ScriptPusher) Start(ctx context.Context) {
 }
 
 func (sp *ScriptPusher) push(ctx context.Context) {
-	currentHashInput := scripts.HeartbeatScript + "\n" + scripts.HostAdminInstallScript
+	currentHashInput := scripts.HeartbeatScript + "\n" + scripts.HermesHeartbeatScript + "\n" + scripts.HostAdminInstallScript
 	currentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(currentHashInput)))
 
 	// Acquire a dedicated connection so the advisory lock stays held.
@@ -116,12 +117,9 @@ func (sp *ScriptPusher) push(ctx context.Context) {
 }
 
 func (sp *ScriptPusher) pushToInstances(ctx context.Context, instances []models.VpsInstance) {
-	cmd := "cat > /opt/openclaw/heartbeat.sh <<'HBEOF'\n" + scripts.HeartbeatScript + "\nHBEOF\nchmod +x /opt/openclaw/heartbeat.sh"
-
-	// If SSH public key is configured, also inject it into authorized_keys
-	// and disable password auth. This migrates existing VPSes to key-based auth.
+	sshKeyDriftGuard := ""
 	if sp.sshPublicKey != "" {
-		cmd += fmt.Sprintf(`
+		sshKeyDriftGuard = fmt.Sprintf(`
 mkdir -p /root/.ssh && chmod 700 /root/.ssh
 grep -qF %q /root/.ssh/authorized_keys 2>/dev/null || echo %q >> /root/.ssh/authorized_keys
 chmod 600 /root/.ssh/authorized_keys
@@ -133,13 +131,6 @@ if ! grep -q 'PasswordAuthentication no' /etc/ssh/sshd_config.d/60-tardi.conf 2>
     systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null || true
 fi`, sp.sshPublicKey, sp.sshPublicKey)
 	}
-
-	cmd += `
-if command -v systemctl >/dev/null 2>&1; then
-    systemctl start openclaw-heartbeat.service >/dev/null 2>&1 || true
-else
-    nohup /bin/bash /opt/openclaw/heartbeat.sh >/tmp/tardi-heartbeat-refresh.log 2>&1 &
-fi`
 
 	sem := make(chan struct{}, 5) // max 5 concurrent SSH connections
 	var wg sync.WaitGroup
@@ -155,6 +146,25 @@ fi`
 			case <-ctx.Done():
 				return
 			}
+
+			script := scripts.HeartbeatScript
+			path := "/opt/openclaw/heartbeat.sh"
+			service := "openclaw-heartbeat.service"
+			if inst.Framework == models.FrameworkHermes {
+				script = scripts.HermesHeartbeatScript
+				path = "/opt/hermes/heartbeat.sh"
+				service = "hermes-heartbeat.service"
+			}
+
+			cmd := fmt.Sprintf("mkdir -p %q\ncat > %q <<'HBEOF'\n%s\nHBEOF\nchmod +x %q",
+				strings.TrimSuffix(path, "/heartbeat.sh"), path, script, path)
+			cmd += sshKeyDriftGuard
+			cmd += fmt.Sprintf(`
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl start %s >/dev/null 2>&1 || true
+else
+    nohup /bin/bash %s >/tmp/tardi-heartbeat-refresh.log 2>&1 &
+fi`, service, path)
 
 			_, err := sshexec.RunCommand(*inst.IPv4, sp.sshPrivateKey, *inst.RootPassword, cmd, 30*time.Second)
 			if err != nil {

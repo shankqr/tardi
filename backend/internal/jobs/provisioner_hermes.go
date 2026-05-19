@@ -14,7 +14,7 @@ type HermesCloudInitData struct {
 	AnthropicAPIKey    string // Optional direct Anthropic access
 	OpenAIAPIKey       string // Optional direct OpenAI access
 	APIServerKey       string // Hermes HTTP API auth token (stored in openclaw_auth_token column)
-	HermesImageTag     string // Version tag for install script (e.g. "v2026.4.8" or "main")
+	HermesImageTag     string // Docker image tag (e.g. "latest" or "v2026.4.13")
 	Provider           string // AI provider: openrouter, anthropic, openai
 	Model              string // Model ID for the provider
 	ConfigVersion      int    // Initial config version to prevent redundant first sync
@@ -25,10 +25,9 @@ type HermesCloudInitData struct {
 	BackendEgressCIDRs string // Comma-separated CIDRs for backend egress IPs
 }
 
-// hermesCloudInitTemplate installs Hermes natively via the official install
-// script (Python 3.11+ / uv / Node.js 22), runs it as a systemd service with
-// "hermes gateway" for the HTTP API, and uses Docker only for Hermes's terminal
-// backend (tool execution sandboxing).
+// hermesCloudInitTemplate bootstraps Hermes in the same VPS architecture as
+// OpenClaw: Docker Compose, host networking, a persistent data volume, Caddy on
+// port 80, and a heartbeat timer that owns config drift and image updates.
 var hermesCloudInitTemplate = template.Must(template.New("hermes-cloudinit").Parse(`#!/bin/bash
 set -euo pipefail
 exec > >(tee -a /var/log/hermes-init.log) 2>&1
@@ -39,7 +38,7 @@ log_status() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $1" | tee -a "$STATUS_FILE";
 
 log_status "STARTED"
 
-# --- Swap (prevents OOM on small instances) ---
+# --- Swap (prevents OOM on small instances during image pull) ---
 if [ ! -f /swapfile ]; then
     fallocate -l 2G /swapfile
     chmod 600 /swapfile
@@ -56,13 +55,13 @@ for i in 1 2 3; do
     log_status "APT_UPDATE_RETRY_$i"
     sleep 5
 done
-apt-get install -y -qq ca-certificates curl jq ufw git
+apt-get install -y -qq ca-certificates curl jq ufw
 
 # --- Firewall ---
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 80/tcp
-# Port 8642: Hermes API server — only allow from Cloudflare IPs and backend egress
+# Port 8642: Hermes API server. Allow Cloudflare and backend egress only.
 CF_IPS=$(curl -sf https://www.cloudflare.com/ips-v4 2>/dev/null || echo "")
 for cidr in $CF_IPS; do
     ufw allow from $cidr to any port 8642 2>/dev/null || true
@@ -73,12 +72,13 @@ for cidr in $(echo "{{.BackendEgressCIDRs}}" | tr ',' ' '); do
     ufw allow from $cidr to any port 22
 done
 {{- else}}
+# No BACKEND_EGRESS_CIDRS configured — SSH open to all as fallback.
 ufw allow 22/tcp
 {{- end}}
 ufw --force enable
 log_status "FIREWALL_CONFIGURED"
 
-# --- Set root password ---
+# --- Set root password (kept as fallback, but SSH key auth is preferred) ---
 {{- if .RootPassword}}
 echo "root:{{.RootPassword}}" | chpasswd
 {{- end}}
@@ -97,7 +97,7 @@ printf 'PasswordAuthentication no\nPubkeyAuthentication yes\nPermitRootLogin pro
 systemctl restart sshd || systemctl restart ssh || true
 log_status "SSH_KEY_CONFIGURED"
 
-# --- Install Docker (needed for Hermes terminal backend / tool execution) ---
+# --- Install Docker from official repository ---
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
 chmod a+r /etc/apt/keyrings/docker.asc
@@ -109,45 +109,22 @@ systemctl enable docker
 systemctl start docker
 log_status "DOCKER_INSTALLED"
 
-# --- Create hermes user with Docker access + passwordless sudo ---
-useradd -r -m -s /bin/bash hermes || true
+# --- Create hermes user (UID 1000) with Docker access ---
+useradd -r -m -u 1000 -s /usr/sbin/nologin hermes || true
 usermod -aG docker hermes
-# Passwordless sudo so the install script can install system packages non-interactively
-echo 'hermes ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/hermes
-
-# --- Pre-install system deps that the Hermes install script would ask for interactively ---
-apt-get install -y -qq ripgrep ffmpeg 2>/dev/null || true
-
-# --- Install Hermes via official install script ---
-# The install script sets up Python 3.11+, Node.js 22, uv, and the hermes CLI.
-# --skip-setup avoids the interactive setup wizard.
-log_status "HERMES_INSTALLING"
-su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/{{.HermesImageTag}}/scripts/install.sh | bash -s -- --skip-setup' || {
-    log_status "HERMES_INSTALL_RETRY"
-    sleep 5
-    su - hermes -c 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/{{.HermesImageTag}}/scripts/install.sh | bash -s -- --skip-setup'
-}
-log_status "HERMES_INSTALLED"
-
-# --- Install Hermes web dashboard extras (FastAPI + Uvicorn) ---
-# v0.9.0 ships a local web dashboard via "hermes dashboard" that requires the
-# [web] extras. Install into the same uv-managed venv as the hermes CLI.
-HERMES_VENV=$(su - hermes -c 'ls -d ~/.hermes/.venv 2>/dev/null || ls -d ~/.local/share/hermes/.venv 2>/dev/null || true')
-if [ -n "$HERMES_VENV" ]; then
-    su - hermes -c "~/.local/bin/uv pip install --python ${HERMES_VENV}/bin/python 'hermes-agent[web]'" || \
-        su - hermes -c "${HERMES_VENV}/bin/pip install 'hermes-agent[web]'" || true
-else
-    # Fallback: pip via the hermes CLI's own python
-    su - hermes -c 'hermes --version >/dev/null 2>&1 && (~/.local/bin/uv pip install "hermes-agent[web]" || pip install "hermes-agent[web]")' || true
-fi
-log_status "HERMES_WEB_INSTALLED"
 
 # --- Directory structure ---
-mkdir -p /opt/hermes/data/memories /opt/hermes/data/skills /opt/hermes/data/sessions /opt/hermes/data/logs /opt/hermes/data/hooks /opt/hermes/data/cron
-chown -R hermes:hermes /opt/hermes/data
+mkdir -p /opt/hermes/data
+chown -R 1000:1000 /opt/hermes/data
 
-# --- Hermes environment file ---
+# --- Environment file ---
+DOCKER_GID=$(getent group docker | cut -d: -f3)
+HERMES_GID=$(getent group hermes | cut -d: -f3 || true)
+[ -n "$HERMES_GID" ] || HERMES_GID=1000
 cat > /opt/hermes/.env <<ENVEOF
+DOCKER_GID=${DOCKER_GID}
+HERMES_UID=1000
+HERMES_GID=${HERMES_GID}
 AGENT_TOKEN={{.AgentToken}}
 API_URL={{.APIURL}}
 INSTANCE_ID={{.InstanceID}}
@@ -156,15 +133,14 @@ API_SERVER_HOST=0.0.0.0
 API_SERVER_PORT=8642
 API_SERVER_KEY={{.APIServerKey}}
 API_SERVER_CORS_ORIGINS=*
+HERMES_DASHBOARD=1
+HERMES_DASHBOARD_HOST=127.0.0.1
+HERMES_DASHBOARD_PORT=9119
+HERMES_DASHBOARD_TUI=1
+TERMINAL_ENV=docker
 SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 SSL_CERT_DIR=/etc/ssl/certs
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
-{{- if .AnthropicAPIKey}}
-ANTHROPIC_API_KEY={{.AnthropicAPIKey}}
-{{- end}}
-{{- if .OpenAIAPIKey}}
-OPENAI_API_KEY={{.OpenAIAPIKey}}
-{{- end}}
 {{- if .BackendEgressCIDRs}}
 BACKEND_EGRESS_CIDRS={{.BackendEgressCIDRs}}
 {{- end}}
@@ -172,71 +148,44 @@ BACKEND_EGRESS_CIDRS={{.BackendEgressCIDRs}}
 PREVIEW_DOMAIN={{.PreviewDomain}}
 {{- end}}
 ENVEOF
-chmod 600 /opt/hermes/.env
-chown hermes:hermes /opt/hermes/.env
-{{- if .ConfigVersion}}
-echo "{{.ConfigVersion}}" > /opt/hermes/.config_version
-chown hermes:hermes /opt/hermes/.config_version
-{{- end}}
-
-# Config and SOUL.md are written into ~/.hermes/ after install (see below)
-
-# --- Write API keys into Hermes's own .env at ~/.hermes/.env ---
-# The install script creates ~/.hermes/ with its own .env template.
-# We append our API keys there so Hermes's dotenv loader finds them.
-HERMES_ENV="/home/hermes/.hermes/.env"
-if [ -f "$HERMES_ENV" ]; then
-    # Remove any existing placeholder keys and add ours
-    sed -i '/^#\?\s*OPENROUTER_API_KEY=/d' "$HERMES_ENV"
-    sed -i '/^#\?\s*ANTHROPIC_API_KEY=/d' "$HERMES_ENV"
-    sed -i '/^#\?\s*OPENAI_API_KEY=/d' "$HERMES_ENV"
-    sed -i '/^#\?\s*API_SERVER_ENABLED=/d' "$HERMES_ENV"
-    sed -i '/^#\?\s*API_SERVER_HOST=/d' "$HERMES_ENV"
-    sed -i '/^#\?\s*API_SERVER_PORT=/d' "$HERMES_ENV"
-    sed -i '/^#\?\s*API_SERVER_KEY=/d' "$HERMES_ENV"
-    sed -i '/^#\?\s*API_SERVER_CORS_ORIGINS=/d' "$HERMES_ENV"
-    sed -i '/^#\?\s*SSL_CERT_FILE=/d' "$HERMES_ENV"
-    sed -i '/^#\?\s*SSL_CERT_DIR=/d' "$HERMES_ENV"
-fi
-cat >> "$HERMES_ENV" <<HERMESENVEOF
-API_SERVER_ENABLED=true
-API_SERVER_HOST=0.0.0.0
-API_SERVER_PORT=8642
-API_SERVER_KEY={{.APIServerKey}}
-API_SERVER_CORS_ORIGINS=*
-SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
-SSL_CERT_DIR=/etc/ssl/certs
-{{- if .OpenRouterAPIKey}}
-OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
-{{- end}}
 {{- if .AnthropicAPIKey}}
-ANTHROPIC_API_KEY={{.AnthropicAPIKey}}
+echo "ANTHROPIC_API_KEY={{.AnthropicAPIKey}}" >> /opt/hermes/.env
 {{- end}}
 {{- if .OpenAIAPIKey}}
-OPENAI_API_KEY={{.OpenAIAPIKey}}
+echo "OPENAI_API_KEY={{.OpenAIAPIKey}}" >> /opt/hermes/.env
 {{- end}}
-HERMESENVEOF
-chown hermes:hermes "$HERMES_ENV"
+chmod 600 /opt/hermes/.env
+cp /opt/hermes/.env /opt/hermes/data/.env
+chown 1000:1000 /opt/hermes/data/.env
+chmod 600 /opt/hermes/data/.env
+{{- if .ConfigVersion}}
+echo "{{.ConfigVersion}}" > /opt/hermes/.config_version
+{{- end}}
 
-# --- Set model via Hermes CLI (writes to ~/.hermes/config.yaml) ---
+# --- Hermes config ---
+cat > /opt/hermes/data/config.yaml <<CFGEOF
 {{- if .Model}}
-su - hermes -c 'hermes config set model.default "{{.Model}}"' || true
+model:
+  provider: "{{.Provider}}"
+  model: "{{.Model}}"
 {{- end}}
+terminal:
+  backend: docker
+CFGEOF
+chown 1000:1000 /opt/hermes/data/config.yaml
+chmod 640 /opt/hermes/data/config.yaml
 
-# --- Write SOUL.md into Hermes's config dir ---
-cat > /home/hermes/.hermes/SOUL.md <<SOULEOF
+cat > /opt/hermes/data/SOUL.md <<SOULEOF
 You are a helpful AI assistant running on Tardi.
 You can execute code, browse the web, manage files, and help with various tasks.
 Be concise and helpful in your responses.
 SOULEOF
-chown hermes:hermes /home/hermes/.hermes/SOUL.md
-
-log_status "CONFIG_WRITTEN"
+chown 1000:1000 /opt/hermes/data/SOUL.md
 
 # --- TLS: Cloudflare Proxy handles TLS at the edge ---
 log_status "TLS_CLOUDFLARE_PROXY"
 
-# --- Caddy reverse proxy ---
+# --- Caddy reverse proxy: hostname-based routing on port 80 ---
 for i in 1 2 3; do
     curl -sL "https://caddyserver.com/api/download?os=linux&arch=amd64" -o /usr/local/bin/caddy && break
     sleep 3
@@ -284,58 +233,63 @@ systemctl enable caddy
 systemctl start caddy
 log_status "CADDY_PROXY_CONFIGURED"
 
-# --- Hermes systemd service (native process, not Docker) ---
-# Find the hermes binary path (installed by the install script under hermes user)
-HERMES_BIN=$(su - hermes -c 'which hermes' 2>/dev/null || echo "/home/hermes/.local/bin/hermes")
+# --- Docker Compose (single container, host networking) ---
+cat > /opt/hermes/docker-compose.yml <<'COMPOSEEOF'
+services:
+  hermes-agent:
+    image: nousresearch/hermes-agent:{{.HermesImageTag}}
+    container_name: hermes-agent
+    restart: unless-stopped
+    network_mode: host
+    shm_size: "1g"
+    command: gateway run
+    group_add:
+      - "${DOCKER_GID}"
+      - "${HERMES_GID}"
+    volumes:
+      - ./data:/opt/data:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8642/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
-cat > /etc/systemd/system/hermes-agent.service <<SVCEOF
+COMPOSEEOF
+log_status "FILES_WRITTEN"
+
+# --- Pre-pull image (retry on failure) ---
+for i in 1 2 3; do
+    docker compose -f /opt/hermes/docker-compose.yml pull && break
+    log_status "DOCKER_PULL_RETRY_$i"
+    sleep 10
+done
+log_status "IMAGES_PULLED"
+
+# --- Systemd service for Docker Compose stack ---
+cat > /etc/systemd/system/hermes-stack.service <<'SVCEOF'
 [Unit]
-Description=Hermes Agent Gateway
-After=network.target docker.service
+Description=Hermes Agent Stack
+After=docker.service
+Requires=docker.service
 
 [Service]
-Type=simple
-User=hermes
-Group=hermes
-EnvironmentFile=/opt/hermes/.env
-Environment=HOME=/home/hermes
-Environment=PATH=/home/hermes/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=${HERMES_BIN} gateway
-Restart=always
-RestartSec=10
-WorkingDirectory=/opt/hermes/data
-
-[Install]
-WantedBy=multi-user.target
-SVCEOF
-
-# --- Hermes web dashboard (loopback only — fronted by tardi-dashboard-shim) ---
-cat > /etc/systemd/system/hermes-dashboard.service <<SVCEOF
-[Unit]
-Description=Hermes Web Dashboard
-After=network.target hermes-agent.service
-Requires=hermes-agent.service
-
-[Service]
-Type=simple
-User=hermes
-Group=hermes
-EnvironmentFile=/opt/hermes/.env
-Environment=HOME=/home/hermes
-Environment=PATH=/home/hermes/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=${HERMES_BIN} dashboard --host 127.0.0.1 --port 9119 --no-open
-Restart=always
-RestartSec=10
-WorkingDirectory=/opt/hermes/data
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/hermes
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+Restart=on-failure
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
 SVCEOF
 
 # --- Tardi dashboard auth shim ---
-# Hermes dashboard ships with no authentication; this shim sits in front of it,
-# accepts the API_SERVER_KEY via #token= URL hash, sets an HttpOnly cookie, and
-# reverse-proxies to localhost:9119. Caddy routes the public domain to :9118.
 for i in $(seq 1 10); do
     if curl -fsSL -H "Authorization: Bearer {{.AgentToken}}" \
         "{{.APIURL}}/api/agent/dashboard-shim" \
@@ -349,8 +303,8 @@ done
 cat > /etc/systemd/system/tardi-dashboard-shim.service <<'SHIMSVCEOF'
 [Unit]
 Description=Tardi Dashboard Auth Shim
-After=network.target hermes-dashboard.service
-Requires=hermes-dashboard.service
+After=network.target hermes-stack.service
+Wants=hermes-stack.service
 
 [Service]
 Type=simple
@@ -401,10 +355,8 @@ HBTEOF
 
 # --- Start everything ---
 systemctl daemon-reload
-systemctl enable hermes-agent
-systemctl start hermes-agent
-systemctl enable hermes-dashboard
-systemctl start hermes-dashboard
+systemctl enable hermes-stack
+systemctl start hermes-stack
 systemctl enable tardi-dashboard-shim
 systemctl start tardi-dashboard-shim
 systemctl enable hermes-heartbeat.timer
@@ -432,6 +384,9 @@ log_status "COMPLETED"
 
 // RenderHermesCloudInit renders the Hermes cloud-init template with the given data.
 func RenderHermesCloudInit(data HermesCloudInitData) (string, error) {
+	if data.HermesImageTag == "" {
+		data.HermesImageTag = "latest"
+	}
 	var buf bytes.Buffer
 	if err := hermesCloudInitTemplate.Execute(&buf, data); err != nil {
 		return "", err

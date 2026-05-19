@@ -18,12 +18,12 @@ func effectiveTargetOpenClawVersion(inst models.VpsInstance, openClawTarget, her
 		return inst.TargetOpenClawVersion
 	}
 	if inst.Framework == models.FrameworkHermes {
-		if hermesTarget == "" || hermesTarget == "latest" {
+		if hermesTarget == "" {
 			return nil
 		}
 		return strPtr(hermesTarget)
 	}
-	if openClawTarget == "" || openClawTarget == "latest" {
+	if openClawTarget == "" {
 		return nil
 	}
 	return strPtr(openClawTarget)

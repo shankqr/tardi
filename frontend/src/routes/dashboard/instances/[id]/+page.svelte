@@ -26,17 +26,16 @@
 		$dashboardState?.instances.find((i) => i.id === page.params.id) ?? null
 	);
 
-	const displayOpenClawVersion = $derived(
+	const displayAgentVersion = $derived(
 		instance?.openclaw_version || instance?.target_openclaw_version || null
 	);
 
-	const isOpenClawAutoUpdateEnabled = $derived(
-		instance?.framework === 'openclaw' && instance?.target_openclaw_version === 'latest'
+	const isAgentAutoUpdateEnabled = $derived(
+		!!instance && instance.target_openclaw_version === 'latest'
 	);
 
-	const isOpenClawVersionPending = $derived(
+	const isAgentVersionPending = $derived(
 		!!instance &&
-			instance.framework === 'openclaw' &&
 			!!instance.openclaw_version &&
 			!!instance.target_openclaw_version &&
 			instance.target_openclaw_version !== 'latest' &&
@@ -638,16 +637,16 @@
 								{/if}
 							</dd>
 						</div>
-						{#if instance.framework === 'openclaw' && displayOpenClawVersion}
+						{#if displayAgentVersion}
 							<div class="flex justify-between">
 								<dt class="text-gray-500 dark:text-gray-400">Version</dt>
 								<dd class="text-right">
-									<div class="font-mono text-gray-900 dark:text-white">{displayOpenClawVersion}</div>
-									{#if isOpenClawVersionPending}
+									<div class="font-mono text-gray-900 dark:text-white">{displayAgentVersion}</div>
+									{#if isAgentVersionPending}
 										<div class="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
 											Updating from <span class="font-mono">{instance.openclaw_version}</span>
 										</div>
-									{:else if isOpenClawAutoUpdateEnabled}
+									{:else if isAgentAutoUpdateEnabled}
 										<div class="mt-0.5 text-xs text-blue-600 dark:text-blue-400">Auto-updates enabled</div>
 									{/if}
 								</dd>
@@ -664,52 +663,41 @@
 					</dl>
 
 					{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url}
-						{#if instance.framework === 'hermes'}
-							<a
-								href="/dashboard/instances/{instance.id}/chat"
-								target="_blank"
-								rel="noopener"
-								class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100"
-							>
-								Open Agent Dashboard
-							</a>
-						{:else}
-							<button
-								onclick={async () => {
-									dashboardBtnLoading = true;
-									try {
-										const [, result] = await Promise.all([
-											new Promise(r => setTimeout(r, 2000)),
-											(async () => {
-												const token = await getIdToken();
-												if (!token) return null;
-												const { token: scopedToken } = await getDashboardToken(instance!.id, token);
-												return scopedToken;
-											})()
-										]);
-										if (result) {
-											window.open(`${instance!.dashboard_url!}/#token=${result}`, '_blank');
-										}
-									} catch {
-										alert('Failed to generate dashboard token. Please try again.');
-									} finally {
-										dashboardBtnLoading = false;
+						<button
+							onclick={async () => {
+								dashboardBtnLoading = true;
+								try {
+									const [, result] = await Promise.all([
+										new Promise(r => setTimeout(r, 2000)),
+										(async () => {
+											const token = await getIdToken();
+											if (!token) return null;
+											const { token: scopedToken } = await getDashboardToken(instance!.id, token);
+											return scopedToken;
+										})()
+									]);
+									if (result) {
+										window.open(`${instance!.dashboard_url!}/#token=${result}`, '_blank');
 									}
-								}}
-								disabled={dashboardBtnLoading}
-								class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-70"
-							>
-								{#if dashboardBtnLoading}
-									<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-									</svg>
-									Opening...
-								{:else}
-									Open Agent Dashboard
-								{/if}
-							</button>
-						{/if}
+								} catch {
+									alert('Failed to generate dashboard token. Please try again.');
+								} finally {
+									dashboardBtnLoading = false;
+								}
+							}}
+							disabled={dashboardBtnLoading}
+							class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-70"
+						>
+							{#if dashboardBtnLoading}
+								<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+								</svg>
+								Opening...
+							{:else}
+								Open Agent Dashboard
+							{/if}
+						</button>
 					{/if}
 				</div>
 
