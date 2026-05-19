@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +13,23 @@ const (
 	FrameworkOpenClaw AgentFramework = "openclaw"
 	FrameworkHermes   AgentFramework = "hermes"
 )
+
+const (
+	HermesDefaultProvider = "openrouter"
+	HermesDefaultModel    = "anthropic/claude-sonnet-4.6"
+)
+
+func NormalizeHermesProviderModel(provider, model string) (string, string) {
+	provider = strings.TrimSpace(provider)
+	model = strings.TrimSpace(model)
+	if provider == "" || provider == "openai-codex" || provider == "codex" {
+		provider = HermesDefaultProvider
+	}
+	if model == "" || strings.HasPrefix(model, "openai-codex/") || strings.HasPrefix(model, "codex/") {
+		model = HermesDefaultModel
+	}
+	return provider, model
+}
 
 type VpsStatus string
 
@@ -94,36 +112,36 @@ type Subscription struct {
 }
 
 type VpsInstance struct {
-	ID                   uuid.UUID
-	UserID               uuid.UUID
-	SubscriptionID       uuid.UUID
-	Framework            AgentFramework
-	Provider             string
-	ProviderServerID     *string
-	ProviderRegion       *string
-	Name                 string
-	IPv4                 *string
-	Region               string
-	Status               VpsStatus
-	Step                 *ProvisioningStep
-	RootPassword         *string
-	AgentTokenSecretName *string
-	OpenClawAuthToken    *string
-	AgentStatus              *string
-	AgentError               *string
-	LastHeartbeatAt          *time.Time
-	OpenClawVersion          *string
-	TargetOpenClawVersion    *string
-	OpenClawUpdateStatus     *string
-	OpenClawUpdateError      *string
-	Domain                   *string
-	DNSRecordID              *string
-	PreviewDomain            *string
-	PreviewDNSRecordID       *string
-	CustomCaddyfile          *string
-	CodexLinkedAt            *time.Time
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
+	ID                    uuid.UUID
+	UserID                uuid.UUID
+	SubscriptionID        uuid.UUID
+	Framework             AgentFramework
+	Provider              string
+	ProviderServerID      *string
+	ProviderRegion        *string
+	Name                  string
+	IPv4                  *string
+	Region                string
+	Status                VpsStatus
+	Step                  *ProvisioningStep
+	RootPassword          *string
+	AgentTokenSecretName  *string
+	OpenClawAuthToken     *string
+	AgentStatus           *string
+	AgentError            *string
+	LastHeartbeatAt       *time.Time
+	OpenClawVersion       *string
+	TargetOpenClawVersion *string
+	OpenClawUpdateStatus  *string
+	OpenClawUpdateError   *string
+	Domain                *string
+	DNSRecordID           *string
+	PreviewDomain         *string
+	PreviewDNSRecordID    *string
+	CustomCaddyfile       *string
+	CodexLinkedAt         *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type ProvisioningJob struct {

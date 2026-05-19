@@ -199,6 +199,9 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	if framework == "" {
 		framework = models.FrameworkOpenClaw
 	}
+	if framework == models.FrameworkHermes {
+		providerName, modelID = models.NormalizeHermesProviderModel(providerName, modelID)
+	}
 
 	var userData string
 	switch framework {

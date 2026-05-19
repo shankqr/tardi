@@ -167,7 +167,7 @@ cat > /opt/hermes/data/config.yaml <<CFGEOF
 {{- if .Model}}
 model:
   provider: "{{.Provider}}"
-  default: "{{.Model}}"
+  model: "{{.Model}}"
 {{- end}}
 terminal:
   backend: docker

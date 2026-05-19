@@ -152,6 +152,9 @@ func (r *Resumer) executeResume(inst *models.VpsInstance) {
 	if framework == "" {
 		framework = models.FrameworkOpenClaw
 	}
+	if framework == models.FrameworkHermes {
+		providerName, modelID = models.NormalizeHermesProviderModel(providerName, modelID)
+	}
 
 	var userData string
 	switch framework {

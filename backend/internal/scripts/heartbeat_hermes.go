@@ -6,6 +6,8 @@ package scripts
 const HermesHeartbeatScript = `#!/bin/bash
 set -u
 source /opt/hermes/.env 2>/dev/null || true
+HERMES_DEFAULT_PROVIDER="openrouter"
+HERMES_DEFAULT_MODEL="anthropic/claude-sonnet-4.6"
 
 # --- Download latest heartbeat script ---
 # Keep this at the top so old VPSes migrate themselves before doing any other work.
@@ -357,11 +359,17 @@ if [ -n "$API_CONFIG_VERSION" ] && [ "$API_CONFIG_VERSION" != "$LOCAL_CONFIG_VER
 
         NEW_PROVIDER=$(echo "$CONFIG_RESPONSE" | jq -r '.config.provider // "openrouter"' 2>/dev/null)
         NEW_MODEL=$(echo "$CONFIG_RESPONSE" | jq -r '.config.model // empty' 2>/dev/null)
+        if [ -z "$NEW_PROVIDER" ] || [ "$NEW_PROVIDER" = "openai-codex" ] || [ "$NEW_PROVIDER" = "codex" ]; then
+            NEW_PROVIDER="$HERMES_DEFAULT_PROVIDER"
+        fi
+        if [ -z "$NEW_MODEL" ] || [[ "$NEW_MODEL" == openai-codex/* ]] || [[ "$NEW_MODEL" == codex/* ]]; then
+            NEW_MODEL="$HERMES_DEFAULT_MODEL"
+        fi
         if [ -n "$NEW_MODEL" ]; then
             cat > /opt/hermes/data/config.yaml <<CFGEOF
 model:
   provider: "${NEW_PROVIDER}"
-  default: "${NEW_MODEL}"
+  model: "${NEW_MODEL}"
 terminal:
   backend: docker
 CFGEOF

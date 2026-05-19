@@ -740,6 +740,9 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	if framework == "" {
 		framework = models.FrameworkOpenClaw
 	}
+	if framework == models.FrameworkHermes {
+		providerName, modelID = models.NormalizeHermesProviderModel(providerName, modelID)
+	}
 
 	var userData string
 	switch framework {

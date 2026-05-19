@@ -314,6 +314,14 @@ func buildHermesConfigSyncScript() string {
 		"NEW_PROVIDER=$(echo \"$CONFIG\" | jq -r '.config.provider // \"openrouter\"')\n" +
 		"NEW_MODEL=$(echo \"$CONFIG\" | jq -r '.config.model // empty')\n" +
 		"REMOTE_VERSION=$(echo \"$CONFIG\" | jq -r '.version // 0')\n" +
+		"HERMES_DEFAULT_PROVIDER=\"openrouter\"\n" +
+		"HERMES_DEFAULT_MODEL=\"anthropic/claude-sonnet-4.6\"\n" +
+		"if [ -z \"$NEW_PROVIDER\" ] || [ \"$NEW_PROVIDER\" = \"openai-codex\" ] || [ \"$NEW_PROVIDER\" = \"codex\" ]; then\n" +
+		"    NEW_PROVIDER=\"$HERMES_DEFAULT_PROVIDER\"\n" +
+		"fi\n" +
+		"if [ -z \"$NEW_MODEL\" ] || [[ \"$NEW_MODEL\" == openai-codex/* ]] || [[ \"$NEW_MODEL\" == codex/* ]]; then\n" +
+		"    NEW_MODEL=\"$HERMES_DEFAULT_MODEL\"\n" +
+		"fi\n" +
 		"\n" +
 		"mkdir -p /opt/hermes/data\n" +
 		"cp /opt/hermes/.env /opt/hermes/.env.bak\n" +
@@ -332,7 +340,7 @@ func buildHermesConfigSyncScript() string {
 		"    cat > /opt/hermes/data/config.yaml <<CFGEOF\n" +
 		"model:\n" +
 		"  provider: \"${NEW_PROVIDER}\"\n" +
-		"  default: \"${NEW_MODEL}\"\n" +
+		"  model: \"${NEW_MODEL}\"\n" +
 		"terminal:\n" +
 		"  backend: docker\n" +
 		"CFGEOF\n" +
