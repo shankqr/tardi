@@ -169,7 +169,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	}
 	providerName := fallbackDefaultProvider
 	modelID := fallbackDefaultModelID
-	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey string
+	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey, telegramBotToken, telegramAllowedUsers string
 	var configVersion int
 	if agentCfg != nil {
 		configVersion = agentCfg.Version
@@ -181,6 +181,12 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		}
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			openAIAPIKey = v
+		}
+		if v, ok := agentCfg.Config["telegram_bot_token"].(string); ok {
+			telegramBotToken = v
+		}
+		if v, ok := agentCfg.Config["telegram_allowed_users"].(string); ok {
+			telegramAllowedUsers = v
 		}
 		if v, ok := agentCfg.Config["provider"].(string); ok && v != "" {
 			providerName = v
@@ -207,21 +213,23 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	switch framework {
 	case models.FrameworkHermes:
 		hermesData := HermesCloudInitData{
-			AgentToken:         agentToken,
-			APIURL:             u.apiURL,
-			InstanceID:         inst.ID.String(),
-			APIServerKey:       frameworkAuthToken,
-			HermesImageTag:     resolveHermesVersion(ctx, u.pool),
-			Provider:           providerName,
-			Model:              modelID,
-			OpenRouterAPIKey:   openRouterAPIKey,
-			AnthropicAPIKey:    anthropicAPIKey,
-			OpenAIAPIKey:       openAIAPIKey,
-			ConfigVersion:      configVersion,
-			RootPassword:       rootPassword,
-			SSHPublicKey:       u.sshPublicKey,
-			Domain:             domain,
-			BackendEgressCIDRs: u.backendEgressCIDRs,
+			AgentToken:           agentToken,
+			APIURL:               u.apiURL,
+			InstanceID:           inst.ID.String(),
+			APIServerKey:         frameworkAuthToken,
+			HermesImageTag:       resolveHermesVersion(ctx, u.pool),
+			Provider:             providerName,
+			Model:                modelID,
+			OpenRouterAPIKey:     openRouterAPIKey,
+			AnthropicAPIKey:      anthropicAPIKey,
+			OpenAIAPIKey:         openAIAPIKey,
+			TelegramBotToken:     telegramBotToken,
+			TelegramAllowedUsers: telegramAllowedUsers,
+			ConfigVersion:        configVersion,
+			RootPassword:         rootPassword,
+			SSHPublicKey:         u.sshPublicKey,
+			Domain:               domain,
+			BackendEgressCIDRs:   u.backendEgressCIDRs,
 		}
 		userData, err = RenderHermesCloudInit(hermesData)
 	default:

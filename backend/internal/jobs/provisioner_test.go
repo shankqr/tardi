@@ -117,13 +117,14 @@ func TestRenderCloudInitIncludesHostAdminHelper(t *testing.T) {
 
 func TestRenderHermesCloudInitUsesDockerStack(t *testing.T) {
 	got, err := RenderHermesCloudInit(HermesCloudInitData{
-		AgentToken:     "agent-token",
-		APIURL:         "https://api.example.com",
-		InstanceID:     "instance-id",
-		APIServerKey:   "api-server-key",
-		HermesImageTag: "latest",
-		Provider:       "openrouter",
-		Model:          "anthropic/claude-sonnet-4",
+		AgentToken:       "agent-token",
+		APIURL:           "https://api.example.com",
+		InstanceID:       "instance-id",
+		APIServerKey:     "api-server-key",
+		HermesImageTag:   "latest",
+		Provider:         "openrouter",
+		Model:            "anthropic/claude-sonnet-4",
+		TelegramBotToken: "telegram-token",
 	})
 	if err != nil {
 		t.Fatalf("RenderHermesCloudInit() error = %v", err)
@@ -138,6 +139,8 @@ func TestRenderHermesCloudInitUsesDockerStack(t *testing.T) {
 		"command: gateway run",
 		"HERMES_DASHBOARD=1",
 		"HERMES_DASHBOARD_HOST=127.0.0.1",
+		"TELEGRAM_BOT_TOKEN=telegram-token",
+		"GATEWAY_ALLOW_ALL_USERS=true",
 		"TERMINAL_ENV=docker",
 		"hermes-stack.service",
 		"docker compose up -d --remove-orphans",

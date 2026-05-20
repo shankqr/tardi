@@ -56,6 +56,10 @@
 			}
 
 			const data = await response.json();
+			if (data.hermes?.failed) {
+				const detail = data.hermes?.error || data.choices?.[0]?.message?.content || 'Hermes could not complete the request';
+				throw new Error(String(detail).replace(/^API call failed after \d+ retries:\s*/, ''));
+			}
 			const reply = data.choices?.[0]?.message?.content ?? 'No response';
 			messages.push({ role: 'assistant', content: reply });
 			setTimeout(scrollToBottom, 0);

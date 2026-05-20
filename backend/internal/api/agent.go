@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -144,6 +145,8 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			OpenClawUpdateStatus string `json:"openclaw_update_status"`
 			OpenClawUpdateError  string `json:"openclaw_update_error"`
 			AgentError           string `json:"agent_error"`
+			CodexAuthPresent     bool   `json:"codex_auth_present"`
+			CodexConfigActive    bool   `json:"codex_config_active"`
 		}
 		json.NewDecoder(r.Body).Decode(&body)
 
@@ -175,6 +178,21 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			}
 			if err := db.UpdateInstanceOpenClawVersion(r.Context(), deps.Pool, inst.ID, body.OpenClawVersion, updateStatus, updateError); err != nil {
 				slog.Error("agent heartbeat: update openclaw version", "error", err)
+			}
+		}
+
+		if inst.Framework == models.FrameworkHermes &&
+			body.CodexAuthPresent &&
+			body.CodexConfigActive &&
+			body.AgentError != "codex_reauth_required" &&
+			inst.CodexLinkedAt == nil {
+			if err := setHermesCodexAgentConfig(r.Context(), deps, inst.ID); err != nil {
+				slog.Error("agent heartbeat: self-heal Hermes Codex config", "error", err, "instance_id", inst.ID)
+			} else {
+				linkedAt := time.Now().UTC()
+				if err := db.SetCodexLinkState(r.Context(), deps.Pool, inst.ID, &linkedAt); err != nil {
+					slog.Error("agent heartbeat: self-heal Hermes Codex link state", "error", err, "instance_id", inst.ID)
+				}
 			}
 		}
 
@@ -267,7 +285,7 @@ func GetAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 		for k, v := range config.Config {
 			masked[k] = v
 		}
-		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key"} {
+		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "telegram_bot_token"} {
 			if v, ok := masked[keyField].(string); ok && len(v) > 4 {
 				masked[keyField] = v[:3] + "..." + v[len(v)-4:]
 			}
@@ -334,7 +352,7 @@ func UpdateAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 		}
 
 		// Atomic read-merge-write to prevent concurrent updates from losing changes
-		preserveKeys := []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "provider", "model"}
+		preserveKeys := []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "provider", "model", "telegram_bot_token", "telegram_allowed_users"}
 		saved, err := db.UpdateAgentConfigAtomic(r.Context(), deps.Pool, inst.ID, body.Config, preserveKeys)
 		if err != nil {
 			slog.Error("update agent config: save", "error", err)

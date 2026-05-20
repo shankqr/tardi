@@ -7,22 +7,24 @@ import (
 
 // HermesCloudInitData holds all template variables for Hermes cloud-init rendering.
 type HermesCloudInitData struct {
-	AgentToken         string // Tardi API auth token
-	APIURL             string // Tardi backend URL
-	InstanceID         string // VPS instance UUID
-	OpenRouterAPIKey   string // Default LLM provider
-	AnthropicAPIKey    string // Optional direct Anthropic access
-	OpenAIAPIKey       string // Optional direct OpenAI access
-	APIServerKey       string // Hermes HTTP API auth token (stored in openclaw_auth_token column)
-	HermesImageTag     string // Docker image tag (e.g. "latest" or "v2026.4.13")
-	Provider           string // AI provider: openrouter, anthropic, openai
-	Model              string // Model ID for the provider
-	ConfigVersion      int    // Initial config version to prevent redundant first sync
-	RootPassword       string // Root password for VPS
-	SSHPublicKey       string // Ed25519 public key for SSH
-	Domain             string // Cloudflare domain (e.g. "abc12345.tardi.ai")
-	PreviewDomain      string // Preview domain for port 3000 apps
-	BackendEgressCIDRs string // Comma-separated CIDRs for backend egress IPs
+	AgentToken           string // Tardi API auth token
+	APIURL               string // Tardi backend URL
+	InstanceID           string // VPS instance UUID
+	OpenRouterAPIKey     string // Default LLM provider
+	AnthropicAPIKey      string // Optional direct Anthropic access
+	OpenAIAPIKey         string // Optional direct OpenAI access
+	TelegramBotToken     string // Optional Telegram bot token
+	TelegramAllowedUsers string // Optional comma-separated Telegram user allowlist
+	APIServerKey         string // Hermes HTTP API auth token (stored in openclaw_auth_token column)
+	HermesImageTag       string // Docker image tag (e.g. "latest" or "v2026.4.13")
+	Provider             string // AI provider: openrouter, anthropic, openai
+	Model                string // Model ID for the provider
+	ConfigVersion        int    // Initial config version to prevent redundant first sync
+	RootPassword         string // Root password for VPS
+	SSHPublicKey         string // Ed25519 public key for SSH
+	Domain               string // Cloudflare domain (e.g. "abc12345.tardi.ai")
+	PreviewDomain        string // Preview domain for port 3000 apps
+	BackendEgressCIDRs   string // Comma-separated CIDRs for backend egress IPs
 }
 
 // hermesCloudInitTemplate bootstraps Hermes in the same VPS architecture as
@@ -153,6 +155,15 @@ echo "ANTHROPIC_API_KEY={{.AnthropicAPIKey}}" >> /opt/hermes/.env
 {{- end}}
 {{- if .OpenAIAPIKey}}
 echo "OPENAI_API_KEY={{.OpenAIAPIKey}}" >> /opt/hermes/.env
+{{- end}}
+{{- if .TelegramBotToken}}
+echo "TELEGRAM_BOT_TOKEN={{.TelegramBotToken}}" >> /opt/hermes/.env
+echo "TELEGRAM_REPLY_TO_MODE=off" >> /opt/hermes/.env
+{{- if .TelegramAllowedUsers}}
+echo "TELEGRAM_ALLOWED_USERS={{.TelegramAllowedUsers}}" >> /opt/hermes/.env
+{{- else}}
+echo "GATEWAY_ALLOW_ALL_USERS=true" >> /opt/hermes/.env
+{{- end}}
 {{- end}}
 chmod 600 /opt/hermes/.env
 cp /opt/hermes/.env /opt/hermes/data/.env

@@ -714,7 +714,7 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	}
 	providerName := defaultProvider
 	modelID := defaultModel
-	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey string
+	var openRouterAPIKey, anthropicAPIKey, openAIAPIKey, telegramBotToken, telegramAllowedUsers string
 	var configVersion int
 	if agentCfg != nil {
 		if v, ok := agentCfg.Config["openrouter_api_key"].(string); ok {
@@ -725,6 +725,12 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 		}
 		if v, ok := agentCfg.Config["openai_api_key"].(string); ok {
 			openAIAPIKey = v
+		}
+		if v, ok := agentCfg.Config["telegram_bot_token"].(string); ok {
+			telegramBotToken = v
+		}
+		if v, ok := agentCfg.Config["telegram_allowed_users"].(string); ok {
+			telegramAllowedUsers = v
 		}
 		if v, ok := agentCfg.Config["provider"].(string); ok && v != "" {
 			providerName = v
@@ -748,22 +754,24 @@ func (p *Provisioner) stepCreateServer(ctx context.Context, job *models.Provisio
 	switch framework {
 	case models.FrameworkHermes:
 		hermesData := HermesCloudInitData{
-			AgentToken:         agentToken,
-			APIURL:             p.apiURL,
-			InstanceID:         inst.ID.String(),
-			APIServerKey:       frameworkAuthToken,
-			HermesImageTag:     resolveHermesVersion(ctx, p.pool),
-			Provider:           providerName,
-			Model:              modelID,
-			OpenRouterAPIKey:   openRouterAPIKey,
-			AnthropicAPIKey:    anthropicAPIKey,
-			OpenAIAPIKey:       openAIAPIKey,
-			ConfigVersion:      configVersion,
-			RootPassword:       rootPassword,
-			SSHPublicKey:       p.sshPublicKey,
-			Domain:             domain,
-			PreviewDomain:      previewDomain,
-			BackendEgressCIDRs: p.backendEgressCIDRs,
+			AgentToken:           agentToken,
+			APIURL:               p.apiURL,
+			InstanceID:           inst.ID.String(),
+			APIServerKey:         frameworkAuthToken,
+			HermesImageTag:       resolveHermesVersion(ctx, p.pool),
+			Provider:             providerName,
+			Model:                modelID,
+			OpenRouterAPIKey:     openRouterAPIKey,
+			AnthropicAPIKey:      anthropicAPIKey,
+			OpenAIAPIKey:         openAIAPIKey,
+			TelegramBotToken:     telegramBotToken,
+			TelegramAllowedUsers: telegramAllowedUsers,
+			ConfigVersion:        configVersion,
+			RootPassword:         rootPassword,
+			SSHPublicKey:         p.sshPublicKey,
+			Domain:               domain,
+			PreviewDomain:        previewDomain,
+			BackendEgressCIDRs:   p.backendEgressCIDRs,
 		}
 		userData, err = RenderHermesCloudInit(hermesData)
 		if err != nil {

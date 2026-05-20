@@ -224,7 +224,7 @@ if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
     RECENT_LOGS=$(docker logs hermes-agent --tail 100 --since 10m 2>&1)
     if [ "$CODEX_CONFIG_ACTIVE" = true ] && [ "$CODEX_AUTH_PRESENT" != true ]; then
         AGENT_ERROR="codex_reauth_required"
-    elif echo "$RECENT_LOGS" | grep -qi "you've hit your usage limit\|codex.*usage limit"; then
+    elif echo "$RECENT_LOGS" | grep -qi "usage_limit_reached\|usage limit has been reached\|you've hit your usage limit\|codex.*usage limit"; then
         AGENT_ERROR="codex_usage_limit_exceeded"
     elif echo "$RECENT_LOGS" | grep -qi "missing bearer or basic authentication\|unexpected status 401 unauthorized.*codex\|codex.*401\|openai-codex.*unauthorized"; then
         AGENT_ERROR="codex_reauth_required"
@@ -239,7 +239,7 @@ fi
 RESPONSE=$(curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
     -H "Authorization: Bearer ${AGENT_TOKEN}" \
     -H "Content-Type: application/json" \
-    -d "{\"status\":\"${STATUS}\",\"openclaw_version\":\"${CURRENT_TAG}\",\"openclaw_update_status\":\"${UPDATE_STATUS}\",\"openclaw_update_error\":\"${UPDATE_ERROR}\",\"agent_error\":\"${AGENT_ERROR}\"}" 2>/dev/null)
+    -d "{\"status\":\"${STATUS}\",\"openclaw_version\":\"${CURRENT_TAG}\",\"openclaw_update_status\":\"${UPDATE_STATUS}\",\"openclaw_update_error\":\"${UPDATE_ERROR}\",\"agent_error\":\"${AGENT_ERROR}\",\"codex_auth_present\":${CODEX_AUTH_PRESENT},\"codex_config_active\":${CODEX_CONFIG_ACTIVE}}" 2>/dev/null)
 
 SHIM_ENV_CHANGED=false
 API_DASHBOARD_TOKEN=$(echo "$RESPONSE" | jq -r '.dashboard_token // empty' 2>/dev/null)
@@ -400,14 +400,30 @@ if [ -n "$API_CONFIG_VERSION" ] && [ "$API_CONFIG_VERSION" != "$LOCAL_CONFIG_VER
     CONFIG_RESPONSE=$(curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/config" 2>/dev/null)
     if [ $? -eq 0 ]; then
         cp /opt/hermes/.env /opt/hermes/.env.bak
-        grep -v -E '_API_KEY=' /opt/hermes/.env > /opt/hermes/.env.tmp
 
         NEW_OR_KEY=$(echo "$CONFIG_RESPONSE" | jq -r '.config.openrouter_api_key // empty' 2>/dev/null)
         NEW_ANTHROPIC_KEY=$(echo "$CONFIG_RESPONSE" | jq -r '.config.anthropic_api_key // empty' 2>/dev/null)
         NEW_OPENAI_KEY=$(echo "$CONFIG_RESPONSE" | jq -r '.config.openai_api_key // empty' 2>/dev/null)
+        HAS_TG_CONFIG=$(echo "$CONFIG_RESPONSE" | jq -r 'if (.config | has("telegram_bot_token")) then "true" else "false" end' 2>/dev/null)
+        NEW_TG_TOKEN=$(echo "$CONFIG_RESPONSE" | jq -r '.config.telegram_bot_token // empty' 2>/dev/null)
+        NEW_TG_ALLOWED=$(echo "$CONFIG_RESPONSE" | jq -r '.config.telegram_allowed_users // empty' 2>/dev/null)
+        if [ "$HAS_TG_CONFIG" = "true" ]; then
+            grep -v -E '_API_KEY=|^(TELEGRAM_BOT_TOKEN|TELEGRAM_ALLOWED_USERS|TELEGRAM_GROUP_ALLOWED_USERS|TELEGRAM_GROUP_ALLOWED_CHATS|TELEGRAM_REPLY_TO_MODE|GATEWAY_ALLOW_ALL_USERS)=' /opt/hermes/.env > /opt/hermes/.env.tmp
+        else
+            grep -v -E '_API_KEY=' /opt/hermes/.env > /opt/hermes/.env.tmp
+        fi
         [ -n "$NEW_OR_KEY" ] && echo "OPENROUTER_API_KEY=${NEW_OR_KEY}" >> /opt/hermes/.env.tmp
         [ -n "$NEW_ANTHROPIC_KEY" ] && echo "ANTHROPIC_API_KEY=${NEW_ANTHROPIC_KEY}" >> /opt/hermes/.env.tmp
         [ -n "$NEW_OPENAI_KEY" ] && echo "OPENAI_API_KEY=${NEW_OPENAI_KEY}" >> /opt/hermes/.env.tmp
+        if [ "$HAS_TG_CONFIG" = "true" ] && [ -n "$NEW_TG_TOKEN" ]; then
+            echo "TELEGRAM_BOT_TOKEN=${NEW_TG_TOKEN}" >> /opt/hermes/.env.tmp
+            echo "TELEGRAM_REPLY_TO_MODE=off" >> /opt/hermes/.env.tmp
+            if [ -n "$NEW_TG_ALLOWED" ]; then
+                echo "TELEGRAM_ALLOWED_USERS=${NEW_TG_ALLOWED}" >> /opt/hermes/.env.tmp
+            else
+                echo "GATEWAY_ALLOW_ALL_USERS=true" >> /opt/hermes/.env.tmp
+            fi
+        fi
 
         mv /opt/hermes/.env.tmp /opt/hermes/.env
         chmod 600 /opt/hermes/.env

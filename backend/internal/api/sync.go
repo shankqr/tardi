@@ -311,6 +311,9 @@ func buildHermesConfigSyncScript() string {
 		"NEW_OR_KEY=$(echo \"$CONFIG\" | jq -r '.config.openrouter_api_key // empty')\n" +
 		"NEW_AN_KEY=$(echo \"$CONFIG\" | jq -r '.config.anthropic_api_key // empty')\n" +
 		"NEW_OA_KEY=$(echo \"$CONFIG\" | jq -r '.config.openai_api_key // empty')\n" +
+		"HAS_TG_CONFIG=$(echo \"$CONFIG\" | jq -r 'if (.config | has(\"telegram_bot_token\")) then \"true\" else \"false\" end')\n" +
+		"NEW_TG_TOKEN=$(echo \"$CONFIG\" | jq -r '.config.telegram_bot_token // empty')\n" +
+		"NEW_TG_ALLOWED=$(echo \"$CONFIG\" | jq -r '.config.telegram_allowed_users // empty')\n" +
 		"NEW_PROVIDER=$(echo \"$CONFIG\" | jq -r '.config.provider // \"openrouter\"')\n" +
 		"NEW_MODEL=$(echo \"$CONFIG\" | jq -r '.config.model // empty')\n" +
 		"REMOTE_VERSION=$(echo \"$CONFIG\" | jq -r '.version // 0')\n" +
@@ -331,10 +334,23 @@ func buildHermesConfigSyncScript() string {
 		"\n" +
 		"mkdir -p /opt/hermes/data\n" +
 		"cp /opt/hermes/.env /opt/hermes/.env.bak\n" +
-		"grep -v -E '_API_KEY=' /opt/hermes/.env > /opt/hermes/.env.tmp\n" +
+		"if [ \"$HAS_TG_CONFIG\" = \"true\" ]; then\n" +
+		"    grep -v -E '_API_KEY=|^(TELEGRAM_BOT_TOKEN|TELEGRAM_ALLOWED_USERS|TELEGRAM_GROUP_ALLOWED_USERS|TELEGRAM_GROUP_ALLOWED_CHATS|TELEGRAM_REPLY_TO_MODE|GATEWAY_ALLOW_ALL_USERS)=' /opt/hermes/.env > /opt/hermes/.env.tmp\n" +
+		"else\n" +
+		"    grep -v -E '_API_KEY=' /opt/hermes/.env > /opt/hermes/.env.tmp\n" +
+		"fi\n" +
 		"[ -n \"$NEW_OR_KEY\" ] && echo \"OPENROUTER_API_KEY=$NEW_OR_KEY\" >> /opt/hermes/.env.tmp\n" +
 		"[ -n \"$NEW_AN_KEY\" ] && echo \"ANTHROPIC_API_KEY=$NEW_AN_KEY\" >> /opt/hermes/.env.tmp\n" +
 		"[ -n \"$NEW_OA_KEY\" ] && echo \"OPENAI_API_KEY=$NEW_OA_KEY\" >> /opt/hermes/.env.tmp\n" +
+		"if [ \"$HAS_TG_CONFIG\" = \"true\" ] && [ -n \"$NEW_TG_TOKEN\" ]; then\n" +
+		"    echo \"TELEGRAM_BOT_TOKEN=$NEW_TG_TOKEN\" >> /opt/hermes/.env.tmp\n" +
+		"    echo \"TELEGRAM_REPLY_TO_MODE=off\" >> /opt/hermes/.env.tmp\n" +
+		"    if [ -n \"$NEW_TG_ALLOWED\" ]; then\n" +
+		"        echo \"TELEGRAM_ALLOWED_USERS=$NEW_TG_ALLOWED\" >> /opt/hermes/.env.tmp\n" +
+		"    else\n" +
+		"        echo \"GATEWAY_ALLOW_ALL_USERS=true\" >> /opt/hermes/.env.tmp\n" +
+		"    fi\n" +
+		"fi\n" +
 		"mv /opt/hermes/.env.tmp /opt/hermes/.env\n" +
 		"chmod 600 /opt/hermes/.env\n" +
 		"cp /opt/hermes/.env /opt/hermes/data/.env\n" +
