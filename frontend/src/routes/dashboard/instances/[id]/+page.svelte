@@ -406,6 +406,16 @@
 		};
 	});
 
+	function agentDashboardLaunchUrl(token: string): string | null {
+		if (!instance?.dashboard_url) return null;
+		const base = instance.dashboard_url.replace(/\/$/, '');
+		const encodedToken = encodeURIComponent(token);
+		if (instance.framework === 'hermes') {
+			return `${base}/__tardi/auth#token=${encodedToken}`;
+		}
+		return `${base}/#token=${encodedToken}`;
+	}
+
 	function timeAgo(dateStr: string | null): string {
 		if (!dateStr) return 'Never';
 		const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
@@ -677,7 +687,8 @@
 										})()
 									]);
 									if (result) {
-										window.open(`${instance!.dashboard_url!}/#token=${result}`, '_blank');
+										const url = agentDashboardLaunchUrl(result);
+										if (url) window.open(url, '_blank');
 									}
 								} catch {
 									alert('Failed to generate dashboard token. Please try again.');
@@ -702,10 +713,8 @@
 				</div>
 
 				{#if instance.status === 'active' || instance.status === 'restarting' || instance.status === 'snapshotting' || instance.status === 'restoring'}
-					<!-- Codex (ChatGPT) — OpenClaw only — primary onboarding flow -->
-					{#if instance.framework !== 'hermes'}
+					<!-- Codex (ChatGPT) — primary onboarding flow -->
 					<CodexConnect instance={instance} />
-					{/if}
 
 					<!-- Google Account -->
 					{#if featureFlags.googleWorkspace}

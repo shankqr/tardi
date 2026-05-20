@@ -1,10 +1,13 @@
 package api
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/shanq/tardi/internal/models"
 )
 
 func TestExtractDeviceCode(t *testing.T) {
@@ -108,5 +111,70 @@ func TestCodexLinkState_RestartMarker_StaleRecycles(t *testing.T) {
 	// markRestart on a cleared slot should succeed.
 	if !s.markRestart(id) {
 		t.Fatal("markRestart should succeed after stale marker cleared")
+	}
+}
+
+func TestCodexScriptsSupportHermes(t *testing.T) {
+	inst := &models.VpsInstance{Framework: models.FrameworkHermes}
+
+	tests := []struct {
+		name      string
+		script    string
+		want      []string
+		forbidden []string
+	}{
+		{
+			name:   "start",
+			script: codexLinkStartScript(inst, "false"),
+			want: []string{
+				"hermes auth add openai-codex",
+				hermesCodexLoginLogPath,
+			},
+			forbidden: []string{"openclaw-gateway"},
+		},
+		{
+			name:   "status",
+			script: codexStatusProbeScript(inst),
+			want: []string{
+				hermesCodexAuthHostPath,
+				"credential_pool",
+				"hermes auth add openai-codex",
+			},
+			forbidden: []string{"openclaw-gateway"},
+		},
+		{
+			name:   "finalise",
+			script: codexFinaliseScript(inst),
+			want: []string{
+				`provider: "openai-codex"`,
+				`model: "openai-codex/gpt-5.5"`,
+				"docker compose -f /opt/hermes/docker-compose.yml up -d --force-recreate hermes-agent",
+			},
+			forbidden: []string{"openclaw-gateway"},
+		},
+		{
+			name:   "unlink",
+			script: codexUnlinkScript(inst),
+			want: []string{
+				hermesCodexAuthHostPath,
+				"docker restart hermes-agent",
+			},
+			forbidden: []string{"openclaw-gateway"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, want := range tc.want {
+				if !strings.Contains(tc.script, want) {
+					t.Fatalf("script should contain %q\n%s", want, tc.script)
+				}
+			}
+			for _, bad := range tc.forbidden {
+				if strings.Contains(tc.script, bad) {
+					t.Fatalf("script should not contain %q\n%s", bad, tc.script)
+				}
+			}
+		})
 	}
 }

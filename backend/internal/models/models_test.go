@@ -2,13 +2,23 @@ package models
 
 import "testing"
 
-func TestNormalizeHermesProviderModelDefaultsCodex(t *testing.T) {
+func TestNormalizeHermesProviderModelPreservesCodex(t *testing.T) {
 	provider, model := NormalizeHermesProviderModel("openai-codex", "openai-codex/gpt-5.5")
-	if provider != HermesDefaultProvider {
-		t.Fatalf("provider = %q, want %q", provider, HermesDefaultProvider)
+	if provider != "openai-codex" {
+		t.Fatalf("provider = %q, want openai-codex", provider)
 	}
-	if model != HermesDefaultModel {
-		t.Fatalf("model = %q, want %q", model, HermesDefaultModel)
+	if model != "openai-codex/gpt-5.5" {
+		t.Fatalf("model = %q, want openai-codex/gpt-5.5", model)
+	}
+}
+
+func TestNormalizeHermesProviderModelNormalizesCodexAlias(t *testing.T) {
+	provider, model := NormalizeHermesProviderModel("codex", "codex/gpt-5.5")
+	if provider != "openai-codex" {
+		t.Fatalf("provider = %q, want openai-codex", provider)
+	}
+	if model != "openai-codex/gpt-5.5" {
+		t.Fatalf("model = %q, want openai-codex/gpt-5.5", model)
 	}
 }
 

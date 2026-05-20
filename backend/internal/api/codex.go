@@ -21,6 +21,10 @@ const (
 	codexVerificationURL     = "https://auth.openai.com/codex/device"
 	codexLoginLogPath        = "/tmp/codex-login.log"
 	codexAuthHostPath        = "/opt/openclaw/data/codex/auth.json"
+	hermesCodexLoginLogPath  = "/tmp/tardi-codex-login.log"
+	hermesCodexAuthHostPath  = "/opt/hermes/data/auth.json"
+	hermesCodexProvider      = "openai-codex"
+	hermesCodexModelID       = "openai-codex/gpt-5.5"
 	codexLinkStartMinGap     = 30 * time.Second
 	codexRestartMaxDuration  = 90 * time.Second
 	codexHealthPollInterval  = 5 * time.Second
@@ -99,10 +103,10 @@ func extractDeviceCode(out string) string {
 	return codexCodeRE.FindString(ansiEscapeRE.ReplaceAllString(out, ""))
 }
 
-// loadActiveOCInstance parses the instance id from the path, ensures it
-// belongs to the user, is active, has an IP, and runs OpenClaw. Writes an
+// loadActiveCodexInstance parses the instance id from the path, ensures it
+// belongs to the user, is active, and has an IP. Writes an
 // error response and returns nil if any check fails.
-func loadActiveOCInstance(w http.ResponseWriter, r *http.Request, deps Dependencies) *models.VpsInstance {
+func loadActiveCodexInstance(w http.ResponseWriter, r *http.Request, deps Dependencies) *models.VpsInstance {
 	user := middleware.UserFromContext(r.Context())
 	if user == nil {
 		WriteError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
@@ -121,10 +125,6 @@ func loadActiveOCInstance(w http.ResponseWriter, r *http.Request, deps Dependenc
 		}
 		slog.Error("codex: get instance", "error", err)
 		WriteError(w, http.StatusInternalServerError, "internal_error", "failed to get instance")
-		return nil
-	}
-	if inst.Framework == models.FrameworkHermes {
-		WriteError(w, http.StatusConflict, "not_supported", "Codex linking is only supported on OpenClaw agents")
 		return nil
 	}
 	if inst.Status != "active" {
@@ -147,6 +147,148 @@ func sshCreds(inst *models.VpsInstance, cfg *dependenciesConfigAccessor) (string
 	return host, cfg.sshKey(), pw
 }
 
+func codexLinkStartScript(inst *models.VpsInstance, relinkMode string) string {
+	if inst.Framework == models.FrameworkHermes {
+		return fmt.Sprintf(`set -e
+docker exec hermes-agent pkill -f 'hermes auth add openai-codex' 2>/dev/null || true
+if [ "%s" = "true" ]; then
+    if [ -f %s ]; then
+        tmp=$(mktemp)
+        jq 'del(.providers["openai-codex"]) | del(.credential_pool["openai-codex"]) | del(.suppressed_sources["openai-codex"]) | if .active_provider == "openai-codex" then del(.active_provider) else . end' %s > "$tmp" && install -m 600 -o 1000 -g 1000 "$tmp" %s
+        rm -f "$tmp"
+    fi
+fi
+docker exec -d hermes-agent sh -c 'rm -f %s; hermes auth add openai-codex --label tardi-chatgpt > %s 2>&1'
+for i in $(seq 1 40); do
+    sleep 0.5
+    if docker exec hermes-agent grep -qE 'codex/device|Enter this code' %s 2>/dev/null; then
+        break
+    fi
+done
+docker exec hermes-agent cat %s 2>/dev/null || true`,
+			relinkMode,
+			hermesCodexAuthHostPath,
+			hermesCodexAuthHostPath,
+			hermesCodexAuthHostPath,
+			hermesCodexLoginLogPath,
+			hermesCodexLoginLogPath,
+			hermesCodexLoginLogPath,
+			hermesCodexLoginLogPath)
+	}
+
+	return fmt.Sprintf(`set -e
+docker exec openclaw-gateway pkill -f 'codex login' 2>/dev/null || true
+if ! docker exec openclaw-gateway sh -c 'command -v codex' >/dev/null 2>&1; then
+    docker exec -u 0 openclaw-gateway npm install -g @openai/codex >/dev/null 2>&1 || true
+fi
+if [ "%s" = "true" ]; then
+    docker exec openclaw-gateway codex logout >/dev/null 2>&1 || true
+    rm -f %s
+    rm -f /opt/openclaw/data/openclaw/agents/*/agent/codex-home/auth.json 2>/dev/null || true
+fi
+docker exec -d openclaw-gateway sh -c 'rm -f `+codexLoginLogPath+`; codex login --device-auth > `+codexLoginLogPath+` 2>&1'
+for i in $(seq 1 40); do
+    sleep 0.5
+    if docker exec openclaw-gateway grep -qE 'codex/device' `+codexLoginLogPath+` 2>/dev/null; then
+        break
+    fi
+done
+docker exec openclaw-gateway cat `+codexLoginLogPath+` 2>/dev/null || true`, relinkMode, codexAuthHostPath)
+}
+
+func codexStatusProbeScript(inst *models.VpsInstance) string {
+	if inst.Framework == models.FrameworkHermes {
+		return fmt.Sprintf(`if jq -e '((.credential_pool["openai-codex"] // []) | map(select(((.access_token // .runtime_api_key // "") | length) > 0)) | length > 0) or (((.providers["openai-codex"].tokens.access_token // "") | length) > 0)' %s >/dev/null 2>&1; then
+    echo LINKED
+elif docker exec hermes-agent pgrep -f 'hermes auth add openai-codex' >/dev/null 2>&1; then
+    echo PENDING
+else
+    echo ABSENT
+fi`, hermesCodexAuthHostPath)
+	}
+
+	return fmt.Sprintf(`if [ -f %s ]; then
+    echo LINKED
+elif docker exec openclaw-gateway pgrep -f 'codex login' >/dev/null 2>&1; then
+    echo PENDING
+else
+    echo ABSENT
+fi`, codexAuthHostPath)
+}
+
+func codexFinaliseScript(inst *models.VpsInstance) string {
+	if inst.Framework == models.FrameworkHermes {
+		return `set -e
+cat > /opt/hermes/data/config.yaml <<'CFGEOF'
+model:
+  provider: "openai-codex"
+  model: "openai-codex/gpt-5.5"
+terminal:
+  backend: docker
+CFGEOF
+chown 1000:1000 /opt/hermes/data/config.yaml 2>/dev/null || true
+chmod 640 /opt/hermes/data/config.yaml 2>/dev/null || true
+docker compose -f /opt/hermes/docker-compose.yml up -d --force-recreate hermes-agent`
+	}
+
+	return fmt.Sprintf(`set -e
+if [ -s %s ]; then
+    for d in /opt/openclaw/data/openclaw/agents/*/agent; do
+        [ -d "$d" ] || continue
+        mkdir -p "$d/codex-home"
+        install -m 600 -o 1000 -g 1000 %s "$d/codex-home/auth.json"
+    done
+fi
+docker restart openclaw-gateway`, codexAuthHostPath, codexAuthHostPath)
+}
+
+func codexHealthCheckCommand(inst *models.VpsInstance) string {
+	if inst.Framework == models.FrameworkHermes {
+		return "curl -sf -o /dev/null -w %{http_code} http://localhost:8642/health"
+	}
+	return "curl -sf -o /dev/null -w %{http_code} http://localhost:18789/health"
+}
+
+func codexUnlinkScript(inst *models.VpsInstance) string {
+	if inst.Framework == models.FrameworkHermes {
+		return fmt.Sprintf(`docker exec hermes-agent pkill -f 'hermes auth add openai-codex' 2>/dev/null || true
+if [ -f %s ]; then
+    tmp=$(mktemp)
+    jq 'del(.providers["openai-codex"]) | del(.credential_pool["openai-codex"]) | del(.suppressed_sources["openai-codex"]) | if .active_provider == "openai-codex" then del(.active_provider) else . end' %s > "$tmp" && install -m 600 -o 1000 -g 1000 "$tmp" %s
+    rm -f "$tmp"
+fi
+docker restart hermes-agent >/dev/null 2>&1`, hermesCodexAuthHostPath, hermesCodexAuthHostPath, hermesCodexAuthHostPath)
+	}
+
+	return fmt.Sprintf(`docker exec openclaw-gateway pkill -f 'codex login' 2>/dev/null || true
+docker exec openclaw-gateway codex logout 2>/dev/null || true
+rm -f %s
+rm -f /opt/openclaw/data/openclaw/agents/*/agent/codex-home/auth.json 2>/dev/null || true
+docker restart openclaw-gateway >/dev/null 2>&1`, codexAuthHostPath)
+}
+
+func setHermesCodexAgentConfig(ctx context.Context, deps Dependencies, instanceID uuid.UUID) error {
+	cfg := map[string]any{}
+	existing, err := db.GetAgentConfigByInstanceID(ctx, deps.Pool, instanceID)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		for k, v := range existing.Config {
+			cfg[k] = v
+		}
+	}
+	cfg["provider"] = hermesCodexProvider
+	cfg["model"] = hermesCodexModelID
+
+	return db.CreateAgentConfig(ctx, deps.Pool, &models.AgentConfig{
+		ID:            uuid.New(),
+		VpsInstanceID: instanceID,
+		Config:        cfg,
+		Version:       1,
+	})
+}
+
 // dependenciesConfigAccessor is a tiny adapter so we can pass just the bits
 // of Dependencies a handler needs without leaking the whole struct into
 // helpers. Kept local to this file.
@@ -162,7 +304,7 @@ func (d *dependenciesConfigAccessor) sshKey() []byte { return d.deps.Config.SSHP
 // auth at openai.com/codex/device or the 15-min window expires.
 func CodexLinkStartHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		inst := loadActiveOCInstance(w, r, deps)
+		inst := loadActiveCodexInstance(w, r, deps)
 		if inst == nil {
 			return
 		}
@@ -183,24 +325,7 @@ func CodexLinkStartHandler(deps Dependencies) http.HandlerFunc {
 			relinkMode = "true"
 		}
 
-		script := fmt.Sprintf(`set -e
-docker exec openclaw-gateway pkill -f 'codex login' 2>/dev/null || true
-if ! docker exec openclaw-gateway sh -c 'command -v codex' >/dev/null 2>&1; then
-    docker exec -u 0 openclaw-gateway npm install -g @openai/codex >/dev/null 2>&1 || true
-fi
-if [ "%s" = "true" ]; then
-    docker exec openclaw-gateway codex logout >/dev/null 2>&1 || true
-    rm -f %s
-    rm -f /opt/openclaw/data/openclaw/agents/*/agent/codex-home/auth.json 2>/dev/null || true
-fi
-docker exec -d openclaw-gateway sh -c 'rm -f `+codexLoginLogPath+`; codex login --device-auth > `+codexLoginLogPath+` 2>&1'
-for i in $(seq 1 40); do
-    sleep 0.5
-    if docker exec openclaw-gateway grep -qE 'codex/device' `+codexLoginLogPath+` 2>/dev/null; then
-        break
-    fi
-done
-docker exec openclaw-gateway cat `+codexLoginLogPath+` 2>/dev/null || true`, relinkMode, codexAuthHostPath)
+		script := codexLinkStartScript(inst, relinkMode)
 
 		out, err := deps.SSHRunner.RunCommand(host, key, pw, script, 45*time.Second)
 		if err != nil {
@@ -238,7 +363,7 @@ docker exec openclaw-gateway cat `+codexLoginLogPath+` 2>/dev/null || true`, rel
 // link state and an audit-log entry.
 func CodexLinkStatusHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		inst := loadActiveOCInstance(w, r, deps)
+		inst := loadActiveCodexInstance(w, r, deps)
 		if inst == nil {
 			return
 		}
@@ -254,14 +379,8 @@ func CodexLinkStatusHandler(deps Dependencies) http.HandlerFunc {
 		cfg := &dependenciesConfigAccessor{deps: deps}
 		host, key, pw := sshCreds(inst, cfg)
 
-		// Probe: auth.json present? login process running?
-		probe := fmt.Sprintf(`if [ -f %s ]; then
-    echo LINKED
-elif docker exec openclaw-gateway pgrep -f 'codex login' >/dev/null 2>&1; then
-    echo PENDING
-else
-    echo ABSENT
-fi`, codexAuthHostPath)
+		// Probe: auth state present? login process running?
+		probe := codexStatusProbeScript(inst)
 
 		out, err := deps.SSHRunner.RunCommand(host, key, pw, probe, 15*time.Second)
 		if err != nil {
@@ -279,7 +398,7 @@ fi`, codexAuthHostPath)
 				return
 			}
 			if deps.CodexState.markRestart(inst.ID) {
-				go finaliseCodexLink(deps, inst.ID, host, key, pw)
+				go finaliseCodexLink(deps, inst, host, key, pw)
 			}
 			WriteJSON(w, http.StatusOK, map[string]any{"status": "restarting"})
 		case codexPendingRE.MatchString(out):
@@ -293,21 +412,21 @@ fi`, codexAuthHostPath)
 // finaliseCodexLink restarts the gateway, waits for /health to come back,
 // persists the link in the DB, and writes an audit-log entry. Runs off
 // the request goroutine.
-func finaliseCodexLink(deps Dependencies, instanceID uuid.UUID, host string, key []byte, pw string) {
+func finaliseCodexLink(deps Dependencies, inst *models.VpsInstance, host string, key []byte, pw string) {
+	instanceID := inst.ID
 	defer deps.CodexState.clearRestart(instanceID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), codexRestartGoroutineCap)
 	defer cancel()
 
-	script := fmt.Sprintf(`set -e
-if [ -s %s ]; then
-    for d in /opt/openclaw/data/openclaw/agents/*/agent; do
-        [ -d "$d" ] || continue
-        mkdir -p "$d/codex-home"
-        install -m 600 -o 1000 -g 1000 %s "$d/codex-home/auth.json"
-    done
-fi
-docker restart openclaw-gateway`, codexAuthHostPath, codexAuthHostPath)
+	if inst.Framework == models.FrameworkHermes {
+		if err := setHermesCodexAgentConfig(ctx, deps, instanceID); err != nil {
+			slog.Error("codex finalise: set Hermes agent config", "instance_id", instanceID, "error", err)
+			return
+		}
+	}
+
+	script := codexFinaliseScript(inst)
 	if _, err := deps.SSHRunner.RunCommand(host, key, pw, script, 30*time.Second); err != nil {
 		slog.Error("codex finalise: gateway restart failed", "instance_id", instanceID, "error", err)
 		return
@@ -323,8 +442,7 @@ docker restart openclaw-gateway`, codexAuthHostPath, codexAuthHostPath)
 			return
 		case <-time.After(codexHealthPollInterval):
 		}
-		out, err := deps.SSHRunner.RunCommand(host, key, pw,
-			"curl -sf -o /dev/null -w %{http_code} http://localhost:18789/health", 10*time.Second)
+		out, err := deps.SSHRunner.RunCommand(host, key, pw, codexHealthCheckCommand(inst), 10*time.Second)
 		if err == nil && out == "200" {
 			healthy = true
 			break
@@ -349,7 +467,7 @@ docker restart openclaw-gateway`, codexAuthHostPath, codexAuthHostPath)
 // state, writes an audit-log entry, and restarts the gateway.
 func CodexUnlinkHandler(deps Dependencies) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		inst := loadActiveOCInstance(w, r, deps)
+		inst := loadActiveCodexInstance(w, r, deps)
 		if inst == nil {
 			return
 		}
@@ -357,11 +475,7 @@ func CodexUnlinkHandler(deps Dependencies) http.HandlerFunc {
 		cfg := &dependenciesConfigAccessor{deps: deps}
 		host, key, pw := sshCreds(inst, cfg)
 
-		script := fmt.Sprintf(`docker exec openclaw-gateway pkill -f 'codex login' 2>/dev/null || true
-docker exec openclaw-gateway codex logout 2>/dev/null || true
-rm -f %s
-rm -f /opt/openclaw/data/openclaw/agents/*/agent/codex-home/auth.json 2>/dev/null || true
-docker restart openclaw-gateway >/dev/null 2>&1`, codexAuthHostPath)
+		script := codexUnlinkScript(inst)
 
 		if _, err := deps.SSHRunner.RunCommand(host, key, pw, script, 60*time.Second); err != nil {
 			slog.Error("codex unlink: ssh failed", "instance_id", inst.ID, "error", err)

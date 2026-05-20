@@ -209,11 +209,26 @@ fi
 UPDATE_STATUS=$(cat /opt/hermes/.update_status 2>/dev/null || echo "")
 UPDATE_ERROR=$(cat /opt/hermes/.update_error 2>/dev/null || echo "")
 
+CODEX_AUTH_PRESENT=false
+if jq -e '((.credential_pool["openai-codex"] // []) | map(select(((.access_token // .runtime_api_key // "") | length) > 0)) | length > 0) or (((.providers["openai-codex"].tokens.access_token // "") | length) > 0)' /opt/hermes/data/auth.json >/dev/null 2>&1; then
+    CODEX_AUTH_PRESENT=true
+fi
+CODEX_CONFIG_ACTIVE=false
+if grep -Eq 'provider:[[:space:]]*"?openai-codex"?|model:[[:space:]]*"?openai-codex/' /opt/hermes/data/config.yaml 2>/dev/null; then
+    CODEX_CONFIG_ACTIVE=true
+fi
+
 # Check for errors in recent docker logs
 AGENT_ERROR=""
 if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
     RECENT_LOGS=$(docker logs hermes-agent --tail 100 --since 10m 2>&1)
-    if echo "$RECENT_LOGS" | grep -qi "key limit exceeded"; then
+    if [ "$CODEX_CONFIG_ACTIVE" = true ] && [ "$CODEX_AUTH_PRESENT" != true ]; then
+        AGENT_ERROR="codex_reauth_required"
+    elif echo "$RECENT_LOGS" | grep -qi "you've hit your usage limit\|codex.*usage limit"; then
+        AGENT_ERROR="codex_usage_limit_exceeded"
+    elif echo "$RECENT_LOGS" | grep -qi "missing bearer or basic authentication\|unexpected status 401 unauthorized.*codex\|codex.*401\|openai-codex.*unauthorized"; then
+        AGENT_ERROR="codex_reauth_required"
+    elif echo "$RECENT_LOGS" | grep -qi "key limit exceeded"; then
         AGENT_ERROR="openrouter_credits_exhausted"
     elif echo "$RECENT_LOGS" | grep -qi "invalid.*api.*key\|authentication.*failed"; then
         AGENT_ERROR="invalid_api_key"
@@ -225,6 +240,21 @@ RESPONSE=$(curl -sf -X POST "${API_URL}/api/agent/heartbeat" \
     -H "Authorization: Bearer ${AGENT_TOKEN}" \
     -H "Content-Type: application/json" \
     -d "{\"status\":\"${STATUS}\",\"openclaw_version\":\"${CURRENT_TAG}\",\"openclaw_update_status\":\"${UPDATE_STATUS}\",\"openclaw_update_error\":\"${UPDATE_ERROR}\",\"agent_error\":\"${AGENT_ERROR}\"}" 2>/dev/null)
+
+SHIM_ENV_CHANGED=false
+API_DASHBOARD_TOKEN=$(echo "$RESPONSE" | jq -r '.dashboard_token // empty' 2>/dev/null)
+CURRENT_API_SERVER_KEY=$(grep '^API_SERVER_KEY=' /opt/hermes/.env 2>/dev/null | cut -d= -f2-)
+if [ -n "$API_DASHBOARD_TOKEN" ] && [ "$API_DASHBOARD_TOKEN" != "$CURRENT_API_SERVER_KEY" ]; then
+    if grep -q '^API_SERVER_KEY=' /opt/hermes/.env 2>/dev/null; then
+        sed -i "s|^API_SERVER_KEY=.*|API_SERVER_KEY=${API_DASHBOARD_TOKEN}|" /opt/hermes/.env
+    else
+        echo "API_SERVER_KEY=${API_DASHBOARD_TOKEN}" >> /opt/hermes/.env
+    fi
+    chmod 600 /opt/hermes/.env
+    sync_data_env
+    SHIM_ENV_CHANGED=true
+fi
+source /opt/hermes/.env 2>/dev/null || true
 
 # --- Sync PREVIEW_DOMAIN from heartbeat response ---
 API_PREVIEW_DOMAIN=$(echo "$RESPONSE" | jq -r '.preview_domain // empty' 2>/dev/null)
@@ -324,9 +354,35 @@ if [ -n "$EXPECTED_SHIM_SHA" ]; then
     fi
 fi
 
+# --- Dashboard shim service ---
+if [ ! -f /etc/systemd/system/tardi-dashboard-shim.service ]; then
+    cat > /etc/systemd/system/tardi-dashboard-shim.service <<'SHIMSVCEOF'
+[Unit]
+Description=Tardi Dashboard Auth Shim
+After=network.target hermes-stack.service
+Wants=hermes-stack.service
+
+[Service]
+Type=simple
+User=hermes
+Group=hermes
+EnvironmentFile=/opt/hermes/.env
+Environment=LISTEN=127.0.0.1:9118
+Environment=DASHBOARD_BACKEND=http://127.0.0.1:9119
+ExecStart=/usr/local/bin/tardi-dashboard-shim
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SHIMSVCEOF
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable tardi-dashboard-shim 2>/dev/null || true
+fi
+
 if [ -f /etc/systemd/system/tardi-dashboard-shim.service ]; then
     SHIM_STATE=$(systemctl is-active tardi-dashboard-shim 2>/dev/null || echo "unknown")
-    if [ "$SHIM_STATE" = "inactive" ] || [ "$SHIM_STATE" = "failed" ]; then
+    if [ "$SHIM_ENV_CHANGED" = true ] || [ "$SHIM_STATE" = "inactive" ] || [ "$SHIM_STATE" = "failed" ]; then
         systemctl restart tardi-dashboard-shim 2>/dev/null || true
     fi
 fi
@@ -359,10 +415,16 @@ if [ -n "$API_CONFIG_VERSION" ] && [ "$API_CONFIG_VERSION" != "$LOCAL_CONFIG_VER
 
         NEW_PROVIDER=$(echo "$CONFIG_RESPONSE" | jq -r '.config.provider // "openrouter"' 2>/dev/null)
         NEW_MODEL=$(echo "$CONFIG_RESPONSE" | jq -r '.config.model // empty' 2>/dev/null)
-        if [ -z "$NEW_PROVIDER" ] || [ "$NEW_PROVIDER" = "openai-codex" ] || [ "$NEW_PROVIDER" = "codex" ]; then
+        if [ "$NEW_PROVIDER" = "codex" ]; then
+            NEW_PROVIDER="openai-codex"
+        fi
+        if [ -z "$NEW_PROVIDER" ]; then
             NEW_PROVIDER="$HERMES_DEFAULT_PROVIDER"
         fi
-        if [ -z "$NEW_MODEL" ] || [[ "$NEW_MODEL" == openai-codex/* ]] || [[ "$NEW_MODEL" == codex/* ]]; then
+        if [[ "$NEW_MODEL" == codex/* ]]; then
+            NEW_MODEL="openai-codex/${NEW_MODEL#codex/}"
+        fi
+        if [ -z "$NEW_MODEL" ]; then
             NEW_MODEL="$HERMES_DEFAULT_MODEL"
         fi
         if [ -n "$NEW_MODEL" ]; then

@@ -22,11 +22,17 @@ const (
 func NormalizeHermesProviderModel(provider, model string) (string, string) {
 	provider = strings.TrimSpace(provider)
 	model = strings.TrimSpace(model)
-	if provider == "" || provider == "openai-codex" || provider == "codex" {
+	if provider == "" {
 		provider = HermesDefaultProvider
 	}
-	if model == "" || strings.HasPrefix(model, "openai-codex/") || strings.HasPrefix(model, "codex/") {
+	if provider == "codex" {
+		provider = "openai-codex"
+	}
+	if model == "" {
 		model = HermesDefaultModel
+	}
+	if strings.HasPrefix(model, "codex/") {
+		model = "openai-codex/" + strings.TrimPrefix(model, "codex/")
 	}
 	return provider, model
 }

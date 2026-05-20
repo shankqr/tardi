@@ -20,6 +20,7 @@ async function mockDashboardStateWithCodex(
 	page: Page,
 	linked: boolean,
 	agentError: string | null = null,
+	framework: 'openclaw' | 'hermes' | null = null,
 ): Promise<void> {
 	await page.route('**/api/dashboard/state', async (route, request) => {
 		const response = await route.fetch();
@@ -28,6 +29,7 @@ async function mockDashboardStateWithCodex(
 			for (const inst of body.instances) {
 				inst.codex_linked_at = linked ? MOCK_LINKED_AT : null;
 				inst.agent_error = agentError;
+				if (framework) inst.framework = framework;
 			}
 		}
 		await route.fulfill({
@@ -113,6 +115,27 @@ test.describe('Codex linking UI', () => {
 			card.getByText('Linked to ChatGPT'),
 		).toBeVisible({ timeout: 10_000 });
 		await expect(card.getByRole('button', { name: 'Unlink' })).toBeVisible();
+	});
+
+	test('shows link action on Hermes instances', async ({
+		authedPage: page,
+	}) => {
+		await mockDashboardStateWithCodex(page, false, null, 'hermes');
+		await page.reload();
+
+		if (!(await navigateToInstance(page))) {
+			test.skip(true, 'No active instance found');
+			return;
+		}
+
+		const card = page.locator('div', {
+			has: page.getByRole('heading', { name: 'Codex (ChatGPT)' }),
+		}).first();
+		await card.scrollIntoViewIfNeeded();
+
+		await expect(
+			card.getByRole('button', { name: 'Link Codex Account' }),
+		).toBeVisible({ timeout: 10_000 });
 	});
 
 	test('shows relink action when linked Codex auth needs reauthorization', async ({

@@ -23,7 +23,7 @@ async function getHermesInstance(): Promise<{ id: string; agent_status: string |
 }
 
 test.describe('Hermes chat interface', () => {
-	test('"Open Agent Dashboard" link loads the Hermes chat page', async ({ authedHermesPage: page }) => {
+	test('Hermes chat page remains available', async ({ authedHermesPage: page }) => {
 		const inst = await getHermesInstance();
 		if (!inst) { test.skip(true, 'No active Hermes instance'); return; }
 		if (inst.agent_status !== 'running') { test.skip(true, 'Agent not running'); return; }
@@ -35,9 +35,8 @@ test.describe('Hermes chat interface', () => {
 		await instanceLink.click();
 		await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });
 
-		const dashboardLink = page.getByRole('link', { name: 'Open Agent Dashboard' });
-		await expect(dashboardLink).toBeVisible({ timeout: 30_000 });
-		await expect(dashboardLink).toHaveAttribute('target', '_blank');
+		const dashboardBtn = page.getByRole('button', { name: 'Open Agent Dashboard' });
+		await expect(dashboardBtn).toBeVisible({ timeout: 30_000 });
 
 		await page.goto(`/dashboard/instances/${inst.id}/chat`);
 		console.log('[E2E] Navigated to Hermes chat page');

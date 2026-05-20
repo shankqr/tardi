@@ -316,10 +316,16 @@ func buildHermesConfigSyncScript() string {
 		"REMOTE_VERSION=$(echo \"$CONFIG\" | jq -r '.version // 0')\n" +
 		"HERMES_DEFAULT_PROVIDER=\"openrouter\"\n" +
 		"HERMES_DEFAULT_MODEL=\"anthropic/claude-sonnet-4.6\"\n" +
-		"if [ -z \"$NEW_PROVIDER\" ] || [ \"$NEW_PROVIDER\" = \"openai-codex\" ] || [ \"$NEW_PROVIDER\" = \"codex\" ]; then\n" +
+		"if [ \"$NEW_PROVIDER\" = \"codex\" ]; then\n" +
+		"    NEW_PROVIDER=\"openai-codex\"\n" +
+		"fi\n" +
+		"if [ -z \"$NEW_PROVIDER\" ]; then\n" +
 		"    NEW_PROVIDER=\"$HERMES_DEFAULT_PROVIDER\"\n" +
 		"fi\n" +
-		"if [ -z \"$NEW_MODEL\" ] || [[ \"$NEW_MODEL\" == openai-codex/* ]] || [[ \"$NEW_MODEL\" == codex/* ]]; then\n" +
+		"if [[ \"$NEW_MODEL\" == codex/* ]]; then\n" +
+		"    NEW_MODEL=\"openai-codex/${NEW_MODEL#codex/}\"\n" +
+		"fi\n" +
+		"if [ -z \"$NEW_MODEL\" ]; then\n" +
 		"    NEW_MODEL=\"$HERMES_DEFAULT_MODEL\"\n" +
 		"fi\n" +
 		"\n" +

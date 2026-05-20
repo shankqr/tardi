@@ -209,12 +209,17 @@ func AgentHeartbeatHandler(deps Dependencies) http.HandlerFunc {
 			customCaddyfile = *inst.CustomCaddyfile
 		}
 
-		WriteJSON(w, http.StatusOK, map[string]any{
+		resp := map[string]any{
 			"config_version":          configVersion,
 			"target_openclaw_version": targetVersion,
 			"preview_domain":          previewDomain,
 			"custom_caddyfile":        customCaddyfile,
-		})
+		}
+		if inst.Framework == models.FrameworkHermes && inst.OpenClawAuthToken != nil && *inst.OpenClawAuthToken != "" {
+			resp["dashboard_token"] = *inst.OpenClawAuthToken
+		}
+
+		WriteJSON(w, http.StatusOK, resp)
 	}
 }
 

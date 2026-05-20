@@ -1,7 +1,7 @@
 import { test, expect, navigateToInstance } from '../../fixtures/auth';
 
 test.describe('Instance UI per framework', () => {
-	test('Hermes instance shows "Open Agent Dashboard" link that opens chat in a new tab', async ({ authedHermesPage: page }) => {
+	test('Hermes instance shows "Open Agent Dashboard" button that opens the web dashboard', async ({ authedHermesPage: page }) => {
 		const instanceLink = page.locator('a[href*="/dashboard/instances/"]').first();
 		if (!(await instanceLink.isVisible({ timeout: 15_000 }).catch(() => false))) {
 			test.skip(true, 'No active instance found'); return;
@@ -13,11 +13,34 @@ test.describe('Instance UI per framework', () => {
 		const runningStatus = page.locator('dd').filter({ hasText: /Running/i }).first();
 		await expect(runningStatus).toBeVisible({ timeout: 60_000 });
 
+		const dashboardBtn = page.getByRole('button', { name: 'Open Agent Dashboard' });
 		const dashboardLink = page.getByRole('link', { name: 'Open Agent Dashboard' });
-		await expect(dashboardLink).toBeVisible({ timeout: 10_000 });
-		await expect(dashboardLink).toHaveAttribute('target', '_blank');
-		await expect(dashboardLink).toHaveAttribute('href', /\/dashboard\/instances\/[^/]+\/chat$/);
-		console.log('[E2E] Hermes instance shows "Open Agent Dashboard" link opening chat in new tab');
+		await expect(dashboardBtn).toBeVisible({ timeout: 10_000 });
+		await expect(dashboardBtn).toBeEnabled();
+		await expect(dashboardLink).toHaveCount(0);
+
+		await page.evaluate(() => {
+			(window as any).__capturedOpenUrl = '';
+			(window as any).__originalOpen = window.open;
+			window.open = (...args: any[]) => {
+				(window as any).__capturedOpenUrl = args[0];
+				return null;
+			};
+		});
+
+		await dashboardBtn.click();
+		await page.waitForFunction(() => Boolean((window as any).__capturedOpenUrl), null, {
+			timeout: 10_000,
+		});
+
+		const capturedUrl = await page.evaluate(() => (window as any).__capturedOpenUrl as string);
+		await page.evaluate(() => {
+			window.open = (window as any).__originalOpen;
+		});
+
+		expect(capturedUrl).toContain('/__tardi/auth#token=');
+		expect(capturedUrl).not.toContain('/chat');
+		console.log(`[E2E] Hermes dashboard URL captured: ${capturedUrl.split('#')[0]}#token=<redacted>`);
 	});
 
 	test('Hermes instance shows "Hermes" in agent details label', async ({ authedHermesPage: page }) => {
