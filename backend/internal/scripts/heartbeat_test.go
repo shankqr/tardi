@@ -121,6 +121,8 @@ func TestHermesHeartbeatScript_UsesDockerStackAndLatestUpdates(t *testing.T) {
 		"container_name: hermes-agent",
 		"network_mode: host",
 		"nousresearch/hermes-agent:latest",
+		"importlib.metadata",
+		`"hermes-agent"`,
 		`model: "${NEW_MODEL}"`,
 		`HERMES_DEFAULT_MODEL="anthropic/claude-sonnet-4.6"`,
 		`"openai-codex"`,

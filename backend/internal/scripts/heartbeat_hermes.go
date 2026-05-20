@@ -200,7 +200,20 @@ CURRENT_IMAGE_ID=$(docker inspect --format='{{.Image}}' hermes-agent 2>/dev/null
 CURRENT_TAG=$(echo "$CURRENT_IMAGE" | sed 's/.*://' | tr -d '[:space:]')
 RUNTIME_VERSION=""
 if [ "$STATUS" = "running" ] || [ "$STATUS" = "unhealthy" ]; then
-    RUNTIME_VERSION=$(timeout 10s docker exec hermes-agent hermes --version 2>/dev/null | grep -Eo 'v?[0-9]{4}\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?|[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?' | head -1 || true)
+    RUNTIME_VERSION=$(timeout 10s docker exec hermes-agent sh -lc 'python3 - <<'"'"'PY'"'"'
+import importlib.metadata as metadata
+for name in ("hermes-agent", "hermes"):
+    try:
+        version = metadata.version(name).strip()
+    except metadata.PackageNotFoundError:
+        continue
+    if version:
+        print(version if version.startswith("v") else "v" + version)
+        break
+PY' 2>/dev/null | grep -Eo 'v?[0-9]+(\.[0-9]+){1,3}([-+][0-9A-Za-z.-]+)?' | head -1 || true)
+    if [ -z "$RUNTIME_VERSION" ]; then
+        RUNTIME_VERSION=$(timeout 10s docker exec hermes-agent sh -lc 'gateway --version 2>/dev/null || true' 2>/dev/null | grep -Eo 'v?[0-9]+(\.[0-9]+){1,3}([-+][0-9A-Za-z.-]+)?' | head -1 || true)
+    fi
 fi
 [ -n "$RUNTIME_VERSION" ] && CURRENT_TAG="$RUNTIME_VERSION"
 [ -z "$CURRENT_TAG" ] && CURRENT_TAG="unknown"
