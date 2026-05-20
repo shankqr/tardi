@@ -34,6 +34,14 @@
 		!!instance && instance.target_openclaw_version === 'latest'
 	);
 
+	const displayAgentVersionTarget = $derived(
+		instance?.framework === 'hermes' &&
+			!!instance.openclaw_version &&
+			instance.target_openclaw_version === 'latest'
+			? 'latest'
+			: null
+	);
+
 	const isAgentVersionPending = $derived(
 		!!instance &&
 			!!instance.openclaw_version &&
@@ -649,14 +657,16 @@
 						</div>
 						{#if displayAgentVersion}
 							<div class="flex justify-between">
-								<dt class="text-gray-500 dark:text-gray-400">Version</dt>
+								<dt class="text-gray-500 dark:text-gray-400">{instance.framework === 'hermes' ? 'Hermes Version' : 'Version'}</dt>
 								<dd class="text-right">
-									<div class="font-mono text-gray-900 dark:text-white">{displayAgentVersion}</div>
+									<div class="font-mono text-gray-900 dark:text-white">
+										{displayAgentVersion}{#if displayAgentVersionTarget} <span class="font-sans text-xs text-gray-500 dark:text-gray-400">({displayAgentVersionTarget})</span>{/if}
+									</div>
 									{#if isAgentVersionPending}
 										<div class="mt-0.5 text-xs text-blue-600 dark:text-blue-400">
 											Updating from <span class="font-mono">{instance.openclaw_version}</span>
 										</div>
-									{:else if isAgentAutoUpdateEnabled}
+									{:else if isAgentAutoUpdateEnabled && instance.framework !== 'hermes'}
 										<div class="mt-0.5 text-xs text-blue-600 dark:text-blue-400">Auto-updates enabled</div>
 									{/if}
 								</dd>
