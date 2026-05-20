@@ -104,6 +104,8 @@ export interface AIProviderConfig {
 	openrouter_api_key?: string;
 	anthropic_api_key?: string;
 	openai_api_key?: string;
+	telegram_bot_token?: string;
+	telegram_allowed_users?: string;
 }
 
 export interface GoogleOAuthStatus {

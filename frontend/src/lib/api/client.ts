@@ -210,7 +210,9 @@ export async function getAgentConfig(
 			config: {
 				provider: 'openrouter',
 				model: 'anthropic/claude-sonnet-4.5',
-				openrouter_api_key: 'sk-or-...1234'
+				openrouter_api_key: 'sk-or-...1234',
+				telegram_bot_token: '123456789:mock-telegram-bot-token',
+				telegram_allowed_users: '1484592240'
 			},
 			version: 1
 		};

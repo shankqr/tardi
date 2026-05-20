@@ -20,6 +20,7 @@
 	import MagicMoment from '$lib/components/MagicMoment.svelte';
 	import GoogleConnect from '$lib/components/GoogleConnect.svelte';
 	import CodexConnect from '$lib/components/CodexConnect.svelte';
+	import TelegramConfig from '$lib/components/TelegramConfig.svelte';
 	import { featureFlags } from '$lib/featureFlags';
 
 	const instance = $derived(
@@ -736,6 +737,14 @@
 						onStatusChange={(connected) => { googleConnected = connected; }}
 						connectRequestCount={googleConnectRequests}
 					/>
+					{/if}
+
+					{#if instance.framework === 'hermes'}
+						<TelegramConfig
+							instanceId={instance.id}
+							disabled={instance.status !== 'active'}
+							onsyncchange={(s) => aiConfigSyncing = s}
+						/>
 					{/if}
 
 					{#if instance.ipv4}

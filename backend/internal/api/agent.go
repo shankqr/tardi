@@ -280,12 +280,13 @@ func GetAgentConfigHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		// Mask API keys for display
+		// Mask paid provider API keys for display. Telegram bot tokens are shown
+		// back to the owning user so the Telegram linking form can be edited.
 		masked := make(map[string]any, len(config.Config))
 		for k, v := range config.Config {
 			masked[k] = v
 		}
-		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key", "telegram_bot_token"} {
+		for _, keyField := range []string{"openrouter_api_key", "anthropic_api_key", "openai_api_key"} {
 			if v, ok := masked[keyField].(string); ok && len(v) > 4 {
 				masked[keyField] = v[:3] + "..." + v[len(v)-4:]
 			}
