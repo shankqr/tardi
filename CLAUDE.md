@@ -35,6 +35,7 @@ npm run check        # Type check
 - Gray-900 is the primary brand color
 - No VPS specs shown to users — abstracted away
 - Default branch for code changes is `main` — commit and push directly to main. Only use the `dev` branch when spinning the dev environment back up.
+- After code changes, automatically push to `main` and deploy the affected production service(s) from the laptop unless the user explicitly asks not to. Backend changes require the prod Cloud Run deploy command; frontend changes require `npm run deploy:prod`; full-stack changes require both. Docs-only or instruction-only changes do not require a prod deploy.
 
 ## Backend
 
