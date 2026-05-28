@@ -116,8 +116,37 @@ useradd -r -m -u 1000 -s /usr/sbin/nologin hermes || true
 usermod -aG docker hermes
 
 # --- Directory structure ---
-mkdir -p /opt/hermes/data
+mkdir -p /opt/hermes/data/workspace /opt/hermes/docker-cli/bin /opt/hermes/docker-cli/cli-plugins
 chown -R 1000:1000 /opt/hermes/data
+
+# --- Docker CLI bridge for the Hermes container ---
+# Hermes runs in a container, but application containers should be created on
+# the VPS Docker daemon. Bind-mount a known-good host CLI and Compose plugin
+# into the Hermes container so docker, docker compose, and docker-compose
+# work from chat commands.
+DOCKER_BIN=$(command -v docker || true)
+if [ -n "$DOCKER_BIN" ]; then
+    cp -f "$DOCKER_BIN" /opt/hermes/docker-cli/bin/docker
+fi
+COMPOSE_PLUGIN=""
+for path in \
+    /usr/libexec/docker/cli-plugins/docker-compose \
+    /usr/lib/docker/cli-plugins/docker-compose \
+    /usr/local/lib/docker/cli-plugins/docker-compose; do
+    if [ -x "$path" ]; then
+        COMPOSE_PLUGIN="$path"
+        break
+    fi
+done
+if [ -n "$COMPOSE_PLUGIN" ]; then
+    cp -f "$COMPOSE_PLUGIN" /opt/hermes/docker-cli/cli-plugins/docker-compose
+fi
+cat > /opt/hermes/docker-cli/bin/docker-compose <<'DOCKERCOMPOSEEOF'
+#!/bin/sh
+exec docker compose "$@"
+DOCKERCOMPOSEEOF
+chmod 755 /opt/hermes/docker-cli/bin/docker /opt/hermes/docker-cli/bin/docker-compose 2>/dev/null || true
+chmod 755 /opt/hermes/docker-cli/cli-plugins/docker-compose 2>/dev/null || true
 
 # --- Environment file ---
 DOCKER_GID=$(getent group docker | cut -d: -f3)
@@ -139,7 +168,9 @@ HERMES_DASHBOARD=1
 HERMES_DASHBOARD_HOST=127.0.0.1
 HERMES_DASHBOARD_PORT=9119
 HERMES_DASHBOARD_TUI=1
-TERMINAL_ENV=docker
+TERMINAL_ENV=local
+DOCKER_HOST=unix:///var/run/docker.sock
+HERMES_DOCKER_BINARY=/usr/local/bin/docker
 SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 SSL_CERT_DIR=/etc/ssl/certs
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
@@ -181,7 +212,8 @@ model:
   model: "{{.Model}}"
 {{- end}}
 terminal:
-  backend: docker
+  backend: local
+  cwd: "/opt/hermes/data/workspace"
 CFGEOF
 chown 1000:1000 /opt/hermes/data/config.yaml
 chmod 640 /opt/hermes/data/config.yaml
@@ -189,6 +221,7 @@ chmod 640 /opt/hermes/data/config.yaml
 cat > /opt/hermes/data/SOUL.md <<SOULEOF
 You are a helpful AI assistant running on Tardi.
 You can execute code, browse the web, manage files, and help with various tasks.
+Docker and Docker Compose are available on this dedicated VPS. For web apps, bind the app to host port 3000 so the preview domain can reach it.
 Be concise and helpful in your responses.
 SOULEOF
 chown 1000:1000 /opt/hermes/data/SOUL.md
@@ -259,7 +292,11 @@ services:
       - "${HERMES_GID}"
     volumes:
       - ./data:/opt/data:rw
+      - ./data:/opt/hermes/data:rw
       - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/hermes/docker-cli/bin/docker:/usr/local/bin/docker:ro
+      - /opt/hermes/docker-cli/bin/docker-compose:/usr/local/bin/docker-compose:ro
+      - /opt/hermes/docker-cli/cli-plugins:/usr/local/lib/docker/cli-plugins:ro
     env_file:
       - .env
     healthcheck:

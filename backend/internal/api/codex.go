@@ -224,7 +224,8 @@ model:
   provider: "openai-codex"
   model: "openai-codex/gpt-5.5"
 terminal:
-  backend: docker
+  backend: local
+  cwd: "/opt/hermes/data/workspace"
 CFGEOF
 chown 1000:1000 /opt/hermes/data/config.yaml 2>/dev/null || true
 chmod 640 /opt/hermes/data/config.yaml 2>/dev/null || true

@@ -148,6 +148,8 @@ func TestCodexScriptsSupportHermes(t *testing.T) {
 			want: []string{
 				`provider: "openai-codex"`,
 				`model: "openai-codex/gpt-5.5"`,
+				`backend: local`,
+				`cwd: "/opt/hermes/data/workspace"`,
 				"docker compose -f /opt/hermes/docker-compose.yml up -d --force-recreate hermes-agent",
 			},
 			forbidden: []string{"openclaw-gateway"},

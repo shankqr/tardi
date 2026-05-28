@@ -32,6 +32,36 @@ sync_data_env() {
     fi
 }
 
+ensure_hermes_docker_cli_bundle() {
+    mkdir -p /opt/hermes/docker-cli/bin /opt/hermes/docker-cli/cli-plugins
+
+    DOCKER_BIN=$(command -v docker || true)
+    if [ -n "$DOCKER_BIN" ]; then
+        cp -f "$DOCKER_BIN" /opt/hermes/docker-cli/bin/docker 2>/dev/null || true
+    fi
+
+    COMPOSE_PLUGIN=""
+    for path in \
+        /usr/libexec/docker/cli-plugins/docker-compose \
+        /usr/lib/docker/cli-plugins/docker-compose \
+        /usr/local/lib/docker/cli-plugins/docker-compose; do
+        if [ -x "$path" ]; then
+            COMPOSE_PLUGIN="$path"
+            break
+        fi
+    done
+    if [ -n "$COMPOSE_PLUGIN" ]; then
+        cp -f "$COMPOSE_PLUGIN" /opt/hermes/docker-cli/cli-plugins/docker-compose 2>/dev/null || true
+    fi
+
+    cat > /opt/hermes/docker-cli/bin/docker-compose <<'DOCKERCOMPOSEEOF'
+#!/bin/sh
+exec docker compose "$@"
+DOCKERCOMPOSEEOF
+    chmod 755 /opt/hermes/docker-cli/bin/docker /opt/hermes/docker-cli/bin/docker-compose 2>/dev/null || true
+    chmod 755 /opt/hermes/docker-cli/cli-plugins/docker-compose 2>/dev/null || true
+}
+
 write_hermes_compose() {
     cat > /opt/hermes/docker-compose.yml <<'COMPOSEEOF'
 services:
@@ -47,7 +77,11 @@ services:
       - "${HERMES_GID}"
     volumes:
       - ./data:/opt/data:rw
+      - ./data:/opt/hermes/data:rw
       - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/hermes/docker-cli/bin/docker:/usr/local/bin/docker:ro
+      - /opt/hermes/docker-cli/bin/docker-compose:/usr/local/bin/docker-compose:ro
+      - /opt/hermes/docker-cli/cli-plugins:/usr/local/lib/docker/cli-plugins:ro
     env_file:
       - .env
     healthcheck:
@@ -61,7 +95,8 @@ COMPOSEEOF
 }
 
 ensure_hermes_stack() {
-    mkdir -p /opt/hermes/data
+    mkdir -p /opt/hermes/data/workspace
+    STACK_CHANGED=false
 
     # Native Hermes installs stored state under /home/hermes/.hermes. Copy any
     # missing files into the Docker data volume before stopping native services.
@@ -78,6 +113,7 @@ ensure_hermes_stack() {
     [ -n "$HERMES_GID" ] || HERMES_GID=1000
 
     touch /opt/hermes/.env
+    ENV_BEFORE=$(sha256sum /opt/hermes/.env 2>/dev/null | awk '{print $1}')
     for kv in \
         "DOCKER_GID=${DOCKER_GID}" \
         "HERMES_UID=1000" \
@@ -90,7 +126,9 @@ ensure_hermes_stack() {
         "HERMES_DASHBOARD_HOST=127.0.0.1" \
         "HERMES_DASHBOARD_PORT=9119" \
         "HERMES_DASHBOARD_TUI=1" \
-        "TERMINAL_ENV=docker" \
+        "TERMINAL_ENV=local" \
+        "DOCKER_HOST=unix:///var/run/docker.sock" \
+        "HERMES_DOCKER_BINARY=/usr/local/bin/docker" \
         "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" \
         "SSL_CERT_DIR=/etc/ssl/certs"; do
         key=${kv%%=*}
@@ -103,28 +141,63 @@ ensure_hermes_stack() {
     chmod 600 /opt/hermes/.env
     source /opt/hermes/.env 2>/dev/null || true
     sync_data_env
+    ENV_AFTER=$(sha256sum /opt/hermes/.env 2>/dev/null | awk '{print $1}')
+    if [ "$ENV_BEFORE" != "$ENV_AFTER" ]; then
+        STACK_CHANGED=true
+    fi
+
+    ensure_hermes_docker_cli_bundle
 
     if [ ! -f /opt/hermes/data/config.yaml ]; then
         cat > /opt/hermes/data/config.yaml <<'CFGEOF'
 terminal:
-  backend: docker
+  backend: local
+  cwd: "/opt/hermes/data/workspace"
 CFGEOF
+        STACK_CHANGED=true
+    else
+        if grep -Eq '^[[:space:]]*backend:[[:space:]]*docker[[:space:]]*$' /opt/hermes/data/config.yaml 2>/dev/null; then
+            sed -i 's/^[[:space:]]*backend:[[:space:]]*docker[[:space:]]*$/  backend: local/' /opt/hermes/data/config.yaml
+            STACK_CHANGED=true
+        fi
+        if ! grep -q 'cwd: "/opt/hermes/data/workspace"' /opt/hermes/data/config.yaml 2>/dev/null; then
+            if grep -Eq '^[[:space:]]*cwd:' /opt/hermes/data/config.yaml 2>/dev/null; then
+                sed -i 's#^[[:space:]]*cwd:.*$#  cwd: "/opt/hermes/data/workspace"#' /opt/hermes/data/config.yaml
+            elif grep -Eq '^[[:space:]]*backend:[[:space:]]*local[[:space:]]*$' /opt/hermes/data/config.yaml 2>/dev/null; then
+                sed -i '/^[[:space:]]*backend:[[:space:]]*local[[:space:]]*$/a\  cwd: "/opt/hermes/data/workspace"' /opt/hermes/data/config.yaml
+            else
+                cat >> /opt/hermes/data/config.yaml <<'CFGEOF'
+terminal:
+  backend: local
+  cwd: "/opt/hermes/data/workspace"
+CFGEOF
+            fi
+            STACK_CHANGED=true
+        fi
     fi
     if [ ! -f /opt/hermes/data/SOUL.md ]; then
         cat > /opt/hermes/data/SOUL.md <<'SOULEOF'
 You are a helpful AI assistant running on Tardi.
 You can execute code, browse the web, manage files, and help with various tasks.
+Docker and Docker Compose are available on this dedicated VPS. For web apps, bind the app to host port 3000 so the preview domain can reach it.
 Be concise and helpful in your responses.
 SOULEOF
     fi
     chown -R 1000:1000 /opt/hermes/data 2>/dev/null || true
 
-    STACK_CHANGED=false
     if [ ! -f /opt/hermes/docker-compose.yml ] || ! grep -q 'nousresearch/hermes-agent' /opt/hermes/docker-compose.yml 2>/dev/null; then
         write_hermes_compose
         STACK_CHANGED=true
     fi
     if ! grep -q 'network_mode: host' /opt/hermes/docker-compose.yml 2>/dev/null; then
+        write_hermes_compose
+        STACK_CHANGED=true
+    fi
+    if ! grep -q '/opt/hermes/docker-cli/bin/docker:/usr/local/bin/docker:ro' /opt/hermes/docker-compose.yml 2>/dev/null; then
+        write_hermes_compose
+        STACK_CHANGED=true
+    fi
+    if ! grep -q './data:/opt/hermes/data:rw' /opt/hermes/docker-compose.yml 2>/dev/null; then
         write_hermes_compose
         STACK_CHANGED=true
     fi
@@ -439,6 +512,17 @@ if [ -n "$API_CONFIG_VERSION" ] && [ "$API_CONFIG_VERSION" != "$LOCAL_CONFIG_VER
         fi
 
         mv /opt/hermes/.env.tmp /opt/hermes/.env
+        for kv in \
+            "TERMINAL_ENV=local" \
+            "DOCKER_HOST=unix:///var/run/docker.sock" \
+            "HERMES_DOCKER_BINARY=/usr/local/bin/docker"; do
+            key=${kv%%=*}
+            if grep -q "^${key}=" /opt/hermes/.env 2>/dev/null; then
+                sed -i "s|^${key}=.*|${kv}|" /opt/hermes/.env
+            else
+                echo "$kv" >> /opt/hermes/.env
+            fi
+        done
         chmod 600 /opt/hermes/.env
         sync_data_env
 
@@ -462,7 +546,8 @@ model:
   provider: "${NEW_PROVIDER}"
   model: "${NEW_MODEL}"
 terminal:
-  backend: docker
+  backend: local
+  cwd: "/opt/hermes/data/workspace"
 CFGEOF
             chown 1000:1000 /opt/hermes/data/config.yaml 2>/dev/null || true
             chmod 640 /opt/hermes/data/config.yaml 2>/dev/null || true

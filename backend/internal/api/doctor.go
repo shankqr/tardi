@@ -287,6 +287,21 @@ else
     add "Network Mode" "warn" "Network mode: ${HM_NET}" "Expected host networking."
 fi
 
+# ── 9. Docker access from Hermes ─────────────────────────────────
+if docker exec hermes-agent sh -lc 'docker version >/dev/null 2>&1 && docker compose version >/dev/null 2>&1'; then
+    add "Docker Access" "pass" "Docker CLI and Compose available inside Hermes" ""
+else
+    DOCKER_DETAIL=$(docker exec hermes-agent sh -lc 'docker version 2>&1; docker compose version 2>&1' 2>&1 | tail -20)
+    add "Docker Access" "fail" "Hermes cannot use Docker from chat" "$DOCKER_DETAIL"
+fi
+
+TERMINAL_BACKEND=$(grep -A3 '^terminal:' /opt/hermes/data/config.yaml 2>/dev/null | grep 'backend:' | awk '{print $2}' | tr -d '"' || true)
+if [ "$TERMINAL_BACKEND" = "local" ]; then
+    add "Terminal Backend" "pass" "Local terminal with host Docker access" ""
+else
+    add "Terminal Backend" "warn" "Terminal backend: ${TERMINAL_BACKEND:-unknown}" "Expected local so Docker commands run from the Hermes container against the VPS Docker daemon."
+fi
+
 cat /tmp/tardi-health.json
 rm -f /tmp/tardi-health.json
 `

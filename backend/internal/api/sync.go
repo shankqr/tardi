@@ -332,7 +332,7 @@ func buildHermesConfigSyncScript() string {
 		"    NEW_MODEL=\"$HERMES_DEFAULT_MODEL\"\n" +
 		"fi\n" +
 		"\n" +
-		"mkdir -p /opt/hermes/data\n" +
+		"mkdir -p /opt/hermes/data/workspace\n" +
 		"cp /opt/hermes/.env /opt/hermes/.env.bak\n" +
 		"if [ \"$HAS_TG_CONFIG\" = \"true\" ]; then\n" +
 		"    grep -v -E '_API_KEY=|^(TELEGRAM_BOT_TOKEN|TELEGRAM_ALLOWED_USERS|TELEGRAM_GROUP_ALLOWED_USERS|TELEGRAM_GROUP_ALLOWED_CHATS|TELEGRAM_REPLY_TO_MODE|GATEWAY_ALLOW_ALL_USERS)=' /opt/hermes/.env > /opt/hermes/.env.tmp\n" +
@@ -352,6 +352,14 @@ func buildHermesConfigSyncScript() string {
 		"    fi\n" +
 		"fi\n" +
 		"mv /opt/hermes/.env.tmp /opt/hermes/.env\n" +
+		"for kv in \"TERMINAL_ENV=local\" \"DOCKER_HOST=unix:///var/run/docker.sock\" \"HERMES_DOCKER_BINARY=/usr/local/bin/docker\"; do\n" +
+		"    key=${kv%%=*}\n" +
+		"    if grep -q \"^${key}=\" /opt/hermes/.env 2>/dev/null; then\n" +
+		"        sed -i \"s|^${key}=.*|${kv}|\" /opt/hermes/.env\n" +
+		"    else\n" +
+		"        echo \"$kv\" >> /opt/hermes/.env\n" +
+		"    fi\n" +
+		"done\n" +
 		"chmod 600 /opt/hermes/.env\n" +
 		"cp /opt/hermes/.env /opt/hermes/data/.env\n" +
 		"chown 1000:1000 /opt/hermes/data/.env 2>/dev/null || true\n" +
@@ -364,7 +372,8 @@ func buildHermesConfigSyncScript() string {
 		"  provider: \"${NEW_PROVIDER}\"\n" +
 		"  model: \"${NEW_MODEL}\"\n" +
 		"terminal:\n" +
-		"  backend: docker\n" +
+		"  backend: local\n" +
+		"  cwd: \"/opt/hermes/data/workspace\"\n" +
 		"CFGEOF\n" +
 		"    chown 1000:1000 /opt/hermes/data/config.yaml\n" +
 		"    chmod 640 /opt/hermes/data/config.yaml\n" +
