@@ -26,6 +26,8 @@ export type ProvisioningStep =
 
 export type AgentFramework = 'openclaw' | 'hermes';
 
+export type HetznerCountry = 'fi' | 'de';
+
 export type PlanTier = 'standard' | 'pro';
 
 export type SubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'suspended';

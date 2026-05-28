@@ -51,9 +51,13 @@ test.describe('Framework selector on deploy page', () => {
 			// Framework selector should show two options
 			const openclawBtn = page.getByRole('button', { name: /OpenClaw/i });
 			const hermesBtn = page.getByRole('button', { name: /Hermes/i });
+			const countrySelect = page.locator('#server-country');
 
 			await expect(openclawBtn).toBeVisible({ timeout: 10_000 });
 			await expect(hermesBtn).toBeVisible({ timeout: 10_000 });
+			await expect(countrySelect).toBeVisible({ timeout: 10_000 });
+			await expect(countrySelect).toHaveValue('fi');
+			await expect(countrySelect.locator('option')).toHaveText(['Finland', 'Germany']);
 
 			// OpenClaw should be selected by default (has the active border class)
 			await expect(openclawBtn).toHaveClass(/border-gray-900|border-white/);
@@ -111,6 +115,7 @@ test.describe('Framework selector on deploy page', () => {
 
 			// Select Hermes framework
 			await page.getByRole('button', { name: /Hermes/i }).click();
+			await page.locator('#server-country').selectOption('de');
 
 			// Fill agent name
 			const agentName = `e2e-hermes-${Date.now()}`;
@@ -124,7 +129,8 @@ test.describe('Framework selector on deploy page', () => {
 
 			const body = JSON.parse(request.postData() || '{}');
 			expect(body.framework).toBe('hermes');
-			console.log(`[E2E] Deploy request sent with framework: ${body.framework}`);
+			expect(body.region).toBe('de');
+			console.log(`[E2E] Deploy request sent with framework: ${body.framework}, region: ${body.region}`);
 
 			// Wait for redirect to instance page
 			await page.waitForURL('**/dashboard/instances/**', { timeout: 15_000 });

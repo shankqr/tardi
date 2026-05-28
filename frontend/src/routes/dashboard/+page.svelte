@@ -3,10 +3,11 @@
 	import { dashboardState, dashboardLoading, dashboardError, refreshDashboard } from '$lib/stores/dashboard';
 	import { getIdToken } from '$lib/stores/auth';
 	import { createInstance } from '$lib/api/client';
+	import { defaultHetznerCountry, hetznerCountryOptions } from '$lib/deployLocations';
 	import InstanceCard from '$lib/components/InstanceCard.svelte';
 	import SubscriptionCard from '$lib/components/SubscriptionCard.svelte';
 	import { plans } from '$lib/api/mock';
-	import type { AgentFramework } from '$lib/types';
+	import type { AgentFramework, HetznerCountry } from '$lib/types';
 
 	const activeInstance = $derived(
 		$dashboardState?.instances.find(
@@ -16,6 +17,7 @@
 
 	let agentName = $state('');
 	let selectedFramework = $state<AgentFramework>('openclaw');
+	let selectedCountry = $state<HetznerCountry>(defaultHetznerCountry);
 	let deploying = $state(false);
 	let deployError = $state('');
 
@@ -28,7 +30,7 @@
 			if (!token) return;
 			const instance = await createInstance(token, {
 				name: agentName,
-				region: 'eu-central',
+				region: selectedCountry,
 				framework: selectedFramework
 			});
 			await refreshDashboard();
@@ -83,7 +85,7 @@
 						</div>
 
 						<div>
-							<label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Agent Framework</label>
+							<div class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Agent Framework</div>
 							<div class="grid grid-cols-2 gap-3">
 								<button
 									type="button"
@@ -100,6 +102,21 @@
 									<div class="text-sm font-semibold text-gray-900 dark:text-white">Hermes</div>
 								</button>
 							</div>
+						</div>
+
+						<div>
+							<label for="server-country" class="block text-sm font-medium text-gray-700 dark:text-gray-300"
+								>Server Country</label
+							>
+							<select
+								id="server-country"
+								bind:value={selectedCountry}
+								class="mt-1 block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-gray-900 dark:focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:focus:ring-gray-400"
+							>
+								{#each hetznerCountryOptions as country}
+									<option value={country.value}>{country.label}</option>
+								{/each}
+							</select>
 						</div>
 
 						<button
