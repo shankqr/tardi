@@ -1172,6 +1172,10 @@ func buildServerName(framework, email, uniqueID string) string {
 	return name
 }
 
+func buildUpgradeServerName(framework, email, instancePrefix, attemptID string) string {
+	return buildServerName(framework, email, fmt.Sprintf("%s-u%s", instancePrefix, attemptID))
+}
+
 func GenerateAgentToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {

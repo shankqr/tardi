@@ -67,6 +67,7 @@ func (m *MockProvider) CreateServer(ctx context.Context, req CreateServerRequest
 		ProviderServerID: serverID,
 		Name:             req.Name,
 		Status:           "initializing",
+		ServerType:       req.ServerType,
 		IPv4:             ip,
 		RootPassword:     "mock-password-12345",
 	}
@@ -161,6 +162,7 @@ func (m *MockProvider) GetServer(ctx context.Context, providerServerID string) (
 		ProviderServerID: state.server.ProviderServerID,
 		Name:             state.server.Name,
 		Status:           state.status,
+		ServerType:       state.server.ServerType,
 		IPv4:             state.server.IPv4,
 	}, nil
 }

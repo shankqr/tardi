@@ -22,6 +22,7 @@ type Server struct {
 	ProviderServerID string
 	Name             string
 	Status           string // "initializing", "running", "off"
+	ServerType       string
 	IPv4             string
 	RootPassword     string // Only set on initial creation
 }

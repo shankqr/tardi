@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	upgradeTimeout   = 25 * time.Minute
-	downgradeTimeout = 10 * time.Minute
+	upgradeTimeout        = 25 * time.Minute
+	upgradeCleanupTimeout = 2 * time.Minute
+	downgradeTimeout      = 10 * time.Minute
 )
 
 // Upgrader handles plan upgrades (snapshot-based server migration) and downgrades (fresh provisioning).
@@ -58,6 +59,20 @@ func (u *Upgrader) DowngradeInstance(inst *models.VpsInstance, newTier models.Pl
 	go u.executeDowngrade(inst, newTier)
 }
 
+func serverAlreadyOnMapping(server *provider.Server, mapping *models.ProviderPlanMapping) bool {
+	return server != nil &&
+		mapping != nil &&
+		server.ServerType != "" &&
+		server.ServerType == mapping.ProviderServerType
+}
+
+func stringPtrIfNotEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanTier) {
 	ctx, cancel := context.WithTimeout(context.Background(), upgradeTimeout)
 	defer cancel()
@@ -67,13 +82,25 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 		"new_tier", newTier,
 	)
 
-	_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusUpgrading)
+	if err := db.UpdateInstanceStatusConditional(ctx, u.pool, inst.ID, models.VpsStatusActive, models.VpsStatusUpgrading); err != nil {
+		u.logger.Info("upgrader: skipping upgrade because instance is not active",
+			"instance_id", inst.ID,
+			"status", inst.Status,
+			"error", err,
+		)
+		return
+	}
+	restoreActive := func() {
+		restoreCtx, restoreCancel := context.WithTimeout(context.Background(), upgradeCleanupTimeout)
+		defer restoreCancel()
+		_ = db.UpdateInstanceStatus(restoreCtx, u.pool, inst.ID, models.VpsStatusActive)
+	}
 
 	// Get provider
 	prov, err := u.registry.Get(inst.Provider)
 	if err != nil {
 		u.logger.Error("upgrader: provider not found", "provider", inst.Provider, "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		restoreActive()
 		return
 	}
 
@@ -84,8 +111,55 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	}
 
 	oldServerID := *inst.ProviderServerID
+	oldIPv4 := inst.IPv4
 
-	// Step 1: Create a system snapshot of the current server
+	// Step 1: Look up the target tier's provider mapping and skip duplicate
+	// upgrades where the provider server is already on the requested plan.
+	mapping, err := db.GetBestProviderMapping(ctx, u.pool, newTier, inst.Region)
+	if err != nil {
+		u.logger.Error("upgrader: get provider mapping", "tier", newTier, "error", err)
+		restoreActive()
+		return
+	}
+	currentServer, err := prov.GetServer(ctx, oldServerID)
+	if err != nil {
+		u.logger.Error("upgrader: get current server", "instance_id", inst.ID, "server_id", oldServerID, "error", err)
+		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		return
+	}
+	if serverAlreadyOnMapping(currentServer, mapping) {
+		if currentServer.IPv4 != "" {
+			_ = db.UpdateInstanceProviderInfo(ctx, u.pool, inst.ID, currentServer.ProviderServerID, &currentServer.IPv4)
+		}
+		restoreActive()
+		u.logger.Info("upgrader: server already on requested tier, skipping replacement",
+			"instance_id", inst.ID,
+			"new_tier", newTier,
+			"server_id", currentServer.ProviderServerID,
+			"server_type", currentServer.ServerType,
+		)
+		return
+	}
+
+	agentToken := ""
+	if inst.AgentTokenSecretName != nil {
+		agentToken = *inst.AgentTokenSecretName
+	}
+	frameworkAuthToken := ""
+	if inst.OpenClawAuthToken != nil {
+		frameworkAuthToken = *inst.OpenClawAuthToken
+	}
+	if agentToken == "" || frameworkAuthToken == "" {
+		u.logger.Error("upgrader: refusing snapshot upgrade with missing existing tokens",
+			"instance_id", inst.ID,
+			"has_agent_token", agentToken != "",
+			"has_framework_auth_token", frameworkAuthToken != "",
+		)
+		restoreActive()
+		return
+	}
+
+	// Step 2: Create a system snapshot of the current server.
 	snapName := fmt.Sprintf("upgrade-%d", time.Now().Unix())
 	snap := &models.Snapshot{
 		ID:            uuid.New(),
@@ -96,7 +170,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	}
 	if err := db.CreateSnapshot(ctx, u.pool, snap); err != nil {
 		u.logger.Error("upgrader: create snapshot record", "instance_id", inst.ID, "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		restoreActive()
 		return
 	}
 
@@ -106,65 +180,46 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	if err != nil {
 		u.logger.Error("upgrader: create snapshot failed", "instance_id", inst.ID, "error", err)
 		_ = db.UpdateSnapshotError(ctx, u.pool, snap.ID, err.Error())
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		restoreActive()
 		return
+	}
+	cleanupSnapshot := func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), upgradeCleanupTimeout)
+		defer cleanupCancel()
+		_ = db.UpdateSnapshotStatus(cleanupCtx, u.pool, snap.ID, models.SnapshotStatusDeleting)
+		if err := prov.DeleteSnapshot(cleanupCtx, result.ProviderImageID); err != nil {
+			u.logger.Error("upgrader: delete upgrade snapshot", "snapshot_id", snap.ID, "error", err)
+			return
+		}
+		_ = db.UpdateSnapshotStatus(cleanupCtx, u.pool, snap.ID, models.SnapshotStatusDeleted)
 	}
 
 	if err := db.UpdateSnapshotReady(ctx, u.pool, snap.ID, result.ProviderImageID, result.SizeGB); err != nil {
 		u.logger.Error("upgrader: update snapshot ready", "snapshot_id", snap.ID, "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		cleanupSnapshot()
+		restoreActive()
 		return
 	}
 
 	u.logger.Info("upgrader: snapshot created", "instance_id", inst.ID, "snapshot_id", snap.ID)
 
-	// Step 2: Look up the new tier's provider mapping
-	mapping, err := db.GetBestProviderMapping(ctx, u.pool, newTier, inst.Region)
-	if err != nil {
-		u.logger.Error("upgrader: get provider mapping", "tier", newTier, "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
-		return
-	}
-
-	// Step 3: Generate new tokens and cloud-init
-	agentToken, err := GenerateAgentToken()
-	if err != nil {
-		u.logger.Error("upgrader: generate agent token", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
-		return
-	}
-	if err := db.UpdateInstanceAgentToken(ctx, u.pool, inst.ID, agentToken); err != nil {
-		u.logger.Error("upgrader: store agent token", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
-		return
-	}
-
-	frameworkAuthToken, err := GenerateAgentToken()
-	if err != nil {
-		u.logger.Error("upgrader: generate framework auth token", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
-		return
-	}
-	if err := db.UpdateInstanceOpenClawAuthToken(ctx, u.pool, inst.ID, frameworkAuthToken); err != nil {
-		u.logger.Error("upgrader: store framework auth token", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
-		return
-	}
-
-	// Generate root password for the new server (cloud-init sets it via chpasswd)
+	// Step 3: Render cloud-init with the existing tokens. Snapshot-based
+	// servers usually keep the source server's cloud-init state and local env
+	// files, so rotating tokens here would break the replacement heartbeat.
 	rootPassword, err := GenerateAgentToken()
 	if err != nil {
 		u.logger.Error("upgrader: generate root password", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		cleanupSnapshot()
+		restoreActive()
 		return
 	}
-	_ = db.UpdateInstanceRootPassword(ctx, u.pool, inst.ID, rootPassword)
 
 	// Extract config values
 	agentCfg, err := db.GetAgentConfigByInstanceID(ctx, u.pool, inst.ID)
 	if err != nil {
 		u.logger.Error("upgrader: get agent config", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		cleanupSnapshot()
+		restoreActive()
 		return
 	}
 	providerName := fallbackDefaultProvider
@@ -259,7 +314,8 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	}
 	if err != nil {
 		u.logger.Error("upgrader: render cloud-init", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		cleanupSnapshot()
+		restoreActive()
 		return
 	}
 
@@ -267,13 +323,15 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	user, err := db.GetUserByID(ctx, u.pool, inst.UserID)
 	if err != nil {
 		u.logger.Error("upgrader: get user", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		cleanupSnapshot()
+		restoreActive()
 		return
 	}
 
 	// Step 4: Create new server from snapshot on the new tier
+	replacementName := buildUpgradeServerName(string(framework), user.Email, inst.ID.String()[:8], uuid.NewString()[:8])
 	server, err := prov.CreateServer(ctx, provider.CreateServerRequest{
-		Name:       buildServerName(string(framework), user.Email, inst.ID.String()[:8]),
+		Name:       replacementName,
 		ServerType: mapping.ProviderServerType,
 		Region:     mapping.ProviderRegion,
 		ImageID:    result.ProviderImageID,
@@ -286,24 +344,60 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	})
 	if err != nil {
 		u.logger.Error("upgrader: create server from snapshot", "instance_id", inst.ID, "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		cleanupSnapshot()
+		restoreActive()
 		return
+	}
+	rollbackToOldServer := func(reason string, rollbackErr error) {
+		rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), upgradeCleanupTimeout)
+		defer rollbackCancel()
+		u.logger.Error("upgrader: rolling back to existing server",
+			"instance_id", inst.ID,
+			"reason", reason,
+			"error", rollbackErr,
+			"old_server_id", oldServerID,
+			"replacement_server_id", server.ProviderServerID,
+		)
+		if err := db.UpdateInstanceProviderInfo(rollbackCtx, u.pool, inst.ID, oldServerID, oldIPv4); err != nil {
+			u.logger.Error("upgrader: rollback provider info failed", "instance_id", inst.ID, "error", err)
+			_ = db.UpdateInstanceStatus(rollbackCtx, u.pool, inst.ID, models.VpsStatusError)
+			return
+		}
+		restoreActive()
+		if err := prov.DeleteServer(rollbackCtx, server.ProviderServerID); err != nil {
+			u.logger.Error("upgrader: delete replacement after rollback", "server_id", server.ProviderServerID, "error", err)
+		}
+		cleanupSnapshot()
 	}
 
 	// Update instance with new server info
-	if err := db.UpdateInstanceProviderInfo(ctx, u.pool, inst.ID, server.ProviderServerID, &server.IPv4); err != nil {
+	if err := db.UpdateInstanceProviderInfo(ctx, u.pool, inst.ID, server.ProviderServerID, stringPtrIfNotEmpty(server.IPv4)); err != nil {
 		u.logger.Error("upgrader: update provider info", "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), upgradeCleanupTimeout)
+		if delErr := prov.DeleteServer(deleteCtx, server.ProviderServerID); delErr != nil {
+			u.logger.Error("upgrader: delete replacement after DB update failure", "server_id", server.ProviderServerID, "error", delErr)
+		}
+		deleteCancel()
+		cleanupSnapshot()
+		restoreActive()
 		return
-	}
-	if server.RootPassword != "" {
-		_ = db.UpdateInstanceRootPassword(ctx, u.pool, inst.ID, server.RootPassword)
 	}
 
 	// Step 5: Wait for new server to be running
 	if err := u.waitForServer(ctx, prov, server.ProviderServerID, inst); err != nil {
-		u.logger.Error("upgrader: wait for server", "instance_id", inst.ID, "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		rollbackToOldServer("wait for replacement server", err)
+		return
+	}
+	if readyServer, err := prov.GetServer(ctx, server.ProviderServerID); err == nil {
+		if readyServer.IPv4 != "" {
+			server.IPv4 = readyServer.IPv4
+			_ = db.UpdateInstanceProviderInfo(ctx, u.pool, inst.ID, server.ProviderServerID, &server.IPv4)
+		}
+	} else {
+		u.logger.Warn("upgrader: get replacement server after wait failed", "server_id", server.ProviderServerID, "error", err)
+	}
+	if server.IPv4 == "" {
+		rollbackToOldServer("replacement server missing IPv4", fmt.Errorf("replacement server %s has no IPv4", server.ProviderServerID))
 		return
 	}
 
@@ -313,8 +407,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	// the password through the provider API to get a working credential.
 	newPassword, err := prov.ResetPassword(ctx, server.ProviderServerID)
 	if err != nil {
-		u.logger.Error("upgrader: reset password after upgrade", "instance_id", inst.ID, "error", err)
-		_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusError)
+		rollbackToOldServer("reset replacement password", err)
 		return
 	}
 	_ = db.UpdateInstanceRootPassword(ctx, u.pool, inst.ID, newPassword)
@@ -345,11 +438,7 @@ func (u *Upgrader) executeUpgrade(inst *models.VpsInstance, newTier models.PlanT
 	}
 
 	// Step 8: Clean up the upgrade snapshot
-	_ = db.UpdateSnapshotStatus(ctx, u.pool, snap.ID, models.SnapshotStatusDeleting)
-	if err := prov.DeleteSnapshot(ctx, result.ProviderImageID); err != nil {
-		u.logger.Error("upgrader: delete upgrade snapshot", "snapshot_id", snap.ID, "error", err)
-	}
-	_ = db.UpdateSnapshotStatus(ctx, u.pool, snap.ID, models.SnapshotStatusDeleted)
+	cleanupSnapshot()
 
 	// Step 9: Mark instance active (plan tier already updated by webhook)
 	_ = db.UpdateInstanceStatus(ctx, u.pool, inst.ID, models.VpsStatusActive)

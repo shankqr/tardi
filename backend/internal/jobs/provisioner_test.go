@@ -56,6 +56,37 @@ func TestBuildServerName(t *testing.T) {
 	}
 }
 
+func TestBuildUpgradeServerNameIsUniqueFromBaseName(t *testing.T) {
+	base := buildServerName("hermes", "clawmyway@gmail.com", "f59c3841")
+	got := buildUpgradeServerName("hermes", "clawmyway@gmail.com", "f59c3841", "abc12345")
+
+	if got == base {
+		t.Fatalf("buildUpgradeServerName() = base name %q", got)
+	}
+	if len(got) > 63 {
+		t.Fatalf("buildUpgradeServerName() length = %d, exceeds 63 chars: %q", len(got), got)
+	}
+	if !strings.HasSuffix(got, "-f59c3841-uabc12345") {
+		t.Fatalf("buildUpgradeServerName() = %q, want upgrade suffix", got)
+	}
+}
+
+func TestBuildUpgradeServerNameTruncatesLongEmail(t *testing.T) {
+	got := buildUpgradeServerName(
+		"openclaw",
+		"verylongemailaddressthatexceedsthelimit@reallylongdomainname.example.com",
+		"abcd1234",
+		"deadbeef",
+	)
+
+	if len(got) > 63 {
+		t.Fatalf("buildUpgradeServerName() length = %d, exceeds 63 chars: %q", len(got), got)
+	}
+	if !strings.HasSuffix(got, "-abcd1234-udeadbeef") {
+		t.Fatalf("buildUpgradeServerName() = %q, want upgrade suffix", got)
+	}
+}
+
 func TestFrameworkCode(t *testing.T) {
 	if got := frameworkCode("openclaw"); got != "oc" {
 		t.Errorf("frameworkCode(\"openclaw\") = %q, want \"oc\"", got)

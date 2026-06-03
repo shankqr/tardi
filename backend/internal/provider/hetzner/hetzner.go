@@ -70,11 +70,16 @@ func (h *HetznerProvider) CreateServer(ctx context.Context, req provider.CreateS
 	if server.PublicNet.IPv4.IP != nil {
 		ipv4 = server.PublicNet.IPv4.IP.String()
 	}
+	serverTypeName := ""
+	if server.ServerType != nil {
+		serverTypeName = server.ServerType.Name
+	}
 
 	return &provider.Server{
 		ProviderServerID: strconv.FormatInt(server.ID, 10),
 		Name:             server.Name,
 		Status:           string(server.Status),
+		ServerType:       serverTypeName,
 		IPv4:             ipv4,
 		RootPassword:     result.RootPassword,
 	}, nil
@@ -98,11 +103,16 @@ func (h *HetznerProvider) GetServer(ctx context.Context, providerServerID string
 	if server.PublicNet.IPv4.IP != nil {
 		ipv4 = server.PublicNet.IPv4.IP.String()
 	}
+	serverType := ""
+	if server.ServerType != nil {
+		serverType = server.ServerType.Name
+	}
 
 	return &provider.Server{
 		ProviderServerID: providerServerID,
 		Name:             server.Name,
 		Status:           string(server.Status),
+		ServerType:       serverType,
 		IPv4:             ipv4,
 	}, nil
 }
