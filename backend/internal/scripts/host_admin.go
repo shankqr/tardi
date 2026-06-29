@@ -15,7 +15,14 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 INSTALL_DIR=/usr/local/lib/tardi-host-admin
-BIN_DIR=/opt/openclaw/host-admin/bin
+if [ -d /opt/openclaw ]; then
+    RUNTIME_DIR=/opt/openclaw
+elif [ -d /opt/hermes ]; then
+    RUNTIME_DIR=/opt/hermes
+else
+    RUNTIME_DIR=/opt/tardi-runtime
+fi
+BIN_DIR="$RUNTIME_DIR/host-admin/bin"
 RUN_DIR=/run/tardi-host-admin
 LOG_DIR=/var/log/tardi-host-admin
 
@@ -62,13 +69,32 @@ class ActionError(Exception):
         self.output = output
 
 
-def openclaw_ids():
+def first_existing_user(candidates):
+    for name in candidates:
+        if not name:
+            continue
+        try:
+            return pwd.getpwnam(name)
+        except KeyError:
+            continue
+    raise ActionError("desktop user not found", 500)
+
+
+def runtime_user_record():
+    preferred = os.environ.get("TARDI_DESKTOP_USER", "")
+    return first_existing_user([preferred, "openclaw", "hermes"])
+
+
+def runtime_group_id(user_record):
     try:
-        user = pwd.getpwnam("openclaw")
-        group = grp.getgrnam("openclaw")
-        return user.pw_uid, group.gr_gid
+        return grp.getgrnam(user_record.pw_name).gr_gid
     except KeyError:
-        return 1000, 1000
+        return user_record.pw_gid
+
+
+def runtime_ids():
+    user = runtime_user_record()
+    return user.pw_uid, runtime_group_id(user)
 
 
 def log_action(action, ok, detail=""):
@@ -109,6 +135,7 @@ def service_state(name):
 
 
 def desktop_status(_body):
+    desktop_user = runtime_user_record()
     return {
         "desktop_service": service_state("tardi-desktop.service"),
         "host_admin_service": service_state("tardi-host-admin.service"),
@@ -121,6 +148,7 @@ def desktop_status(_body):
         },
         "socket": SOCKET_PATH,
         "display": ":1",
+        "desktop_user": desktop_user.pw_name,
     }
 
 
@@ -144,40 +172,48 @@ printf '%s\n' 'deb [arch=amd64 signed-by=/usr/share/keyrings/tradingview-desktop
 apt-get update -qq
 apt-get install -y -qq tradingview
 
-install -o openclaw -g openclaw -m 700 -d /home/openclaw/.vnc
-install -o openclaw -g openclaw -m 700 -d /tmp/tardi-runtime-openclaw
-if [ ! -s /home/openclaw/.vnc/passwd ]; then
-    python3 -c 'import secrets; print(secrets.token_urlsafe(24))' | vncpasswd -f > /home/openclaw/.vnc/passwd
-    chown openclaw:openclaw /home/openclaw/.vnc/passwd
-    chmod 600 /home/openclaw/.vnc/passwd
+if id openclaw >/dev/null 2>&1; then
+    DESKTOP_USER=openclaw
+elif id hermes >/dev/null 2>&1; then
+    DESKTOP_USER=hermes
+else
+    useradd -r -m -u 1000 -s /usr/sbin/nologin tardi-desktop || true
+    DESKTOP_USER=tardi-desktop
 fi
+DESKTOP_HOME=$(getent passwd "$DESKTOP_USER" | cut -d: -f6)
+[ -n "$DESKTOP_HOME" ] || DESKTOP_HOME="/home/$DESKTOP_USER"
+DESKTOP_GROUP=$(id -gn "$DESKTOP_USER")
+RUNTIME_DIR="/tmp/tardi-runtime-${DESKTOP_USER}"
 
-cat > /home/openclaw/.vnc/xstartup <<'VNCXSTARTUP'
+install -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" -m 700 -d "$DESKTOP_HOME/.vnc"
+install -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" -m 700 -d "$RUNTIME_DIR"
+
+cat > "$DESKTOP_HOME/.vnc/xstartup" <<'VNCXSTARTUP'
 #!/bin/sh
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
 [ -r "$HOME/.Xresources" ] && xrdb "$HOME/.Xresources"
 startxfce4 &
 VNCXSTARTUP
-chown openclaw:openclaw /home/openclaw/.vnc/xstartup
-chmod 755 /home/openclaw/.vnc/xstartup
+chown "$DESKTOP_USER:$DESKTOP_GROUP" "$DESKTOP_HOME/.vnc/xstartup"
+chmod 755 "$DESKTOP_HOME/.vnc/xstartup"
 
-cat > /etc/systemd/system/tardi-desktop.service <<'SVCEOF'
+cat > /etc/systemd/system/tardi-desktop.service <<SVCEOF
 [Unit]
 Description=Tardi private XFCE VNC desktop
 After=network.target
 
 [Service]
 Type=forking
-User=openclaw
+User=${DESKTOP_USER}
 PAMName=login
-WorkingDirectory=/home/openclaw
-Environment=USER=openclaw
-Environment=HOME=/home/openclaw
+WorkingDirectory=${DESKTOP_HOME}
+Environment=USER=${DESKTOP_USER}
+Environment=HOME=${DESKTOP_HOME}
 Environment=DISPLAY=:1
-Environment=XDG_RUNTIME_DIR=/tmp/tardi-runtime-openclaw
+Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
 ExecStartPre=-/usr/bin/vncserver -kill :1
-ExecStart=/usr/bin/vncserver :1 -localhost yes -geometry 1440x900 -depth 24
+ExecStart=/usr/bin/vncserver :1 -localhost yes -SecurityTypes None -geometry 1440x900 -depth 24
 ExecStop=/usr/bin/vncserver -kill :1
 Restart=on-failure
 RestartSec=5
@@ -212,19 +248,26 @@ def desktop_open(body):
     symbol = str(body.get("symbol") or "BINANCE:BTCUSDT")
     if not re.match(r"^[A-Za-z0-9:_./-]{1,80}$", symbol):
         raise ActionError("invalid symbol", 400)
+    user = runtime_user_record()
+    group_id = runtime_group_id(user)
+    try:
+        group_name = grp.getgrgid(group_id).gr_name
+    except KeyError:
+        group_name = user.pw_name
+    runtime_dir = "/tmp/tardi-runtime-" + user.pw_name
     url = "https://www.tradingview.com/chart/?symbol=" + urllib.parse.quote(symbol, safe="")
     launch = (
         "export DISPLAY=:1; "
-        "export XDG_RUNTIME_DIR=/tmp/tardi-runtime-openclaw; "
+        "export XDG_RUNTIME_DIR=" + shlex.quote(runtime_dir) + "; "
         "if ! command -v tradingview >/dev/null 2>&1; then echo tradingview command not found >&2; exit 127; fi; "
-        "nohup tradingview --no-sandbox " + shlex.quote(url) + " >/home/openclaw/.tardi-tradingview.log 2>&1 &"
+        "nohup tradingview --no-sandbox " + shlex.quote(url) + " >" + shlex.quote(user.pw_dir + "/.tardi-tradingview.log") + " 2>&1 &"
     )
     script = (
         "set -euo pipefail\n"
-        "install -o openclaw -g openclaw -m 700 -d /tmp/tardi-runtime-openclaw\n"
+        "install -o " + shlex.quote(user.pw_name) + " -g " + shlex.quote(group_name) + " -m 700 -d " + shlex.quote(runtime_dir) + "\n"
         "systemctl start tardi-desktop.service\n"
         "for i in $(seq 1 30); do [ -S /tmp/.X11-unix/X1 ] && break; sleep 1; done\n"
-        "runuser -u openclaw -- bash -lc " + shlex.quote(launch) + "\n"
+        "runuser -u " + shlex.quote(user.pw_name) + " -- bash -lc " + shlex.quote(launch) + "\n"
     )
     output = run_bash(script, timeout=120)
     return {"message": "TradingView launch requested", "symbol": symbol, "url": url, "output": output}
@@ -312,7 +355,7 @@ class UnixHTTPServer(socketserver.UnixStreamServer):
 def main():
     os.makedirs(SOCKET_DIR, exist_ok=True)
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
-    uid, gid = openclaw_ids()
+    uid, gid = runtime_ids()
     os.chown(SOCKET_DIR, 0, gid)
     os.chmod(SOCKET_DIR, 0o770)
     if os.path.exists(SOCKET_PATH):
@@ -469,7 +512,7 @@ fi
 exec "$CLIENT" host.exec "$CMD"
 SUDOEOF
 chmod 755 "$BIN_DIR/sudo"
-chown -R root:root /opt/openclaw/host-admin
+chown -R root:root "$RUNTIME_DIR/host-admin"
 
 cat > /etc/systemd/system/tardi-host-admin.service <<'SVCEOF'
 [Unit]

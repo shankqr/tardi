@@ -90,6 +90,26 @@ The `host.exec` bridge is intentionally broad: package installs, framework
 setup, Docker commands, GitHub clones, service management, and file writes all
 run against the host rather than the OpenClaw container filesystem.
 
+## Remote Desktop Viewer
+
+The Tardi dashboard exposes the VPS desktop through a browser noVNC client at
+`/dashboard/instances/{id}/desktop`. The VPS runs `tardi-desktop.service`, an
+XFCE TigerVNC session on display `:1`, but the VNC server is started with
+`-localhost yes` and is not exposed through Caddy, Cloudflare, or the provider
+firewall. Authentication is handled by Tardi instead:
+
+1. The frontend calls `POST /api/instances/{id}/desktop/session` with the
+   user's Firebase token.
+2. The backend verifies instance ownership, prepares/starts the desktop over
+   SSH, and returns a short-lived HMAC desktop ticket.
+3. noVNC connects to `GET /api/instances/{id}/desktop/ws?t=...`.
+4. The backend validates the ticket, re-checks ownership, opens an SSH
+   direct-TCP tunnel to `127.0.0.1:5901` on the VPS, and proxies raw VNC frames.
+
+The same host helper is installed for Hermes instances under `/opt/hermes`, so
+Hermes can launch TradingView into the same private desktop that the dashboard
+viewer displays.
+
 ## Gateway Auth — Token Mode
 
 The gateway uses `auth.mode: "token"` with `OPENCLAW_GATEWAY_TOKEN` env var. This was chosen over two alternatives that don't work:

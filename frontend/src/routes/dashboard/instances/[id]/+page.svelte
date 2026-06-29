@@ -684,42 +684,52 @@
 					</dl>
 
 					{#if instance.status === 'active' && instance.agent_status === 'running' && !isConfigSyncing && instance.dashboard_url}
-						<button
-							onclick={async () => {
-								dashboardBtnLoading = true;
-								try {
-									const [, result] = await Promise.all([
-										new Promise(r => setTimeout(r, 2000)),
-										(async () => {
-											const token = await getIdToken();
-											if (!token) return null;
-											const { token: scopedToken } = await getDashboardToken(instance!.id, token);
-											return scopedToken;
-										})()
-									]);
-									if (result) {
-										const url = agentDashboardLaunchUrl(result);
-										if (url) window.open(url, '_blank');
+						<div class="mt-4 flex flex-wrap gap-2">
+							<button
+								onclick={async () => {
+									dashboardBtnLoading = true;
+									try {
+										const [, result] = await Promise.all([
+											new Promise(r => setTimeout(r, 2000)),
+											(async () => {
+												const token = await getIdToken();
+												if (!token) return null;
+												const { token: scopedToken } = await getDashboardToken(instance!.id, token);
+												return scopedToken;
+											})()
+										]);
+										if (result) {
+											const url = agentDashboardLaunchUrl(result);
+											if (url) window.open(url, '_blank');
+										}
+									} catch {
+										alert('Failed to generate dashboard token. Please try again.');
+									} finally {
+										dashboardBtnLoading = false;
 									}
-								} catch {
-									alert('Failed to generate dashboard token. Please try again.');
-								} finally {
-									dashboardBtnLoading = false;
-								}
-							}}
-							disabled={dashboardBtnLoading}
-							class="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-gray-900 dark:bg-white px-3 py-1.5 text-xs font-medium text-white dark:text-gray-900 transition-colors hover:bg-gray-800 dark:hover:bg-gray-100 disabled:opacity-70"
-						>
-							{#if dashboardBtnLoading}
-								<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-								</svg>
-								Opening...
-							{:else}
-								Open Agent Dashboard
+								}}
+								disabled={dashboardBtnLoading}
+								class="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-70 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+							>
+								{#if dashboardBtnLoading}
+									<svg class="h-3 w-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+										<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+										<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+									</svg>
+									Opening...
+								{:else}
+									Open Agent Dashboard
+								{/if}
+							</button>
+							{#if instance.ipv4}
+								<a
+									href="/dashboard/instances/{instance.id}/desktop"
+									class="inline-flex items-center rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+								>
+									Open Desktop
+								</a>
 							{/if}
-						</button>
+						</div>
 					{/if}
 				</div>
 

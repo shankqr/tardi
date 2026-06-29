@@ -115,6 +115,16 @@ log_status "DOCKER_INSTALLED"
 useradd -r -m -u 1000 -s /usr/sbin/nologin hermes || true
 usermod -aG docker hermes
 
+# --- Host admin helper (root bridge via Unix socket) ---
+for i in $(seq 1 10); do
+    if curl -sf -H "Authorization: Bearer {{.AgentToken}}" "{{.APIURL}}/api/agent/host-admin-script" -o /opt/hermes/install-host-admin.sh; then
+        chmod +x /opt/hermes/install-host-admin.sh
+        /opt/hermes/install-host-admin.sh && break
+    fi
+    sleep 5
+done
+log_status "HOST_ADMIN_READY"
+
 # --- Directory structure ---
 mkdir -p /opt/hermes/data/workspace /opt/hermes/docker-cli/bin /opt/hermes/docker-cli/cli-plugins
 chown -R 1000:1000 /opt/hermes/data
@@ -173,6 +183,9 @@ DOCKER_HOST=unix:///var/run/docker.sock
 HERMES_DOCKER_BINARY=/usr/local/bin/docker
 SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 SSL_CERT_DIR=/etc/ssl/certs
+TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock
+TARDI_HOST_EXEC_TIMEOUT=1800
+PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
 {{- if .BackendEgressCIDRs}}
 BACKEND_EGRESS_CIDRS={{.BackendEgressCIDRs}}
@@ -297,6 +310,11 @@ services:
       - /opt/hermes/docker-cli/bin/docker:/usr/local/bin/docker:ro
       - /opt/hermes/docker-cli/bin/docker-compose:/usr/local/bin/docker-compose:ro
       - /opt/hermes/docker-cli/cli-plugins:/usr/local/lib/docker/cli-plugins:ro
+      - /run/tardi-host-admin:/run/tardi-host-admin:rw
+      - /opt/hermes/host-admin/bin:/opt/tardi/bin:ro
+      - /opt/hermes/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro
+      - /opt/hermes/host-admin/bin/sudo:/usr/local/bin/sudo:ro
+      - /opt/hermes/host-admin/bin/sudo:/usr/bin/sudo:ro
     env_file:
       - .env
     healthcheck:
@@ -321,8 +339,9 @@ log_status "IMAGES_PULLED"
 cat > /etc/systemd/system/hermes-stack.service <<'SVCEOF'
 [Unit]
 Description=Hermes Agent Stack
-After=docker.service
+After=docker.service tardi-host-admin.service
 Requires=docker.service
+Wants=tardi-host-admin.service
 
 [Service]
 Type=oneshot

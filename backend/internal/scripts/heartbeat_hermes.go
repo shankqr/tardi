@@ -82,6 +82,11 @@ services:
       - /opt/hermes/docker-cli/bin/docker:/usr/local/bin/docker:ro
       - /opt/hermes/docker-cli/bin/docker-compose:/usr/local/bin/docker-compose:ro
       - /opt/hermes/docker-cli/cli-plugins:/usr/local/lib/docker/cli-plugins:ro
+      - /run/tardi-host-admin:/run/tardi-host-admin:rw
+      - /opt/hermes/host-admin/bin:/opt/tardi/bin:ro
+      - /opt/hermes/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro
+      - /opt/hermes/host-admin/bin/sudo:/usr/local/bin/sudo:ro
+      - /opt/hermes/host-admin/bin/sudo:/usr/bin/sudo:ro
     env_file:
       - .env
     healthcheck:
@@ -112,6 +117,15 @@ ensure_hermes_stack() {
     [ -n "$DOCKER_GID" ] || DOCKER_GID=999
     [ -n "$HERMES_GID" ] || HERMES_GID=1000
 
+    # Host admin helper drift guard. Hermes uses the same root-owned helper as
+    # OpenClaw for host desktop actions and sudo-like host commands.
+    if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/hermes/host-admin/bin/tardi-host-admin ] || [ ! -x /opt/hermes/host-admin/bin/sudo ] || ! grep -q 'desktop.open' /opt/hermes/host-admin/bin/tardi-host-admin 2>/dev/null; then
+        if [ -n "${AGENT_TOKEN:-}" ] && [ -n "${API_URL:-}" ] && curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/host-admin-script" -o /opt/hermes/install-host-admin.sh 2>/dev/null; then
+            chmod +x /opt/hermes/install-host-admin.sh
+            /opt/hermes/install-host-admin.sh >/tmp/tardi-host-admin-install.log 2>&1 || true
+        fi
+    fi
+
     touch /opt/hermes/.env
     ENV_BEFORE=$(sha256sum /opt/hermes/.env 2>/dev/null | awk '{print $1}')
     for kv in \
@@ -130,7 +144,10 @@ ensure_hermes_stack() {
         "DOCKER_HOST=unix:///var/run/docker.sock" \
         "HERMES_DOCKER_BINARY=/usr/local/bin/docker" \
         "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" \
-        "SSL_CERT_DIR=/etc/ssl/certs"; do
+        "SSL_CERT_DIR=/etc/ssl/certs" \
+        "TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock" \
+        "TARDI_HOST_EXEC_TIMEOUT=1800" \
+        "PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; do
         key=${kv%%=*}
         if grep -q "^${key}=" /opt/hermes/.env 2>/dev/null; then
             sed -i "s|^${key}=.*|${kv}|" /opt/hermes/.env
@@ -201,13 +218,18 @@ SOULEOF
         write_hermes_compose
         STACK_CHANGED=true
     fi
+    if ! grep -q '/run/tardi-host-admin:/run/tardi-host-admin:rw' /opt/hermes/docker-compose.yml 2>/dev/null; then
+        write_hermes_compose
+        STACK_CHANGED=true
+    fi
 
-    if [ ! -f /etc/systemd/system/hermes-stack.service ]; then
+    if [ ! -f /etc/systemd/system/hermes-stack.service ] || ! grep -q 'tardi-host-admin.service' /etc/systemd/system/hermes-stack.service 2>/dev/null; then
         cat > /etc/systemd/system/hermes-stack.service <<'SVCEOF'
 [Unit]
 Description=Hermes Agent Stack
-After=docker.service
+After=docker.service tardi-host-admin.service
 Requires=docker.service
+Wants=tardi-host-admin.service
 
 [Service]
 Type=oneshot
@@ -234,7 +256,7 @@ SVCEOF
     if ! systemctl is-active --quiet hermes-stack 2>/dev/null; then
         systemctl start hermes-stack 2>/dev/null || true
     elif [ "$STACK_CHANGED" = true ]; then
-        docker compose -f /opt/hermes/docker-compose.yml up -d --remove-orphans 2>/dev/null || true
+        docker compose -f /opt/hermes/docker-compose.yml up -d --force-recreate --remove-orphans hermes-agent 2>/dev/null || true
     fi
 }
 

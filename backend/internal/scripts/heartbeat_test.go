@@ -125,6 +125,13 @@ func TestHermesHeartbeatScript_UsesDockerStackAndLatestUpdates(t *testing.T) {
 		"/opt/hermes/docker-cli/bin/docker:/usr/local/bin/docker:ro",
 		"/opt/hermes/docker-cli/bin/docker-compose:/usr/local/bin/docker-compose:ro",
 		"/opt/hermes/docker-cli/cli-plugins:/usr/local/lib/docker/cli-plugins:ro",
+		"/api/agent/host-admin-script",
+		"/run/tardi-host-admin:/run/tardi-host-admin:rw",
+		"/opt/hermes/host-admin/bin:/opt/tardi/bin:ro",
+		"/opt/hermes/host-admin/bin/tardi-host-admin:/usr/local/bin/tardi-host-admin:ro",
+		"/opt/hermes/host-admin/bin/sudo:/usr/local/bin/sudo:ro",
+		"/opt/hermes/host-admin/bin/sudo:/usr/bin/sudo:ro",
+		"TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock",
 		"TERMINAL_ENV=local",
 		"DOCKER_HOST=unix:///var/run/docker.sock",
 		"HERMES_DOCKER_BINARY=/usr/local/bin/docker",
@@ -195,6 +202,7 @@ func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T)
 		"exec \"$CLIENT\" host.exec",
 		"tardi-host-admin.service",
 		"tardi-desktop.service",
+		"-SecurityTypes None",
 		"TradingView launch requested",
 	}
 	for _, want := range required {

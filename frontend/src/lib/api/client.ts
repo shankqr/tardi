@@ -477,6 +477,51 @@ export async function getTerminalTicket(
 	);
 }
 
+// --- Remote Desktop ---
+
+export async function createDesktopSession(
+	instanceId: string,
+	token: string,
+	options: { launchTradingView?: boolean; symbol?: string } = {}
+): Promise<{ ticket: string; display: string; geometry: string }> {
+	if (USE_MOCK) {
+		return { ticket: 'mock-desktop-ticket', display: ':1', geometry: '1440x900' };
+	}
+
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/desktop/session`,
+		{
+			method: 'POST',
+			headers: authJsonHeaders(token),
+			body: JSON.stringify({
+				launch_tradingview: options.launchTradingView ?? false,
+				symbol: options.symbol ?? ''
+			})
+		},
+		'createDesktopSession'
+	);
+}
+
+export async function openDesktopTradingView(
+	instanceId: string,
+	token: string,
+	symbol = 'BINANCE:BTCUSDT'
+): Promise<{ ok: boolean }> {
+	if (USE_MOCK) {
+		return { ok: true };
+	}
+
+	return apiFetch(
+		`${getApiUrl()}/api/instances/${instanceId}/desktop/open`,
+		{
+			method: 'POST',
+			headers: authJsonHeaders(token),
+			body: JSON.stringify({ symbol })
+		},
+		'openDesktopTradingView'
+	);
+}
+
 // --- Google OAuth ---
 
 export async function getGoogleOAuthUrl(token: string): Promise<{ redirect_url: string }> {
