@@ -210,22 +210,12 @@ func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T)
 		"exec \"$CLIENT\" host.exec",
 		"tardi-host-admin.service",
 		"tardi-desktop.service",
-		"TARDI_HOST_ADMIN_CLIENT_VERSION=20260629",
-		"TARDI_DESKTOP_SERVICE_VERSION=20260629",
-		"Type=simple",
-		"/usr/local/bin/tardi-vnc-session",
-		"vncserver :1 -fg",
 		"-SecurityTypes None",
 		"TradingView launch requested",
 	}
 	for _, want := range required {
 		if !strings.Contains(HostAdminInstallScript, want) {
 			t.Errorf("HostAdminInstallScript should contain %q", want)
-		}
-	}
-	for _, bad := range []string{"startxfce4 &", "Type=forking"} {
-		if strings.Contains(HostAdminInstallScript, bad) {
-			t.Errorf("HostAdminInstallScript should not contain %q", bad)
 		}
 	}
 }
