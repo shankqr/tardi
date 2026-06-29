@@ -69,6 +69,7 @@ func TestHeartbeatScript_ContainsHostAdminDriftGuard(t *testing.T) {
 		"TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock",
 		"TARDI_HOST_EXEC_TIMEOUT=1800",
 		"PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"TARDI_HOST_ADMIN_CLIENT_VERSION=2026062901",
 		"tardi-host-admin-container-check.log",
 	}
 	for _, want := range required {
@@ -135,6 +136,7 @@ func TestHermesHeartbeatScript_UsesDockerStackAndLatestUpdates(t *testing.T) {
 		"TERMINAL_ENV=local",
 		"DOCKER_HOST=unix:///var/run/docker.sock",
 		"HERMES_DOCKER_BINARY=/usr/local/bin/docker",
+		"TARDI_HOST_ADMIN_CLIENT_VERSION=2026062901",
 		"backend: local",
 		`cwd: "/opt/hermes/data/workspace"`,
 		"importlib.metadata",
@@ -203,6 +205,7 @@ func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T)
 		"desktop.open",
 		"host.exec",
 		"MAX_EXEC_SECONDS",
+		"TARDI_HOST_ADMIN_CLIENT_VERSION=2026062901",
 		"TARDI_HOST_ADMIN_SUDO_VERSION=20260429",
 		"TARDI_HOST_ADMIN_BIN",
 		"Unix socket unavailable",
@@ -210,6 +213,9 @@ func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T)
 		"exec \"$CLIENT\" host.exec",
 		"tardi-host-admin.service",
 		"tardi-desktop.service",
+		"google-chrome-stable",
+		"google-chrome.list",
+		"\"chrome\": shutil.which(\"google-chrome\")",
 		"-SecurityTypes None",
 		"TradingView launch requested",
 	}

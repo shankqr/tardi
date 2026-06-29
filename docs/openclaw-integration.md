@@ -80,8 +80,8 @@ Unix socket. The shim forwards commands to `host.exec`, which runs
 
 | Action | Root-side behavior |
 |---|---|
-| `desktop.status` | Report helper, VNC/XFCE, and TradingView status |
-| `desktop.install` | Install XFCE, TigerVNC, X11 tools, and TradingView Desktop from TradingView's official Debian repo |
+| `desktop.status` | Report helper, VNC/XFCE, Chrome, and TradingView status |
+| `desktop.install` | Install XFCE, TigerVNC, X11 tools, Chrome from Google's Debian repo, and TradingView Desktop from TradingView's official Debian repo |
 | `desktop.start` / `desktop.stop` / `desktop.restart` | Manage the private `tardi-desktop.service` X11 VNC session |
 | `desktop.open` | Start the desktop session and launch TradingView for a symbol |
 | `host.exec` | Run an arbitrary shell command as root on the VPS host |

@@ -120,7 +120,7 @@ ensure_hermes_stack() {
 
     # Host admin helper drift guard. Hermes uses the same root-owned helper as
     # OpenClaw for host desktop actions and sudo-like host commands.
-    if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/hermes/host-admin/bin/tardi-host-admin ] || [ ! -x /opt/hermes/host-admin/bin/sudo ] || ! grep -q 'desktop.open' /opt/hermes/host-admin/bin/tardi-host-admin 2>/dev/null; then
+    if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/hermes/host-admin/bin/tardi-host-admin ] || [ ! -x /opt/hermes/host-admin/bin/sudo ] || ! grep -q 'desktop.open' /opt/hermes/host-admin/bin/tardi-host-admin 2>/dev/null || ! grep -q 'TARDI_HOST_ADMIN_CLIENT_VERSION=2026062901' /opt/hermes/host-admin/bin/tardi-host-admin 2>/dev/null; then
         if [ -n "${AGENT_TOKEN:-}" ] && [ -n "${API_URL:-}" ] && curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/host-admin-script" -o /opt/hermes/install-host-admin.sh 2>/dev/null; then
             chmod +x /opt/hermes/install-host-admin.sh
             /opt/hermes/install-host-admin.sh >/tmp/tardi-host-admin-install.log 2>&1 || true

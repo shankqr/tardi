@@ -140,6 +140,7 @@ def desktop_status(_body):
         "desktop_service": service_state("tardi-desktop.service"),
         "host_admin_service": service_state("tardi-host-admin.service"),
         "commands": {
+            "chrome": shutil.which("google-chrome") or shutil.which("google-chrome-stable") or "",
             "vncserver": shutil.which("vncserver") or "",
             "startxfce4": shutil.which("startxfce4") or "",
             "tradingview": shutil.which("tradingview") or "",
@@ -169,8 +170,14 @@ curl -fsSL https://tvd-packages.tradingview.com/keyring.gpg \
     -o /usr/share/keyrings/tradingview-desktop-archive-keyring.gpg
 printf '%s\n' 'deb [arch=amd64 signed-by=/usr/share/keyrings/tradingview-desktop-archive-keyring.gpg] https://tvd-packages.tradingview.com/ubuntu/stable jammy multiverse' \
     > /etc/apt/sources.list.d/tradingview-desktop.list
+
+curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
+    | gpg --dearmor > /usr/share/keyrings/google-linux-signing-keyring.gpg
+printf '%s\n' 'deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-keyring.gpg] https://dl.google.com/linux/chrome/deb/ stable main' \
+    > /etc/apt/sources.list.d/google-chrome.list
+
 apt-get update -qq
-apt-get install -y -qq tradingview
+apt-get install -y -qq google-chrome-stable tradingview
 
 if id openclaw >/dev/null 2>&1; then
     DESKTOP_USER=openclaw
@@ -445,7 +452,7 @@ chmod 755 "$INSTALL_DIR/server.py"
 cat > "$BIN_DIR/tardi-host-admin" <<'CLIENTEOF'
 #!/bin/sh
 set -eu
-# TARDI_HOST_ADMIN_CLIENT_VERSION=20260629
+# TARDI_HOST_ADMIN_CLIENT_VERSION=2026062901
 
 ACTION="${1:-}"
 SOCKET="${TARDI_HOST_ADMIN_SOCKET:-/run/tardi-host-admin/admin.sock}"

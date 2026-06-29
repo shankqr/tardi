@@ -102,7 +102,35 @@ for i in 1 2 3; do
     log_status "APT_UPDATE_RETRY_$i"
     sleep 5
 done
-apt-get install -y -qq ca-certificates curl jq ufw
+apt-get install -y -qq ca-certificates curl gnupg jq ufw
+log_status "BASE_PACKAGES_INSTALLED"
+
+# --- Desktop application base packages ---
+# These are preinstalled so the private Ubuntu desktop has the expected apps
+# available before a user opens it. Keep this non-fatal; desktop.install retries
+# the same package setup later if an upstream repo has a transient failure.
+if bash -euo pipefail <<'DESKTOPAPPSEOF'
+export DEBIAN_FRONTEND=noninteractive
+install -m 0755 -d /usr/share/keyrings
+
+curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
+    | gpg --dearmor > /usr/share/keyrings/google-linux-signing-keyring.gpg
+printf '%s\n' 'deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-keyring.gpg] https://dl.google.com/linux/chrome/deb/ stable main' \
+    > /etc/apt/sources.list.d/google-chrome.list
+
+curl -fsSL https://tvd-packages.tradingview.com/keyring.gpg \
+    -o /usr/share/keyrings/tradingview-desktop-archive-keyring.gpg
+printf '%s\n' 'deb [arch=amd64 signed-by=/usr/share/keyrings/tradingview-desktop-archive-keyring.gpg] https://tvd-packages.tradingview.com/ubuntu/stable jammy multiverse' \
+    > /etc/apt/sources.list.d/tradingview-desktop.list
+
+apt-get update -qq
+apt-get install -y -qq google-chrome-stable tradingview
+DESKTOPAPPSEOF
+then
+    log_status "DESKTOP_APPS_INSTALLED"
+else
+    log_status "DESKTOP_APPS_INSTALL_FAILED"
+fi
 
 # --- Firewall ---
 ufw default deny incoming

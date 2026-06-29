@@ -312,6 +312,8 @@ set -euo pipefail
 if [ -f /etc/systemd/system/tardi-desktop.service ] &&
     grep -q 'TARDI_DESKTOP_SERVICE_VERSION=%s' /etc/systemd/system/tardi-desktop.service 2>/dev/null &&
     systemctl is-active --quiet tardi-desktop.service &&
+    command -v tradingview >/dev/null 2>&1 &&
+    { command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; } &&
     bash -lc '>/dev/tcp/127.0.0.1/5901' 2>/dev/null; then
     echo ready
 else
@@ -386,7 +388,7 @@ if ! CLIENT=$(find_client); then
     CLIENT=$(find_client)
 fi
 
-if ! grep -q 'TARDI_HOST_ADMIN_CLIENT_VERSION=20260629' "$CLIENT" 2>/dev/null; then
+if ! grep -q 'TARDI_HOST_ADMIN_CLIENT_VERSION=2026062901' "$CLIENT" 2>/dev/null; then
     install_host_admin
     CLIENT=$(find_client)
 fi
@@ -402,6 +404,10 @@ CLIENT=$(find_client)
 
 NEEDS_INSTALL=false
 if ! command -v vncserver >/dev/null 2>&1; then
+    NEEDS_INSTALL=true
+elif ! command -v tradingview >/dev/null 2>&1; then
+    NEEDS_INSTALL=true
+elif ! command -v google-chrome >/dev/null 2>&1 && ! command -v google-chrome-stable >/dev/null 2>&1; then
     NEEDS_INSTALL=true
 elif [ ! -f /etc/systemd/system/tardi-desktop.service ]; then
     NEEDS_INSTALL=true
@@ -425,6 +431,8 @@ fi
 	b.WriteString(`for i in $(seq 1 30); do
     if grep -q 'TARDI_DESKTOP_SERVICE_VERSION=20260629' /etc/systemd/system/tardi-desktop.service 2>/dev/null &&
         systemctl is-active --quiet tardi-desktop.service &&
+        command -v tradingview >/dev/null 2>&1 &&
+        { command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; } &&
         bash -lc '>/dev/tcp/127.0.0.1/5901' 2>/dev/null; then
         "$CLIENT" desktop.status
         exit 0
