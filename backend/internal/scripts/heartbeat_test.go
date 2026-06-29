@@ -150,6 +150,11 @@ func TestHermesHeartbeatScript_UsesDockerStackAndLatestUpdates(t *testing.T) {
 		`dashboard_token`,
 		`API_SERVER_KEY=${API_DASHBOARD_TOKEN}`,
 		`tardi-dashboard-shim.service`,
+		"https://api.github.com/repos/NousResearch/hermes-agent/releases/latest",
+		"resolve_latest_hermes_release",
+		"RESOLVED_TARGET_VERSION=$(resolve_latest_hermes_release)",
+		"nousresearch/hermes-agent:${RESOLVED_TARGET_VERSION}",
+		"find /opt/hermes/.update_status -mmin +30",
 		"docker compose -f /opt/hermes/docker-compose.yml pull hermes-agent",
 		"docker compose -f /opt/hermes/docker-compose.yml up -d hermes-agent",
 		`[ "$TARGET_VERSION" = "latest" ]`,
@@ -165,6 +170,7 @@ func TestHermesHeartbeatScript_UsesDockerStackAndLatestUpdates(t *testing.T) {
 		"raw.githubusercontent.com/NousResearch/hermes-agent",
 		"systemctl restart hermes-agent",
 		"su - hermes -c",
+		`[ "$TARGET_VERSION" != "$CURRENT_TAG" ]`,
 	}
 	for _, bad := range forbidden {
 		if strings.Contains(HermesHeartbeatScript, bad) {
