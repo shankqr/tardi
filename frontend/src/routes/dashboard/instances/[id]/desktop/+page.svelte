@@ -14,15 +14,22 @@
 
 	let host: HTMLDivElement;
 	let rfb: RFB | null = null;
-	let status = $state<'preparing' | 'connecting' | 'connected' | 'disconnected' | 'error'>('preparing');
+	let status = $state<'preparing' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error'>('preparing');
 	let errorMessage = $state('');
 	let launchingTradingView = $state(false);
 	let reconnecting = $state(false);
+	let linkCopied = $state(false);
 	let connectRun = 0;
 	let destroyed = false;
+	let manualDisconnect = false;
+	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let reconnectAttempt = 0;
+	let linkTimer: ReturnType<typeof setTimeout> | null = null;
+	let removeLifecycleListeners: (() => void) | null = null;
 
 	const preparePollMs = 4000;
 	const prepareMaxAttempts = 150;
+	const reconnectMaxMs = 30000;
 
 	function wsURL(ticket: string) {
 		const wsBase = getApiUrl().replace(/^http/, 'ws');
@@ -34,12 +41,32 @@
 		rfb = null;
 	}
 
+	function clearReconnectTimer() {
+		if (reconnectTimer) {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = null;
+		}
+	}
+
 	function isCurrent(run: number) {
 		return !destroyed && run === connectRun;
 	}
 
 	function wait(ms: number) {
 		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	function scheduleReconnect(run: number) {
+		if (!isCurrent(run) || manualDisconnect) return;
+		clearReconnectTimer();
+		const delay = Math.min(reconnectMaxMs, 1000 * 2 ** Math.min(reconnectAttempt, 5));
+		reconnectAttempt += 1;
+		status = 'reconnecting';
+		errorMessage = '';
+		reconnectTimer = setTimeout(() => {
+			if (!isCurrent(run) || manualDisconnect) return;
+			connect('auto');
+		}, delay);
 	}
 
 	function attachRfb(ticket: string, run: number) {
@@ -57,31 +84,42 @@
 		client.background = 'rgb(0, 0, 0)';
 
 		client.addEventListener('connect', () => {
-			if (isCurrent(run)) status = 'connected';
+			if (!isCurrent(run)) return;
+			reconnectAttempt = 0;
+			errorMessage = '';
+			status = 'connected';
 		});
 		client.addEventListener('disconnect', (event) => {
 			if (!isCurrent(run)) return;
+			rfb = null;
+			if (manualDisconnect) {
+				status = 'disconnected';
+				return;
+			}
 			const clean = (event as CustomEvent<{ clean: boolean }>).detail?.clean;
-			status = clean ? 'disconnected' : 'error';
-			if (!clean) errorMessage = 'Desktop connection closed.';
+			if (!clean) reconnectAttempt = Math.max(reconnectAttempt, 1);
+			scheduleReconnect(run);
 		});
 		client.addEventListener('securityfailure', () => {
 			if (!isCurrent(run)) return;
-			status = 'error';
-			errorMessage = 'Desktop authentication failed.';
+			rfb = null;
+			scheduleReconnect(run);
 		});
 		client.addEventListener('credentialsrequired', () => {
 			if (!isCurrent(run)) return;
-			status = 'error';
-			errorMessage = 'Desktop requested credentials.';
+			rfb = null;
+			scheduleReconnect(run);
 		});
 		rfb = client;
 	}
 
-	async function connect() {
+	async function connect(mode: 'initial' | 'manual' | 'auto' = 'manual') {
 		const run = ++connectRun;
+		clearReconnectTimer();
+		if (mode !== 'auto') reconnectAttempt = 0;
+		manualDisconnect = false;
 		disconnect();
-		status = 'preparing';
+		status = mode === 'auto' ? 'reconnecting' : 'preparing';
 		errorMessage = '';
 
 		if (!instanceId) {
@@ -113,18 +151,56 @@
 			throw new Error('Desktop is still preparing. Try reconnecting in a minute.');
 		} catch (err) {
 			if (!isCurrent(run)) return;
-			status = 'error';
-			errorMessage = err instanceof Error ? err.message : 'Failed to open desktop';
+			if (mode === 'manual') {
+				status = 'error';
+				errorMessage = err instanceof Error ? err.message : 'Failed to open desktop';
+				return;
+			}
+			scheduleReconnect(run);
 		}
 	}
 
 	async function reconnect() {
 		reconnecting = true;
 		try {
-			await connect();
+			await connect('manual');
 		} finally {
 			reconnecting = false;
 		}
+	}
+
+	function manualDisconnectDesktop() {
+		manualDisconnect = true;
+		connectRun += 1;
+		clearReconnectTimer();
+		disconnect();
+		status = 'disconnected';
+		errorMessage = '';
+	}
+
+	async function copyDesktopLink() {
+		if (typeof window === 'undefined' || !instanceId) return;
+		const url = `${window.location.origin}/dashboard/instances/${instanceId}/desktop`;
+		try {
+			if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+			await navigator.clipboard.writeText(url);
+		} catch {
+			const textarea = document.createElement('textarea');
+			textarea.value = url;
+			textarea.setAttribute('readonly', '');
+			textarea.style.position = 'fixed';
+			textarea.style.opacity = '0';
+			document.body.appendChild(textarea);
+			textarea.select();
+			document.execCommand('copy');
+			document.body.removeChild(textarea);
+		}
+		linkCopied = true;
+		if (linkTimer) clearTimeout(linkTimer);
+		linkTimer = setTimeout(() => {
+			linkCopied = false;
+			linkTimer = null;
+		}, 2000);
 	}
 
 	async function launchTradingView() {
@@ -148,12 +224,30 @@
 	}
 
 	onMount(() => {
-		connect();
+		connect('initial');
+		const resume = () => {
+			if (!manualDisconnect && !rfb && (status === 'error' || status === 'disconnected' || status === 'reconnecting')) {
+				connect('auto');
+			}
+		};
+		const onVisibility = () => {
+			if (document.visibilityState === 'visible') resume();
+		};
+		window.addEventListener('online', resume);
+		document.addEventListener('visibilitychange', onVisibility);
+		removeLifecycleListeners = () => {
+			window.removeEventListener('online', resume);
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
 	});
 
 	onDestroy(() => {
 		destroyed = true;
+		manualDisconnect = true;
 		connectRun += 1;
+		clearReconnectTimer();
+		if (linkTimer) clearTimeout(linkTimer);
+		removeLifecycleListeners?.();
 		disconnect();
 	});
 </script>
@@ -177,12 +271,19 @@
 
 		<div class="flex items-center gap-2">
 			<span class="text-xs text-gray-500 dark:text-gray-400">
-				{#if status === 'preparing'}Preparing{:else if status === 'connecting'}Connecting{:else if status === 'connected'}Connected{:else if status === 'disconnected'}Disconnected{:else}Error{/if}
+				{#if status === 'preparing'}Preparing{:else if status === 'connecting'}Connecting{:else if status === 'connected'}Connected{:else if status === 'reconnecting'}Reconnecting{:else if status === 'disconnected'}Disconnected{:else}Error{/if}
 			</span>
 			<button
 				type="button"
+				onclick={copyDesktopLink}
+				class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+			>
+				{linkCopied ? 'Copied' : 'Copy link'}
+			</button>
+			<button
+				type="button"
 				onclick={launchTradingView}
-				disabled={launchingTradingView || status === 'preparing' || status === 'connecting'}
+				disabled={launchingTradingView || status === 'preparing' || status === 'connecting' || status === 'reconnecting'}
 				class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
 			>
 				{launchingTradingView ? 'Launching...' : 'TradingView'}
@@ -190,10 +291,18 @@
 			<button
 				type="button"
 				onclick={reconnect}
-				disabled={reconnecting || status === 'preparing' || status === 'connecting'}
+				disabled={reconnecting || status === 'preparing' || status === 'connecting' || status === 'reconnecting'}
 				class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
 			>
 				{reconnecting ? 'Reconnecting...' : 'Reconnect'}
+			</button>
+			<button
+				type="button"
+				onclick={manualDisconnectDesktop}
+				disabled={status === 'disconnected'}
+				class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+			>
+				Disconnect
 			</button>
 		</div>
 	</div>
@@ -206,7 +315,7 @@
 
 	<div class="relative overflow-hidden rounded-lg border border-gray-800 bg-black">
 		<div bind:this={host} class="h-[calc(100vh-9rem)] min-h-[520px] w-full"></div>
-		{#if status === 'preparing' || status === 'connecting'}
+		{#if status === 'preparing' || status === 'connecting' || status === 'reconnecting'}
 			<div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
 				<div class="h-5 w-5 animate-spin rounded-full border-2 border-gray-700 border-t-gray-200"></div>
 			</div>

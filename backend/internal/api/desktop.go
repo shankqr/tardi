@@ -28,17 +28,16 @@ import (
 )
 
 const (
-	desktopTicketTTL          = 45 * time.Second
-	desktopSessionMaxDuration = 2 * time.Hour
-	desktopMaxPerUser         = 2
-	desktopReadDeadline       = 60 * time.Second
-	desktopPingInterval       = 20 * time.Second
-	desktopWriteRateBytes     = 10 * 1024 * 1024 // 10 MB/min browser -> VPS cap
-	desktopWriteRateWindow    = time.Minute
-	desktopVNCAddress         = "127.0.0.1:5901"
-	desktopReadyCheckTimeout  = 15 * time.Second
-	desktopPrepareKickoffTTL  = 20 * time.Second
-	desktopServiceVersion     = "20260629"
+	desktopTicketTTL         = 45 * time.Second
+	desktopMaxPerUser        = 2
+	desktopReadDeadline      = 5 * time.Minute
+	desktopPingInterval      = 20 * time.Second
+	desktopWriteRateBytes    = 10 * 1024 * 1024 // 10 MB/min browser -> VPS cap
+	desktopWriteRateWindow   = time.Minute
+	desktopVNCAddress        = "127.0.0.1:5901"
+	desktopReadyCheckTimeout = 15 * time.Second
+	desktopPrepareKickoffTTL = 20 * time.Second
+	desktopServiceVersion    = "20260629"
 )
 
 var desktopSessions sync.Map
@@ -450,7 +449,7 @@ func shellQuote(s string) string {
 }
 
 func runDesktopProxy(parent context.Context, conn *websocket.Conn, vncConn net.Conn, userID, instanceID uuid.UUID) {
-	ctx, cancel := context.WithTimeout(parent, desktopSessionMaxDuration)
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
 	startedAt := time.Now()
@@ -488,6 +487,7 @@ func runDesktopProxy(parent context.Context, conn *websocket.Conn, vncConn net.C
 	var once sync.Once
 	closeDone := func() {
 		once.Do(func() {
+			cancel()
 			close(done)
 			_ = vncConn.Close()
 			_ = conn.Close()
