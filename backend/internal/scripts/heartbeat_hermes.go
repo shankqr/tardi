@@ -8,6 +8,7 @@ set -u
 source /opt/hermes/.env 2>/dev/null || true
 HERMES_DEFAULT_PROVIDER="openrouter"
 HERMES_DEFAULT_MODEL="anthropic/claude-sonnet-4.6"
+HERMES_IMAGE_REPO="mirror.gcr.io/nousresearch/hermes-agent"
 
 # --- Download latest heartbeat script ---
 # Keep this at the top so old VPSes migrate themselves before doing any other work.
@@ -66,7 +67,7 @@ write_hermes_compose() {
     cat > /opt/hermes/docker-compose.yml <<'COMPOSEEOF'
 services:
   hermes-agent:
-    image: nousresearch/hermes-agent:latest
+    image: mirror.gcr.io/nousresearch/hermes-agent:latest
     container_name: hermes-agent
     restart: unless-stopped
     network_mode: host
@@ -610,6 +611,12 @@ resolve_latest_hermes_release() {
     fi
 }
 
+set_hermes_image_ref() {
+    local image_ref="$1"
+    sed -i -E "s|image:[[:space:]]*(mirror\\.gcr\\.io/)?nousresearch/hermes-agent:.*|image: ${image_ref}|" \
+        /opt/hermes/docker-compose.yml
+}
+
 if [ "$UPDATE_STATUS" = "pulling" ] || [ "$UPDATE_STATUS" = "updating" ]; then
     if [ -n "$(find /opt/hermes/.update_status -mmin +30 2>/dev/null)" ]; then
         UPDATE_STATUS="stale"
@@ -623,22 +630,20 @@ if [ -n "$TARGET_VERSION" ] && [ "$UPDATE_STATUS" != "pulling" ] && [ "$UPDATE_S
         [ -n "$RESOLVED_TARGET_VERSION" ] || RESOLVED_TARGET_VERSION="latest"
     fi
 
-    TARGET_IMAGE_REF="nousresearch/hermes-agent:${RESOLVED_TARGET_VERSION}"
-    PREVIOUS_IMAGE_REF=$(grep -E '^[[:space:]]*image:[[:space:]]*nousresearch/hermes-agent:' /opt/hermes/docker-compose.yml 2>/dev/null | head -1 | awk '{print $2}')
+    TARGET_IMAGE_REF="${HERMES_IMAGE_REPO}:${RESOLVED_TARGET_VERSION}"
+    PREVIOUS_IMAGE_REF=$(grep -E '^[[:space:]]*image:[[:space:]]*(mirror\.gcr\.io/)?nousresearch/hermes-agent:' /opt/hermes/docker-compose.yml 2>/dev/null | head -1 | awk '{print $2}')
     [ -n "$PREVIOUS_IMAGE_REF" ] || PREVIOUS_IMAGE_REF="$CURRENT_IMAGE"
 
     echo "pulling" > /opt/hermes/.update_status
     rm -f /opt/hermes/.update_error
 
-    sed -i "s|image: nousresearch/hermes-agent:.*|image: ${TARGET_IMAGE_REF}|" \
-        /opt/hermes/docker-compose.yml
+    set_hermes_image_ref "$TARGET_IMAGE_REF"
 
     if ! docker compose -f /opt/hermes/docker-compose.yml pull hermes-agent 2>/tmp/hermes-pull.log; then
         echo "failed" > /opt/hermes/.update_status
         echo "pull failed: $(tail -1 /tmp/hermes-pull.log)" > /opt/hermes/.update_error
         if [ -n "$PREVIOUS_IMAGE_REF" ] && [ "$PREVIOUS_IMAGE_REF" != "$TARGET_IMAGE_REF" ]; then
-            sed -i "s|image: nousresearch/hermes-agent:.*|image: ${PREVIOUS_IMAGE_REF}|" \
-                /opt/hermes/docker-compose.yml
+            set_hermes_image_ref "$PREVIOUS_IMAGE_REF"
         fi
         exit 0
     fi
@@ -648,8 +653,7 @@ if [ -n "$TARGET_VERSION" ] && [ "$UPDATE_STATUS" != "pulling" ] && [ "$UPDATE_S
         echo "failed" > /opt/hermes/.update_status
         echo "image inspect failed for ${TARGET_IMAGE_REF}" > /opt/hermes/.update_error
         if [ -n "$PREVIOUS_IMAGE_REF" ] && [ "$PREVIOUS_IMAGE_REF" != "$TARGET_IMAGE_REF" ]; then
-            sed -i "s|image: nousresearch/hermes-agent:.*|image: ${PREVIOUS_IMAGE_REF}|" \
-                /opt/hermes/docker-compose.yml
+            set_hermes_image_ref "$PREVIOUS_IMAGE_REF"
         fi
         exit 0
     fi
@@ -664,8 +668,7 @@ if [ -n "$TARGET_VERSION" ] && [ "$UPDATE_STATUS" != "pulling" ] && [ "$UPDATE_S
             echo "failed" > /opt/hermes/.update_status
             echo "up failed: $(tail -1 /tmp/hermes-update.log)" > /opt/hermes/.update_error
             if [ -n "$PREVIOUS_IMAGE_REF" ] && [ "$PREVIOUS_IMAGE_REF" != "$TARGET_IMAGE_REF" ]; then
-                sed -i "s|image: nousresearch/hermes-agent:.*|image: ${PREVIOUS_IMAGE_REF}|" \
-                    /opt/hermes/docker-compose.yml
+                set_hermes_image_ref "$PREVIOUS_IMAGE_REF"
             fi
             docker compose -f /opt/hermes/docker-compose.yml up -d hermes-agent 2>/dev/null
             exit 0
@@ -688,8 +691,7 @@ if [ -n "$TARGET_VERSION" ] && [ "$UPDATE_STATUS" != "pulling" ] && [ "$UPDATE_S
             echo "failed" > /opt/hermes/.update_status
             echo "health check failed after update" > /opt/hermes/.update_error
             if [ -n "$PREVIOUS_IMAGE_REF" ] && [ "$PREVIOUS_IMAGE_REF" != "$TARGET_IMAGE_REF" ]; then
-                sed -i "s|image: nousresearch/hermes-agent:.*|image: ${PREVIOUS_IMAGE_REF}|" \
-                    /opt/hermes/docker-compose.yml
+                set_hermes_image_ref "$PREVIOUS_IMAGE_REF"
             fi
             docker compose -f /opt/hermes/docker-compose.yml up -d hermes-agent 2>/dev/null
         fi

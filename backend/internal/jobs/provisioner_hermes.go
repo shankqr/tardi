@@ -294,7 +294,7 @@ log_status "CADDY_PROXY_CONFIGURED"
 cat > /opt/hermes/docker-compose.yml <<'COMPOSEEOF'
 services:
   hermes-agent:
-    image: nousresearch/hermes-agent:{{.HermesImageTag}}
+    image: mirror.gcr.io/nousresearch/hermes-agent:{{.HermesImageTag}}
     container_name: hermes-agent
     restart: unless-stopped
     network_mode: host

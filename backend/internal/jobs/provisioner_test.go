@@ -162,7 +162,7 @@ func TestRenderHermesCloudInitUsesDockerStack(t *testing.T) {
 	}
 
 	required := []string{
-		"image: nousresearch/hermes-agent:latest",
+		"image: mirror.gcr.io/nousresearch/hermes-agent:latest",
 		"container_name: hermes-agent",
 		"network_mode: host",
 		"./data:/opt/data:rw",

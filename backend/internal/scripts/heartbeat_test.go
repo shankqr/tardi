@@ -120,7 +120,7 @@ func TestHermesHeartbeatScript_UsesDockerStackAndLatestUpdates(t *testing.T) {
 		"exec /bin/bash /opt/hermes/heartbeat.sh",
 		"container_name: hermes-agent",
 		"network_mode: host",
-		"nousresearch/hermes-agent:latest",
+		"mirror.gcr.io/nousresearch/hermes-agent:latest",
 		"./data:/opt/hermes/data:rw",
 		"/opt/hermes/docker-cli/bin/docker:/usr/local/bin/docker:ro",
 		"/opt/hermes/docker-cli/bin/docker-compose:/usr/local/bin/docker-compose:ro",
@@ -153,7 +153,9 @@ func TestHermesHeartbeatScript_UsesDockerStackAndLatestUpdates(t *testing.T) {
 		"https://api.github.com/repos/NousResearch/hermes-agent/releases/latest",
 		"resolve_latest_hermes_release",
 		"RESOLVED_TARGET_VERSION=$(resolve_latest_hermes_release)",
-		"nousresearch/hermes-agent:${RESOLVED_TARGET_VERSION}",
+		"HERMES_IMAGE_REPO=\"mirror.gcr.io/nousresearch/hermes-agent\"",
+		"set_hermes_image_ref",
+		"${HERMES_IMAGE_REPO}:${RESOLVED_TARGET_VERSION}",
 		"find /opt/hermes/.update_status -mmin +30",
 		"docker compose -f /opt/hermes/docker-compose.yml pull hermes-agent",
 		"docker compose -f /opt/hermes/docker-compose.yml up -d hermes-agent",
@@ -208,12 +210,22 @@ func TestHostAdminInstallScript_ExposesDesktopActionsAndRootBridge(t *testing.T)
 		"exec \"$CLIENT\" host.exec",
 		"tardi-host-admin.service",
 		"tardi-desktop.service",
+		"TARDI_HOST_ADMIN_CLIENT_VERSION=20260629",
+		"TARDI_DESKTOP_SERVICE_VERSION=20260629",
+		"Type=simple",
+		"/usr/local/bin/tardi-vnc-session",
+		"vncserver :1 -fg",
 		"-SecurityTypes None",
 		"TradingView launch requested",
 	}
 	for _, want := range required {
 		if !strings.Contains(HostAdminInstallScript, want) {
 			t.Errorf("HostAdminInstallScript should contain %q", want)
+		}
+	}
+	for _, bad := range []string{"startxfce4 &", "Type=forking"} {
+		if strings.Contains(HostAdminInstallScript, bad) {
+			t.Errorf("HostAdminInstallScript should not contain %q", bad)
 		}
 	}
 }
