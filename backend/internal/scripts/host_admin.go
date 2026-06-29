@@ -187,13 +187,64 @@ RUNTIME_DIR="/tmp/tardi-runtime-${DESKTOP_USER}"
 
 install -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" -m 700 -d "$DESKTOP_HOME/.vnc"
 install -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" -m 700 -d "$RUNTIME_DIR"
+install -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" -m 700 -d "$DESKTOP_HOME/.config/autostart"
 
-cat > "$DESKTOP_HOME/.vnc/xstartup" <<'VNCXSTARTUP'
+cat > "$DESKTOP_HOME/.config/autostart/light-locker.desktop" <<'LIGHTLOCKER'
+[Desktop Entry]
+Hidden=true
+LIGHTLOCKER
+chown "$DESKTOP_USER:$DESKTOP_GROUP" "$DESKTOP_HOME/.config/autostart/light-locker.desktop"
+
+cat > /usr/local/bin/tardi-vnc-session <<'VNCSESSION'
 #!/bin/sh
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
+export XKL_XMODMAP_DISABLE=1
+export XDG_CURRENT_DESKTOP=XFCE
+export DESKTOP_SESSION=xfce
+export XDG_SESSION_TYPE=x11
+export GDK_BACKEND=x11
+export SHELL=/bin/bash
+export NO_AT_BRIDGE=1
+
+LOG_DIR="$HOME/.vnc"
+mkdir -p "$LOG_DIR"
 [ -r "$HOME/.Xresources" ] && xrdb "$HOME/.Xresources"
-startxfce4 &
+
+dbus-launch --sh-syntax > "$LOG_DIR/dbus.env"
+. "$LOG_DIR/dbus.env"
+export DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID
+
+pids=""
+cleanup() {
+    for pid in $pids; do
+        kill "$pid" 2>/dev/null || true
+    done
+    if [ -n "${DBUS_SESSION_BUS_PID:-}" ]; then
+        kill "$DBUS_SESSION_BUS_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT INT TERM
+
+xfsettingsd > /tmp/tardi-xfsettingsd.log 2>&1 &
+pids="$pids $!"
+xfwm4 --replace --compositor=off > /tmp/tardi-xfwm4.log 2>&1 &
+pids="$pids $!"
+xfdesktop > /tmp/tardi-xfdesktop.log 2>&1 &
+pids="$pids $!"
+xfce4-panel > /tmp/tardi-xfce4-panel.log 2>&1 &
+pids="$pids $!"
+
+while true; do
+    sleep 3600 &
+    wait $!
+done
+VNCSESSION
+chmod 755 /usr/local/bin/tardi-vnc-session
+
+cat > "$DESKTOP_HOME/.vnc/xstartup" <<'VNCXSTARTUP'
+#!/bin/sh
+exec /usr/local/bin/tardi-vnc-session
 VNCXSTARTUP
 chown "$DESKTOP_USER:$DESKTOP_GROUP" "$DESKTOP_HOME/.vnc/xstartup"
 chmod 755 "$DESKTOP_HOME/.vnc/xstartup"
@@ -201,20 +252,27 @@ chmod 755 "$DESKTOP_HOME/.vnc/xstartup"
 cat > /etc/systemd/system/tardi-desktop.service <<SVCEOF
 [Unit]
 Description=Tardi private XFCE VNC desktop
-After=network.target
+After=network-online.target
 
 [Service]
-Type=forking
+Type=simple
 User=${DESKTOP_USER}
 PAMName=login
 WorkingDirectory=${DESKTOP_HOME}
 Environment=USER=${DESKTOP_USER}
 Environment=HOME=${DESKTOP_HOME}
+Environment=SHELL=/bin/bash
 Environment=DISPLAY=:1
 Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
+Environment=TARDI_DESKTOP_SERVICE_VERSION=20260629
+ExecStartPre=/bin/mkdir -p ${RUNTIME_DIR}
+ExecStartPre=/bin/chown ${DESKTOP_USER}:${DESKTOP_GROUP} ${RUNTIME_DIR}
+ExecStartPre=/bin/chmod 700 ${RUNTIME_DIR}
 ExecStartPre=-/usr/bin/vncserver -kill :1
-ExecStart=/usr/bin/vncserver :1 -localhost yes -SecurityTypes None -geometry 1440x900 -depth 24
+ExecStartPre=-/usr/bin/pkill -u ${DESKTOP_USER} -f /usr/local/bin/tardi-vnc-session
+ExecStart=/usr/bin/vncserver :1 -fg -localhost yes -SecurityTypes None -geometry 1440x900 -depth 24
 ExecStop=/usr/bin/vncserver -kill :1
+ExecStopPost=-/usr/bin/pkill -u ${DESKTOP_USER} -f /usr/local/bin/tardi-vnc-session
 Restart=on-failure
 RestartSec=5
 
@@ -255,10 +313,13 @@ def desktop_open(body):
     except KeyError:
         group_name = user.pw_name
     runtime_dir = "/tmp/tardi-runtime-" + user.pw_name
+    dbus_env = user.pw_dir + "/.vnc/dbus.env"
     url = "https://www.tradingview.com/chart/?symbol=" + urllib.parse.quote(symbol, safe="")
     launch = (
         "export DISPLAY=:1; "
         "export XDG_RUNTIME_DIR=" + shlex.quote(runtime_dir) + "; "
+        "if [ -r " + shlex.quote(dbus_env) + " ]; then . " + shlex.quote(dbus_env) + "; export DBUS_SESSION_BUS_ADDRESS; fi; "
+        "export NO_AT_BRIDGE=1; "
         "if ! command -v tradingview >/dev/null 2>&1; then echo tradingview command not found >&2; exit 127; fi; "
         "nohup tradingview --no-sandbox " + shlex.quote(url) + " >" + shlex.quote(user.pw_dir + "/.tardi-tradingview.log") + " 2>&1 &"
     )
@@ -384,7 +445,7 @@ chmod 755 "$INSTALL_DIR/server.py"
 cat > "$BIN_DIR/tardi-host-admin" <<'CLIENTEOF'
 #!/bin/sh
 set -eu
-# TARDI_HOST_ADMIN_CLIENT_VERSION=20260429
+# TARDI_HOST_ADMIN_CLIENT_VERSION=20260629
 
 ACTION="${1:-}"
 SOCKET="${TARDI_HOST_ADMIN_SOCKET:-/run/tardi-host-admin/admin.sock}"

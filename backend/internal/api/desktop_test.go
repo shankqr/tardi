@@ -45,14 +45,51 @@ func TestBuildDesktopPrepareCommand(t *testing.T) {
 		"/api/agent/host-admin-script",
 		"/opt/openclaw/host-admin/bin/tardi-host-admin",
 		"/opt/hermes/host-admin/bin/tardi-host-admin",
+		"TARDI_HOST_ADMIN_CLIENT_VERSION=20260629",
 		"desktop.install",
 		"desktop.open 'NASDAQ:AAPL'",
 		"-SecurityTypes None",
+		"TARDI_DESKTOP_SERVICE_VERSION=20260629",
+		"systemctl is-active --quiet tardi-desktop.service",
 		"/dev/tcp/127.0.0.1/5901",
 	}
 	for _, want := range required {
 		if !strings.Contains(cmd, want) {
 			t.Fatalf("buildDesktopPrepareCommand() missing %q", want)
+		}
+	}
+}
+
+func TestBuildDesktopReadyCommand(t *testing.T) {
+	cmd := buildDesktopReadyCommand()
+
+	required := []string{
+		"TARDI_DESKTOP_SERVICE_VERSION=20260629",
+		"systemctl is-active --quiet tardi-desktop.service",
+		"/dev/tcp/127.0.0.1/5901",
+		"echo ready",
+		"echo preparing",
+	}
+	for _, want := range required {
+		if !strings.Contains(cmd, want) {
+			t.Fatalf("buildDesktopReadyCommand() missing %q", want)
+		}
+	}
+}
+
+func TestBuildDesktopPrepareKickoffCommand(t *testing.T) {
+	cmd := buildDesktopPrepareKickoffCommand(false, "")
+
+	required := []string{
+		"/tmp/tardi-desktop-prepare.sh",
+		"TARDI_DESKTOP_PREPARE",
+		"flock -n /tmp/tardi-desktop-prepare.lock",
+		"nohup bash -lc",
+		"desktop_prepare_started",
+	}
+	for _, want := range required {
+		if !strings.Contains(cmd, want) {
+			t.Fatalf("buildDesktopPrepareKickoffCommand() missing %q", want)
 		}
 	}
 }

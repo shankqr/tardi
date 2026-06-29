@@ -479,13 +479,20 @@ export async function getTerminalTicket(
 
 // --- Remote Desktop ---
 
+export type DesktopSessionResponse = {
+	status: 'ready' | 'preparing';
+	ticket?: string;
+	display: string;
+	geometry: string;
+};
+
 export async function createDesktopSession(
 	instanceId: string,
 	token: string,
 	options: { launchTradingView?: boolean; symbol?: string } = {}
-): Promise<{ ticket: string; display: string; geometry: string }> {
+): Promise<DesktopSessionResponse> {
 	if (USE_MOCK) {
-		return { ticket: 'mock-desktop-ticket', display: ':1', geometry: '1440x900' };
+		return { status: 'ready', ticket: 'mock-desktop-ticket', display: ':1', geometry: '1440x900' };
 	}
 
 	return apiFetch(
@@ -506,7 +513,7 @@ export async function openDesktopTradingView(
 	instanceId: string,
 	token: string,
 	symbol = 'BINANCE:BTCUSDT'
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; status?: 'preparing' }> {
 	if (USE_MOCK) {
 		return { ok: true };
 	}

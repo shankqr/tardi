@@ -36,6 +36,9 @@ const (
 	desktopWriteRateBytes     = 10 * 1024 * 1024 // 10 MB/min browser -> VPS cap
 	desktopWriteRateWindow    = time.Minute
 	desktopVNCAddress         = "127.0.0.1:5901"
+	desktopReadyCheckTimeout  = 15 * time.Second
+	desktopPrepareKickoffTTL  = 20 * time.Second
+	desktopServiceVersion     = "20260629"
 )
 
 var desktopSessions sync.Map
@@ -52,6 +55,13 @@ func incrementDesktopSession(userID uuid.UUID) (int32, func()) {
 type desktopSessionRequest struct {
 	LaunchTradingView bool   `json:"launch_tradingview"`
 	Symbol            string `json:"symbol"`
+}
+
+type desktopSessionResponse struct {
+	Status   string `json:"status"`
+	Ticket   string `json:"ticket,omitempty"`
+	Display  string `json:"display"`
+	Geometry string `json:"geometry"`
 }
 
 // DesktopSessionHandler prepares the private VPS desktop and returns a
@@ -88,17 +98,31 @@ func DesktopSessionHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		if err := ensureDesktopReady(r.Context(), deps, inst, req.LaunchTradingView, req.Symbol); err != nil {
-			slog.Error("desktop session: prepare failed", "error", err, "instance_id", instanceID)
+		ready, err := isDesktopReady(r.Context(), deps, inst)
+		if err != nil {
+			slog.Warn("desktop session: readiness check failed", "error", err, "instance_id", instanceID)
+		}
+		if ready {
+			ticket := signScopedTicket(deps.Config.TerminalTicketSecret, "desktop", user.ID, instanceID, time.Now().Add(desktopTicketTTL))
+			WriteJSON(w, http.StatusOK, desktopSessionResponse{
+				Status:   "ready",
+				Ticket:   ticket,
+				Display:  ":1",
+				Geometry: "1440x900",
+			})
+			return
+		}
+
+		if err := startDesktopPrepare(r.Context(), deps, inst, req.LaunchTradingView, req.Symbol); err != nil {
+			slog.Error("desktop session: prepare kickoff failed", "error", err, "instance_id", instanceID)
 			WriteError(w, http.StatusBadGateway, "desktop_prepare_failed", "failed to prepare desktop")
 			return
 		}
 
-		ticket := signScopedTicket(deps.Config.TerminalTicketSecret, "desktop", user.ID, instanceID, time.Now().Add(desktopTicketTTL))
-		WriteJSON(w, http.StatusOK, map[string]any{
-			"ticket":   ticket,
-			"display":  ":1",
-			"geometry": "1440x900",
+		WriteJSON(w, http.StatusAccepted, desktopSessionResponse{
+			Status:   "preparing",
+			Display:  ":1",
+			Geometry: "1440x900",
 		})
 	}
 }
@@ -129,13 +153,13 @@ func DesktopOpenHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 
-		if err := ensureDesktopReady(r.Context(), deps, inst, true, req.Symbol); err != nil {
-			slog.Error("desktop open: launch failed", "error", err, "instance_id", instanceID)
+		if err := startDesktopPrepare(r.Context(), deps, inst, true, req.Symbol); err != nil {
+			slog.Error("desktop open: launch kickoff failed", "error", err, "instance_id", instanceID)
 			WriteError(w, http.StatusBadGateway, "desktop_launch_failed", "failed to launch TradingView")
 			return
 		}
 
-		WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+		WriteJSON(w, http.StatusAccepted, map[string]any{"ok": true, "status": "preparing"})
 	}
 }
 
@@ -241,20 +265,75 @@ func writeDesktopInstanceError(w http.ResponseWriter, err error, logPrefix strin
 	}
 }
 
-func ensureDesktopReady(ctx context.Context, deps Dependencies, inst *models.VpsInstance, launchTradingView bool, symbol string) error {
+func desktopRunner(deps Dependencies) sshexec.Runner {
+	if deps.SSHRunner != nil {
+		return deps.SSHRunner
+	}
+	return sshexec.DefaultRunner{}
+}
+
+func desktopRootPassword(inst *models.VpsInstance) string {
 	var rootPassword string
 	if inst.RootPassword != nil {
 		rootPassword = *inst.RootPassword
 	}
+	return rootPassword
+}
 
-	runner := deps.SSHRunner
-	if runner == nil {
-		runner = sshexec.DefaultRunner{}
+func isDesktopReady(ctx context.Context, deps Dependencies, inst *models.VpsInstance) (bool, error) {
+	out, err := desktopRunner(deps).RunCommand(
+		*inst.IPv4,
+		deps.Config.SSHPrivateKey,
+		desktopRootPassword(inst),
+		buildDesktopReadyCommand(),
+		desktopReadyCheckTimeout,
+	)
+	if err != nil {
+		return false, err
 	}
+	return strings.Contains(out, "ready"), nil
+}
 
-	cmd := buildDesktopPrepareCommand(launchTradingView, symbol)
-	_, err := runner.RunCommand(*inst.IPv4, deps.Config.SSHPrivateKey, rootPassword, cmd, 12*time.Minute)
+func startDesktopPrepare(ctx context.Context, deps Dependencies, inst *models.VpsInstance, launchTradingView bool, symbol string) error {
+	cmd := buildDesktopPrepareKickoffCommand(launchTradingView, symbol)
+	_, err := desktopRunner(deps).RunCommand(
+		*inst.IPv4,
+		deps.Config.SSHPrivateKey,
+		desktopRootPassword(inst),
+		cmd,
+		desktopPrepareKickoffTTL,
+	)
 	return err
+}
+
+func buildDesktopReadyCommand() string {
+	return fmt.Sprintf(`#!/bin/bash
+set -euo pipefail
+if [ -f /etc/systemd/system/tardi-desktop.service ] &&
+    grep -q 'TARDI_DESKTOP_SERVICE_VERSION=%s' /etc/systemd/system/tardi-desktop.service 2>/dev/null &&
+    systemctl is-active --quiet tardi-desktop.service &&
+    bash -lc '>/dev/tcp/127.0.0.1/5901' 2>/dev/null; then
+    echo ready
+else
+    echo preparing
+fi
+`, desktopServiceVersion)
+}
+
+func buildDesktopPrepareKickoffCommand(launchTradingView bool, symbol string) string {
+	return fmt.Sprintf(`#!/bin/bash
+set -euo pipefail
+cat > /tmp/tardi-desktop-prepare.sh <<'TARDI_DESKTOP_PREPARE'
+%s
+TARDI_DESKTOP_PREPARE
+chmod 700 /tmp/tardi-desktop-prepare.sh
+if command -v flock >/dev/null 2>&1; then
+    nohup bash -lc 'flock -n /tmp/tardi-desktop-prepare.lock /tmp/tardi-desktop-prepare.sh' >/tmp/tardi-desktop-prepare.log 2>&1 &
+else
+    nohup bash -lc 'if mkdir /tmp/tardi-desktop-prepare.lockdir 2>/dev/null; then trap "rmdir /tmp/tardi-desktop-prepare.lockdir" EXIT; /tmp/tardi-desktop-prepare.sh; fi' >/tmp/tardi-desktop-prepare.log 2>&1 &
+fi
+echo desktop_prepare_started
+`, buildDesktopPrepareCommand(launchTradingView, symbol))
 }
 
 func buildDesktopPrepareCommand(launchTradingView bool, symbol string) string {
@@ -307,6 +386,11 @@ if ! CLIENT=$(find_client); then
     CLIENT=$(find_client)
 fi
 
+if ! grep -q 'TARDI_HOST_ADMIN_CLIENT_VERSION=20260629' "$CLIENT" 2>/dev/null; then
+    install_host_admin
+    CLIENT=$(find_client)
+fi
+
 if [ ! -S /run/tardi-host-admin/admin.sock ]; then
     systemctl restart tardi-host-admin.service 2>/dev/null || install_host_admin
     sleep 2
@@ -323,6 +407,8 @@ elif [ ! -f /etc/systemd/system/tardi-desktop.service ]; then
     NEEDS_INSTALL=true
 elif ! grep -q -- '-SecurityTypes None' /etc/systemd/system/tardi-desktop.service 2>/dev/null; then
     NEEDS_INSTALL=true
+elif ! grep -q 'TARDI_DESKTOP_SERVICE_VERSION=20260629' /etc/systemd/system/tardi-desktop.service 2>/dev/null; then
+    NEEDS_INSTALL=true
 fi
 if [ "$NEEDS_INSTALL" = true ]; then
     "$CLIENT" desktop.install >/tmp/tardi-desktop-install.log
@@ -337,7 +423,9 @@ fi
 		b.WriteString("\"$CLIENT\" desktop.start >/tmp/tardi-desktop-start.log\n")
 	}
 	b.WriteString(`for i in $(seq 1 30); do
-    if bash -lc '>/dev/tcp/127.0.0.1/5901' 2>/dev/null; then
+    if grep -q 'TARDI_DESKTOP_SERVICE_VERSION=20260629' /etc/systemd/system/tardi-desktop.service 2>/dev/null &&
+        systemctl is-active --quiet tardi-desktop.service &&
+        bash -lc '>/dev/tcp/127.0.0.1/5901' 2>/dev/null; then
         "$CLIENT" desktop.status
         exit 0
     fi

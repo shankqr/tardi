@@ -18,6 +18,11 @@
 	let errorMessage = $state('');
 	let launchingTradingView = $state(false);
 	let reconnecting = $state(false);
+	let connectRun = 0;
+	let destroyed = false;
+
+	const preparePollMs = 4000;
+	const prepareMaxAttempts = 150;
 
 	function wsURL(ticket: string) {
 		const wsBase = getApiUrl().replace(/^http/, 'ws');
@@ -29,12 +34,64 @@
 		rfb = null;
 	}
 
+	function isCurrent(run: number) {
+		return !destroyed && run === connectRun;
+	}
+
+	function wait(ms: number) {
+		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	function attachRfb(ticket: string, run: number) {
+		status = 'connecting';
+		const client = new RFB(host, wsURL(ticket), {
+			shared: true,
+			wsProtocols: ['binary']
+		});
+		client.scaleViewport = true;
+		client.resizeSession = false;
+		client.viewOnly = false;
+		client.focusOnClick = true;
+		client.qualityLevel = 7;
+		client.compressionLevel = 2;
+		client.background = 'rgb(0, 0, 0)';
+
+		client.addEventListener('connect', () => {
+			if (isCurrent(run)) status = 'connected';
+		});
+		client.addEventListener('disconnect', (event) => {
+			if (!isCurrent(run)) return;
+			const clean = (event as CustomEvent<{ clean: boolean }>).detail?.clean;
+			status = clean ? 'disconnected' : 'error';
+			if (!clean) errorMessage = 'Desktop connection closed.';
+		});
+		client.addEventListener('securityfailure', () => {
+			if (!isCurrent(run)) return;
+			status = 'error';
+			errorMessage = 'Desktop authentication failed.';
+		});
+		client.addEventListener('credentialsrequired', () => {
+			if (!isCurrent(run)) return;
+			status = 'error';
+			errorMessage = 'Desktop requested credentials.';
+		});
+		rfb = client;
+	}
+
 	async function connect() {
+		const run = ++connectRun;
 		disconnect();
 		status = 'preparing';
 		errorMessage = '';
 
+		if (!instanceId) {
+			status = 'error';
+			errorMessage = 'Agent not found.';
+			return;
+		}
+
 		const token = await getIdToken();
+		if (!isCurrent(run)) return;
 		if (!token) {
 			status = 'error';
 			errorMessage = 'Not signed in.';
@@ -42,38 +99,20 @@
 		}
 
 		try {
-			const { ticket } = await createDesktopSession(instanceId!, token);
-			status = 'connecting';
-			const client = new RFB(host, wsURL(ticket), {
-				shared: true,
-				wsProtocols: ['binary']
-			});
-			client.scaleViewport = true;
-			client.resizeSession = false;
-			client.viewOnly = false;
-			client.focusOnClick = true;
-			client.qualityLevel = 7;
-			client.compressionLevel = 2;
-			client.background = 'rgb(0, 0, 0)';
-
-			client.addEventListener('connect', () => {
-				status = 'connected';
-			});
-			client.addEventListener('disconnect', (event) => {
-				const clean = (event as CustomEvent<{ clean: boolean }>).detail?.clean;
-				status = clean ? 'disconnected' : 'error';
-				if (!clean) errorMessage = 'Desktop connection closed.';
-			});
-			client.addEventListener('securityfailure', () => {
-				status = 'error';
-				errorMessage = 'Desktop authentication failed.';
-			});
-			client.addEventListener('credentialsrequired', () => {
-				status = 'error';
-				errorMessage = 'Desktop requested credentials.';
-			});
-			rfb = client;
+			for (let attempt = 0; attempt < prepareMaxAttempts; attempt += 1) {
+				const session = await createDesktopSession(instanceId, token);
+				if (!isCurrent(run)) return;
+				if (session.status === 'ready' && session.ticket) {
+					attachRfb(session.ticket, run);
+					return;
+				}
+				status = 'preparing';
+				await wait(preparePollMs);
+				if (!isCurrent(run)) return;
+			}
+			throw new Error('Desktop is still preparing. Try reconnecting in a minute.');
 		} catch (err) {
+			if (!isCurrent(run)) return;
 			status = 'error';
 			errorMessage = err instanceof Error ? err.message : 'Failed to open desktop';
 		}
@@ -113,6 +152,8 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
+		connectRun += 1;
 		disconnect();
 	});
 </script>
@@ -163,7 +204,12 @@
 		</div>
 	{/if}
 
-	<div class="overflow-hidden rounded-lg border border-gray-800 bg-black">
+	<div class="relative overflow-hidden rounded-lg border border-gray-800 bg-black">
 		<div bind:this={host} class="h-[calc(100vh-9rem)] min-h-[520px] w-full"></div>
+		{#if status === 'preparing' || status === 'connecting'}
+			<div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
+				<div class="h-5 w-5 animate-spin rounded-full border-2 border-gray-700 border-t-gray-200"></div>
+			</div>
+		{/if}
 	</div>
 </div>
