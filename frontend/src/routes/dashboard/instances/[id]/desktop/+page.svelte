@@ -5,16 +5,34 @@
 	import { getIdToken } from '$lib/stores/auth';
 	import { createDesktopSession } from '$lib/api/client';
 	import { getApiUrl } from '$lib/stores/config';
-	import RFB from '@novnc/novnc';
 
 	const instanceId = $derived($page.params.id);
 	const instance = $derived(
 		$dashboardState?.instances.find((i) => i.id === instanceId) ?? null
 	);
 
+	type RfbClient = {
+		disconnect: () => void;
+		addEventListener: (type: string, listener: (event: Event) => void) => void;
+		focus?: (options?: FocusOptions) => void;
+		scaleViewport: boolean;
+		resizeSession: boolean;
+		viewOnly: boolean;
+		focusOnClick: boolean;
+		qualityLevel: number;
+		compressionLevel: number;
+		background: string;
+	};
+	type RfbConstructor = new (
+		target: HTMLDivElement,
+		url: string,
+		options: { shared: boolean; wsProtocols: string[] }
+	) => RfbClient;
+
 	let viewer: HTMLDivElement;
 	let host: HTMLDivElement;
-	let rfb: RFB | null = null;
+	let rfb: RfbClient | null = null;
+	let Rfb: RfbConstructor | null = null;
 	let status = $state<'preparing' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error'>('preparing');
 	let errorMessage = $state('');
 	let reconnecting = $state(false);
@@ -57,6 +75,14 @@
 		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 
+	async function loadRfb() {
+		if (!Rfb) {
+			const mod = await import('@novnc/novnc');
+			Rfb = mod.default as RfbConstructor;
+		}
+		return Rfb;
+	}
+
 	function scheduleReconnect(run: number) {
 		if (!isCurrent(run) || manualDisconnect) return;
 		clearReconnectTimer();
@@ -70,9 +96,11 @@
 		}, delay);
 	}
 
-	function attachRfb(ticket: string, run: number) {
+	async function attachRfb(ticket: string, run: number) {
 		status = 'connecting';
-		const client = new RFB(host, wsURL(ticket), {
+		const Client = await loadRfb();
+		if (!isCurrent(run)) return;
+		const client = new Client(host, wsURL(ticket), {
 			shared: true,
 			wsProtocols: ['binary']
 		});
@@ -121,7 +149,7 @@
 			if (!rfb) return;
 			rfb.scaleViewport = true;
 			rfb.resizeSession = true;
-			(rfb as RFB & { focus: (options?: FocusOptions) => void }).focus({ preventScroll: true });
+			rfb.focus?.({ preventScroll: true });
 		});
 	}
 
@@ -153,7 +181,7 @@
 				const session = await createDesktopSession(instanceId, token);
 				if (!isCurrent(run)) return;
 				if (session.status === 'ready' && session.ticket) {
-					attachRfb(session.ticket, run);
+					await attachRfb(session.ticket, run);
 					return;
 				}
 				status = 'preparing';
