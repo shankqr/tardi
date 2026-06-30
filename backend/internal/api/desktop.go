@@ -32,12 +32,13 @@ const (
 	desktopMaxPerUser        = 2
 	desktopReadDeadline      = 5 * time.Minute
 	desktopPingInterval      = 20 * time.Second
-	desktopWriteRateBytes    = 10 * 1024 * 1024 // 10 MB/min browser -> VPS cap
+	desktopWriteRateBytes    = 60 * 1024 * 1024 // 60 MB/min browser -> VPS cap
 	desktopWriteRateWindow   = time.Minute
 	desktopVNCAddress        = "127.0.0.1:5901"
 	desktopReadyCheckTimeout = 15 * time.Second
 	desktopPrepareKickoffTTL = 20 * time.Second
 	desktopServiceVersion    = "20260629"
+	desktopHostAdminVersion  = "2026063001"
 )
 
 var desktopSessions sync.Map
@@ -212,6 +213,7 @@ func DesktopWebSocketHandler(deps Dependencies) http.HandlerFunc {
 			return
 		}
 		defer conn.Close()
+		conn.EnableWriteCompression(false)
 
 		var rootPassword string
 		if inst.RootPassword != nil {
@@ -311,7 +313,6 @@ set -euo pipefail
 if [ -f /etc/systemd/system/tardi-desktop.service ] &&
     grep -q 'TARDI_DESKTOP_SERVICE_VERSION=%s' /etc/systemd/system/tardi-desktop.service 2>/dev/null &&
     systemctl is-active --quiet tardi-desktop.service &&
-    command -v tradingview >/dev/null 2>&1 &&
     { command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; } &&
     bash -lc '>/dev/tcp/127.0.0.1/5901' 2>/dev/null; then
     echo ready
@@ -339,7 +340,7 @@ echo desktop_prepare_started
 
 func buildDesktopPrepareCommand(launchTradingView bool, symbol string) string {
 	var b strings.Builder
-	b.WriteString(`#!/bin/bash
+	b.WriteString(fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
 
 find_runtime_dir() {
@@ -387,7 +388,7 @@ if ! CLIENT=$(find_client); then
     CLIENT=$(find_client)
 fi
 
-if ! grep -q 'TARDI_HOST_ADMIN_CLIENT_VERSION=2026062901' "$CLIENT" 2>/dev/null; then
+if ! grep -q 'TARDI_HOST_ADMIN_CLIENT_VERSION=%s' "$CLIENT" 2>/dev/null; then
     install_host_admin
     CLIENT=$(find_client)
 fi
@@ -404,21 +405,19 @@ CLIENT=$(find_client)
 NEEDS_INSTALL=false
 if ! command -v vncserver >/dev/null 2>&1; then
     NEEDS_INSTALL=true
-elif ! command -v tradingview >/dev/null 2>&1; then
-    NEEDS_INSTALL=true
 elif ! command -v google-chrome >/dev/null 2>&1 && ! command -v google-chrome-stable >/dev/null 2>&1; then
     NEEDS_INSTALL=true
 elif [ ! -f /etc/systemd/system/tardi-desktop.service ]; then
     NEEDS_INSTALL=true
 elif ! grep -q -- '-SecurityTypes None' /etc/systemd/system/tardi-desktop.service 2>/dev/null; then
     NEEDS_INSTALL=true
-elif ! grep -q 'TARDI_DESKTOP_SERVICE_VERSION=20260629' /etc/systemd/system/tardi-desktop.service 2>/dev/null; then
+elif ! grep -q 'TARDI_DESKTOP_SERVICE_VERSION=%s' /etc/systemd/system/tardi-desktop.service 2>/dev/null; then
     NEEDS_INSTALL=true
 fi
 if [ "$NEEDS_INSTALL" = true ]; then
     "$CLIENT" desktop.install >/tmp/tardi-desktop-install.log
 fi
-`)
+`, desktopHostAdminVersion, desktopServiceVersion))
 	if launchTradingView {
 		if strings.TrimSpace(symbol) == "" {
 			symbol = "BINANCE:BTCUSDT"
@@ -427,10 +426,9 @@ fi
 	} else {
 		b.WriteString("\"$CLIENT\" desktop.start >/tmp/tardi-desktop-start.log\n")
 	}
-	b.WriteString(`for i in $(seq 1 30); do
-    if grep -q 'TARDI_DESKTOP_SERVICE_VERSION=20260629' /etc/systemd/system/tardi-desktop.service 2>/dev/null &&
+	b.WriteString(fmt.Sprintf(`for i in $(seq 1 30); do
+    if grep -q 'TARDI_DESKTOP_SERVICE_VERSION=%s' /etc/systemd/system/tardi-desktop.service 2>/dev/null &&
         systemctl is-active --quiet tardi-desktop.service &&
-        command -v tradingview >/dev/null 2>&1 &&
         { command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; } &&
         bash -lc '>/dev/tcp/127.0.0.1/5901' 2>/dev/null; then
         "$CLIENT" desktop.status
@@ -440,7 +438,7 @@ fi
 done
 echo "desktop VNC port did not become ready" >&2
 exit 1
-`)
+`, desktopServiceVersion))
 	return b.String()
 }
 

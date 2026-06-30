@@ -132,8 +132,7 @@ func TestRenderCloudInitIncludesHostAdminHelper(t *testing.T) {
 		"TARDI_HOST_EXEC_TIMEOUT=1800",
 		"PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"https://dl.google.com/linux/chrome/deb/",
-		"https://tvd-packages.tradingview.com/ubuntu/stable",
-		"google-chrome-stable tradingview",
+		"apt-get install -y -qq google-chrome-stable",
 		"DESKTOP_APPS_INSTALLED",
 		`- "${OPENCLAW_GID}"`,
 		"/run/tardi-host-admin:/run/tardi-host-admin:rw",
@@ -147,6 +146,9 @@ func TestRenderCloudInitIncludesHostAdminHelper(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("rendered cloud-init missing %q", want)
 		}
+	}
+	if strings.Contains(got, "google-chrome-stable tradingview") {
+		t.Error("rendered cloud-init should not eagerly install TradingView with Chrome")
 	}
 }
 
@@ -193,8 +195,7 @@ func TestRenderHermesCloudInitUsesDockerStack(t *testing.T) {
 		"Wants=tardi-host-admin.service",
 		"hermes-stack.service",
 		"https://dl.google.com/linux/chrome/deb/",
-		"https://tvd-packages.tradingview.com/ubuntu/stable",
-		"google-chrome-stable tradingview",
+		"apt-get install -y -qq google-chrome-stable",
 		"DESKTOP_APPS_INSTALLED",
 		"docker compose up -d --remove-orphans",
 		"model:\n  provider: \"openrouter\"\n  model: \"anthropic/claude-sonnet-4\"\nterminal:\n  backend: local\n  cwd: \"/opt/hermes/data/workspace\"",
@@ -203,6 +204,9 @@ func TestRenderHermesCloudInitUsesDockerStack(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("rendered Hermes cloud-init missing %q", want)
 		}
+	}
+	if strings.Contains(got, "google-chrome-stable tradingview") {
+		t.Error("rendered Hermes cloud-init should not eagerly install TradingView with Chrome")
 	}
 
 	forbidden := []string{

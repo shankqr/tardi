@@ -45,13 +45,12 @@ func TestBuildDesktopPrepareCommand(t *testing.T) {
 		"/api/agent/host-admin-script",
 		"/opt/openclaw/host-admin/bin/tardi-host-admin",
 		"/opt/hermes/host-admin/bin/tardi-host-admin",
-		"TARDI_HOST_ADMIN_CLIENT_VERSION=2026062901",
+		"TARDI_HOST_ADMIN_CLIENT_VERSION=2026063001",
 		"desktop.install",
 		"desktop.open 'NASDAQ:AAPL'",
 		"-SecurityTypes None",
 		"TARDI_DESKTOP_SERVICE_VERSION=20260629",
 		"systemctl is-active --quiet tardi-desktop.service",
-		"command -v tradingview",
 		"command -v google-chrome",
 		"/dev/tcp/127.0.0.1/5901",
 	}
@@ -68,7 +67,6 @@ func TestBuildDesktopReadyCommand(t *testing.T) {
 	required := []string{
 		"TARDI_DESKTOP_SERVICE_VERSION=20260629",
 		"systemctl is-active --quiet tardi-desktop.service",
-		"command -v tradingview",
 		"command -v google-chrome",
 		"/dev/tcp/127.0.0.1/5901",
 		"echo ready",

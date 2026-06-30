@@ -3,7 +3,7 @@
 	import { page } from '$app/stores';
 	import { dashboardState } from '$lib/stores/dashboard';
 	import { getIdToken } from '$lib/stores/auth';
-	import { createDesktopSession, openDesktopTradingView } from '$lib/api/client';
+	import { createDesktopSession } from '$lib/api/client';
 	import { getApiUrl } from '$lib/stores/config';
 	import RFB from '@novnc/novnc';
 
@@ -12,12 +12,13 @@
 		$dashboardState?.instances.find((i) => i.id === instanceId) ?? null
 	);
 
+	let viewer: HTMLDivElement;
 	let host: HTMLDivElement;
 	let rfb: RFB | null = null;
 	let status = $state<'preparing' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error'>('preparing');
 	let errorMessage = $state('');
-	let launchingTradingView = $state(false);
 	let reconnecting = $state(false);
+	let isFullscreen = $state(false);
 	let linkCopied = $state(false);
 	let connectRun = 0;
 	let destroyed = false;
@@ -27,8 +28,8 @@
 	let linkTimer: ReturnType<typeof setTimeout> | null = null;
 	let removeLifecycleListeners: (() => void) | null = null;
 
-	const preparePollMs = 4000;
-	const prepareMaxAttempts = 150;
+	const preparePollMs = 2000;
+	const prepareMaxAttempts = 300;
 	const reconnectMaxMs = 30000;
 
 	function wsURL(ticket: string) {
@@ -76,11 +77,11 @@
 			wsProtocols: ['binary']
 		});
 		client.scaleViewport = true;
-		client.resizeSession = false;
+		client.resizeSession = true;
 		client.viewOnly = false;
 		client.focusOnClick = true;
-		client.qualityLevel = 7;
-		client.compressionLevel = 2;
+		client.qualityLevel = 5;
+		client.compressionLevel = 1;
 		client.background = 'rgb(0, 0, 0)';
 
 		client.addEventListener('connect', () => {
@@ -111,6 +112,17 @@
 			scheduleReconnect(run);
 		});
 		rfb = client;
+	}
+
+	function syncFullscreenState() {
+		if (typeof document === 'undefined') return;
+		isFullscreen = document.fullscreenElement === viewer;
+		requestAnimationFrame(() => {
+			if (!rfb) return;
+			rfb.scaleViewport = true;
+			rfb.resizeSession = true;
+			(rfb as RFB & { focus: (options?: FocusOptions) => void }).focus({ preventScroll: true });
+		});
 	}
 
 	async function connect(mode: 'initial' | 'manual' | 'auto' = 'manual') {
@@ -203,23 +215,17 @@
 		}, 2000);
 	}
 
-	async function launchTradingView() {
-		const token = await getIdToken();
-		if (!token) {
-			status = 'error';
-			errorMessage = 'Not signed in.';
-			return;
-		}
-
-		launchingTradingView = true;
+	async function toggleFullscreen() {
+		if (!viewer || typeof document === 'undefined') return;
 		errorMessage = '';
 		try {
-			await openDesktopTradingView(instanceId!, token);
+			if (document.fullscreenElement === viewer) {
+				await document.exitFullscreen();
+			} else {
+				await viewer.requestFullscreen({ navigationUI: 'hide' });
+			}
 		} catch (err) {
-			status = 'error';
-			errorMessage = err instanceof Error ? err.message : 'Failed to launch TradingView';
-		} finally {
-			launchingTradingView = false;
+			errorMessage = err instanceof Error ? err.message : 'Failed to toggle fullscreen';
 		}
 	}
 
@@ -235,9 +241,11 @@
 		};
 		window.addEventListener('online', resume);
 		document.addEventListener('visibilitychange', onVisibility);
+		document.addEventListener('fullscreenchange', syncFullscreenState);
 		removeLifecycleListeners = () => {
 			window.removeEventListener('online', resume);
 			document.removeEventListener('visibilitychange', onVisibility);
+			document.removeEventListener('fullscreenchange', syncFullscreenState);
 		};
 	});
 
@@ -282,11 +290,10 @@
 			</button>
 			<button
 				type="button"
-				onclick={launchTradingView}
-				disabled={launchingTradingView || status === 'preparing' || status === 'connecting' || status === 'reconnecting'}
-				class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+				onclick={toggleFullscreen}
+				class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
 			>
-				{launchingTradingView ? 'Launching...' : 'TradingView'}
+				{isFullscreen ? 'Exit full screen' : 'Full screen'}
 			</button>
 			<button
 				type="button"
@@ -313,8 +320,14 @@
 		</div>
 	{/if}
 
-	<div class="relative overflow-hidden rounded-lg border border-gray-800 bg-black">
-		<div bind:this={host} class="h-[calc(100vh-9rem)] min-h-[520px] w-full"></div>
+	<div
+		bind:this={viewer}
+		class="relative overflow-hidden border border-gray-800 bg-black {isFullscreen ? 'h-screen w-screen rounded-none' : 'rounded-lg'}"
+	>
+		<div
+			bind:this={host}
+			class="{isFullscreen ? 'h-screen w-screen' : 'h-[calc(100dvh-9rem)] min-h-[360px] w-full sm:min-h-[520px]'}"
+		></div>
 		{#if status === 'preparing' || status === 'connecting' || status === 'reconnecting'}
 			<div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
 				<div class="h-5 w-5 animate-spin rounded-full border-2 border-gray-700 border-t-gray-200"></div>

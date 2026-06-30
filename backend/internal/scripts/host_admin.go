@@ -166,18 +166,13 @@ apt-get install -y -qq \
     xfce4 xfce4-terminal
 
 install -m 0755 -d /usr/share/keyrings
-curl -fsSL https://tvd-packages.tradingview.com/keyring.gpg \
-    -o /usr/share/keyrings/tradingview-desktop-archive-keyring.gpg
-printf '%s\n' 'deb [arch=amd64 signed-by=/usr/share/keyrings/tradingview-desktop-archive-keyring.gpg] https://tvd-packages.tradingview.com/ubuntu/stable jammy multiverse' \
-    > /etc/apt/sources.list.d/tradingview-desktop.list
-
 curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
     | gpg --dearmor > /usr/share/keyrings/google-linux-signing-keyring.gpg
 printf '%s\n' 'deb [arch=amd64 signed-by=/usr/share/keyrings/google-linux-signing-keyring.gpg] https://dl.google.com/linux/chrome/deb/ stable main' \
     > /etc/apt/sources.list.d/google-chrome.list
 
 apt-get update -qq
-apt-get install -y -qq google-chrome-stable tradingview
+apt-get install -y -qq google-chrome-stable
 
 if id openclaw >/dev/null 2>&1; then
     DESKTOP_USER=openclaw
@@ -294,6 +289,23 @@ systemctl enable tardi-desktop.service
     return {"message": "desktop profile installed", "output": output}
 
 
+def install_tradingview():
+    script = r'''
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+
+install -m 0755 -d /usr/share/keyrings
+curl -fsSL https://tvd-packages.tradingview.com/keyring.gpg \
+    -o /usr/share/keyrings/tradingview-desktop-archive-keyring.gpg
+printf '%s\n' 'deb [arch=amd64 signed-by=/usr/share/keyrings/tradingview-desktop-archive-keyring.gpg] https://tvd-packages.tradingview.com/ubuntu/stable jammy multiverse' \
+    > /etc/apt/sources.list.d/tradingview-desktop.list
+
+apt-get update -qq
+apt-get install -y -qq tradingview
+'''
+    return run_bash(script, timeout=900)
+
+
 def desktop_start(_body):
     run(["systemctl", "start", "tardi-desktop.service"], timeout=90)
     return {"message": "desktop started", "desktop_service": service_state("tardi-desktop.service")}
@@ -313,6 +325,9 @@ def desktop_open(body):
     symbol = str(body.get("symbol") or "BINANCE:BTCUSDT")
     if not re.match(r"^[A-Za-z0-9:_./-]{1,80}$", symbol):
         raise ActionError("invalid symbol", 400)
+    install_output = ""
+    if not shutil.which("tradingview"):
+        install_output = install_tradingview()
     user = runtime_user_record()
     group_id = runtime_group_id(user)
     try:
@@ -338,7 +353,8 @@ def desktop_open(body):
         "runuser -u " + shlex.quote(user.pw_name) + " -- bash -lc " + shlex.quote(launch) + "\n"
     )
     output = run_bash(script, timeout=120)
-    return {"message": "TradingView launch requested", "symbol": symbol, "url": url, "output": output}
+    combined_output = (install_output + "\n" + output).strip()
+    return {"message": "TradingView launch requested", "symbol": symbol, "url": url, "output": combined_output}
 
 
 def host_exec(body):
@@ -452,7 +468,7 @@ chmod 755 "$INSTALL_DIR/server.py"
 cat > "$BIN_DIR/tardi-host-admin" <<'CLIENTEOF'
 #!/bin/sh
 set -eu
-# TARDI_HOST_ADMIN_CLIENT_VERSION=2026062901
+# TARDI_HOST_ADMIN_CLIENT_VERSION=2026063001
 
 ACTION="${1:-}"
 SOCKET="${TARDI_HOST_ADMIN_SOCKET:-/run/tardi-host-admin/admin.sock}"
