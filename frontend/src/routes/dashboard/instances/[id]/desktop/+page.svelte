@@ -42,6 +42,7 @@
 	let destroyed = false;
 	let manualDisconnect = false;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let connectionTimer: ReturnType<typeof setTimeout> | null = null;
 	let reconnectAttempt = 0;
 	let linkTimer: ReturnType<typeof setTimeout> | null = null;
 	let removeLifecycleListeners: (() => void) | null = null;
@@ -49,6 +50,16 @@
 	const preparePollMs = 2000;
 	const prepareMaxAttempts = 300;
 	const reconnectMaxMs = 30000;
+	const connectTimeoutMs = 20000;
+	const loadingMessage = $derived(
+		status === 'preparing'
+			? 'Preparing desktop'
+			: status === 'connecting'
+				? 'Connecting'
+				: status === 'reconnecting'
+					? 'Reconnecting'
+					: ''
+	);
 
 	function wsURL(ticket: string) {
 		const wsBase = getApiUrl().replace(/^http/, 'ws');
@@ -56,6 +67,7 @@
 	}
 
 	function disconnect() {
+		clearConnectionTimer();
 		rfb?.disconnect();
 		rfb = null;
 	}
@@ -64,6 +76,13 @@
 		if (reconnectTimer) {
 			clearTimeout(reconnectTimer);
 			reconnectTimer = null;
+		}
+	}
+
+	function clearConnectionTimer() {
+		if (connectionTimer) {
+			clearTimeout(connectionTimer);
+			connectionTimer = null;
 		}
 	}
 
@@ -83,13 +102,14 @@
 		return Rfb;
 	}
 
-	function scheduleReconnect(run: number) {
+	function scheduleReconnect(run: number, message = 'Connection lost. Retrying...') {
 		if (!isCurrent(run) || manualDisconnect) return;
 		clearReconnectTimer();
+		clearConnectionTimer();
 		const delay = Math.min(reconnectMaxMs, 1000 * 2 ** Math.min(reconnectAttempt, 5));
 		reconnectAttempt += 1;
 		status = 'reconnecting';
-		errorMessage = '';
+		errorMessage = message;
 		reconnectTimer = setTimeout(() => {
 			if (!isCurrent(run) || manualDisconnect) return;
 			connect('auto');
@@ -114,12 +134,14 @@
 
 		client.addEventListener('connect', () => {
 			if (!isCurrent(run)) return;
+			clearConnectionTimer();
 			reconnectAttempt = 0;
 			errorMessage = '';
 			status = 'connected';
 		});
 		client.addEventListener('disconnect', (event) => {
 			if (!isCurrent(run)) return;
+			clearConnectionTimer();
 			rfb = null;
 			if (manualDisconnect) {
 				status = 'disconnected';
@@ -131,15 +153,22 @@
 		});
 		client.addEventListener('securityfailure', () => {
 			if (!isCurrent(run)) return;
+			clearConnectionTimer();
 			rfb = null;
-			scheduleReconnect(run);
+			scheduleReconnect(run, 'Desktop rejected the VNC session. Retrying...');
 		});
 		client.addEventListener('credentialsrequired', () => {
 			if (!isCurrent(run)) return;
+			clearConnectionTimer();
 			rfb = null;
-			scheduleReconnect(run);
+			scheduleReconnect(run, 'Desktop requested credentials unexpectedly. Retrying...');
 		});
 		rfb = client;
+		connectionTimer = setTimeout(() => {
+			if (!isCurrent(run) || manualDisconnect || status !== 'connecting' || rfb !== client) return;
+			reconnectAttempt = Math.max(reconnectAttempt, 1);
+			client.disconnect();
+		}, connectTimeoutMs);
 	}
 
 	function syncFullscreenState() {
@@ -156,6 +185,7 @@
 	async function connect(mode: 'initial' | 'manual' | 'auto' = 'manual') {
 		const run = ++connectRun;
 		clearReconnectTimer();
+		clearConnectionTimer();
 		if (mode !== 'auto') reconnectAttempt = 0;
 		manualDisconnect = false;
 		disconnect();
@@ -191,12 +221,12 @@
 			throw new Error('Desktop is still preparing. Try reconnecting in a minute.');
 		} catch (err) {
 			if (!isCurrent(run)) return;
-			if (mode === 'manual') {
+			if (mode !== 'auto') {
 				status = 'error';
 				errorMessage = err instanceof Error ? err.message : 'Failed to open desktop';
 				return;
 			}
-			scheduleReconnect(run);
+			scheduleReconnect(run, err instanceof Error ? `${err.message}. Retrying...` : 'Failed to open desktop. Retrying...');
 		}
 	}
 
@@ -213,6 +243,7 @@
 		manualDisconnect = true;
 		connectRun += 1;
 		clearReconnectTimer();
+		clearConnectionTimer();
 		disconnect();
 		status = 'disconnected';
 		errorMessage = '';
@@ -282,6 +313,7 @@
 		manualDisconnect = true;
 		connectRun += 1;
 		clearReconnectTimer();
+		clearConnectionTimer();
 		if (linkTimer) clearTimeout(linkTimer);
 		removeLifecycleListeners?.();
 		disconnect();
@@ -358,7 +390,13 @@
 		></div>
 		{#if status === 'preparing' || status === 'connecting' || status === 'reconnecting'}
 			<div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
-				<div class="h-5 w-5 animate-spin rounded-full border-2 border-gray-700 border-t-gray-200"></div>
+				<div class="flex max-w-sm flex-col items-center gap-3 px-6 text-center">
+					<div class="h-5 w-5 animate-spin rounded-full border-2 border-gray-700 border-t-gray-200"></div>
+					<div class="text-sm font-medium text-gray-200">{loadingMessage}</div>
+					{#if errorMessage}
+						<div class="text-xs text-gray-400">{errorMessage}</div>
+					{/if}
+				</div>
 			</div>
 		{/if}
 	</div>

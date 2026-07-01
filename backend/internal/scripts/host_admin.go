@@ -266,13 +266,13 @@ Environment=HOME=${DESKTOP_HOME}
 Environment=SHELL=/bin/bash
 Environment=DISPLAY=:1
 Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
-Environment=TARDI_DESKTOP_SERVICE_VERSION=20260629
+Environment=TARDI_DESKTOP_SERVICE_VERSION=2026070101
 ExecStartPre=/bin/mkdir -p ${RUNTIME_DIR}
 ExecStartPre=/bin/chown ${DESKTOP_USER}:${DESKTOP_GROUP} ${RUNTIME_DIR}
 ExecStartPre=/bin/chmod 700 ${RUNTIME_DIR}
 ExecStartPre=-/usr/bin/vncserver -kill :1
 ExecStartPre=-/usr/bin/pkill -u ${DESKTOP_USER} -f /usr/local/bin/tardi-vnc-session
-ExecStart=/usr/bin/vncserver :1 -fg -localhost yes -SecurityTypes None -geometry 1440x900 -depth 24
+ExecStart=/usr/bin/vncserver :1 -fg -localhost yes -SecurityTypes None -UseBlacklist 0 -geometry 1440x900 -depth 24
 ExecStop=/usr/bin/vncserver -kill :1
 ExecStopPost=-/usr/bin/pkill -u ${DESKTOP_USER} -f /usr/local/bin/tardi-vnc-session
 Restart=on-failure
@@ -284,6 +284,7 @@ SVCEOF
 
 systemctl daemon-reload
 systemctl enable tardi-desktop.service
+systemctl restart tardi-desktop.service
 '''
     output = run_bash(script, timeout=1800)
     return {"message": "desktop profile installed", "output": output}
@@ -468,7 +469,7 @@ chmod 755 "$INSTALL_DIR/server.py"
 cat > "$BIN_DIR/tardi-host-admin" <<'CLIENTEOF'
 #!/bin/sh
 set -eu
-# TARDI_HOST_ADMIN_CLIENT_VERSION=2026063001
+# TARDI_HOST_ADMIN_CLIENT_VERSION=2026070101
 
 ACTION="${1:-}"
 SOCKET="${TARDI_HOST_ADMIN_SOCKET:-/run/tardi-host-admin/admin.sock}"

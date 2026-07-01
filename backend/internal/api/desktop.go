@@ -37,9 +37,111 @@ const (
 	desktopVNCAddress        = "127.0.0.1:5901"
 	desktopReadyCheckTimeout = 15 * time.Second
 	desktopPrepareKickoffTTL = 20 * time.Second
-	desktopServiceVersion    = "20260629"
-	desktopHostAdminVersion  = "2026063001"
+	desktopServiceVersion    = "2026070101"
+	desktopHostAdminVersion  = "2026070101"
 )
+
+const desktopVNCProbeShell = `
+vnc_probe() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "vnc_probe_error:python3_missing" >&2
+        return 1
+    fi
+
+    python3 - <<'PY'
+import socket
+import struct
+import sys
+
+
+def recvn(sock, size):
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
+def fail(message, code=1):
+    print(message)
+    sys.exit(code)
+
+
+def read_reason(sock):
+    try:
+        raw = recvn(sock, 4)
+        if len(raw) != 4:
+            return ""
+        size = struct.unpack(">I", raw)[0]
+        if size < 1 or size > 4096:
+            return ""
+        return recvn(sock, size).decode("utf-8", "replace")
+    except Exception:
+        return ""
+
+
+try:
+    with socket.create_connection(("127.0.0.1", 5901), timeout=3) as sock:
+        sock.settimeout(3)
+        banner = recvn(sock, 12)
+        if len(banner) != 12 or not banner.startswith(b"RFB "):
+            fail("bad_vnc_banner")
+
+        use_rfb_33 = banner[4:11] == b"003.003"
+        sock.sendall(b"RFB 003.003\n" if use_rfb_33 else b"RFB 003.008\n")
+
+        if use_rfb_33:
+            raw_security = recvn(sock, 4)
+            if len(raw_security) != 4:
+                fail("short_vnc_security")
+            security_type = struct.unpack(">I", raw_security)[0]
+            if security_type == 0:
+                fail("vnc_security_failure:" + read_reason(sock), 2)
+            if security_type != 1:
+                fail("unsupported_vnc_security:%d" % security_type)
+            sock.sendall(b"\x01")
+        else:
+            raw_count = recvn(sock, 1)
+            if len(raw_count) != 1:
+                fail("short_vnc_security_types")
+            count = raw_count[0]
+            if count == 0:
+                fail("vnc_security_failure:" + read_reason(sock), 2)
+            security_types = recvn(sock, count)
+            if len(security_types) != count:
+                fail("short_vnc_security_type_list")
+            if 1 not in security_types:
+                fail("unsupported_vnc_security_types:" + ",".join(str(t) for t in security_types))
+            sock.sendall(b"\x01")
+            raw_result = recvn(sock, 4)
+            if len(raw_result) != 4:
+                fail("short_vnc_security_result")
+            security_result = struct.unpack(">I", raw_result)[0]
+            if security_result != 0:
+                fail("vnc_security_failure:" + read_reason(sock), 2)
+            sock.sendall(b"\x01")
+
+        raw_geometry = recvn(sock, 4)
+        if len(raw_geometry) != 4:
+            fail("short_vnc_server_init")
+        width, height = struct.unpack(">HH", raw_geometry)
+        if width < 1 or height < 1:
+            fail("invalid_vnc_geometry:%dx%d" % (width, height))
+        print("ready:%dx%d" % (width, height))
+except Exception as exc:
+    fail("vnc_probe_error:" + str(exc))
+PY
+}
+
+vnc_probe_is_blacklisted() {
+    case "$1" in
+        *"Too many security failures"*|*"blacklisted"*|*"black-listed"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+`
 
 var desktopSessions sync.Map
 
@@ -310,16 +412,25 @@ func startDesktopPrepare(ctx context.Context, deps Dependencies, inst *models.Vp
 func buildDesktopReadyCommand() string {
 	return fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
+%s
 if [ -f /etc/systemd/system/tardi-desktop.service ] &&
     grep -q 'TARDI_DESKTOP_SERVICE_VERSION=%s' /etc/systemd/system/tardi-desktop.service 2>/dev/null &&
     systemctl is-active --quiet tardi-desktop.service &&
-    { command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; } &&
-    bash -lc '>/dev/tcp/127.0.0.1/5901' 2>/dev/null; then
-    echo ready
-else
-    echo preparing
+    { command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; }; then
+    if probe_out=$(vnc_probe 2>&1); then
+        echo ready
+        exit 0
+    elif vnc_probe_is_blacklisted "$probe_out"; then
+        systemctl restart tardi-desktop.service 2>/dev/null || true
+        sleep 2
+        if vnc_probe >/dev/null 2>&1; then
+            echo ready
+            exit 0
+        fi
+    fi
 fi
-`, desktopServiceVersion)
+echo preparing
+`, desktopVNCProbeShell, desktopServiceVersion)
 }
 
 func buildDesktopPrepareKickoffCommand(launchTradingView bool, symbol string) string {
@@ -342,6 +453,7 @@ func buildDesktopPrepareCommand(launchTradingView bool, symbol string) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
+%s
 
 find_runtime_dir() {
     if [ -f /opt/openclaw/.env ]; then
@@ -411,13 +523,15 @@ elif [ ! -f /etc/systemd/system/tardi-desktop.service ]; then
     NEEDS_INSTALL=true
 elif ! grep -q -- '-SecurityTypes None' /etc/systemd/system/tardi-desktop.service 2>/dev/null; then
     NEEDS_INSTALL=true
+elif ! grep -q -- '-UseBlacklist 0' /etc/systemd/system/tardi-desktop.service 2>/dev/null; then
+    NEEDS_INSTALL=true
 elif ! grep -q 'TARDI_DESKTOP_SERVICE_VERSION=%s' /etc/systemd/system/tardi-desktop.service 2>/dev/null; then
     NEEDS_INSTALL=true
 fi
 if [ "$NEEDS_INSTALL" = true ]; then
     "$CLIENT" desktop.install >/tmp/tardi-desktop-install.log
 fi
-`, desktopHostAdminVersion, desktopServiceVersion))
+`, desktopVNCProbeShell, desktopHostAdminVersion, desktopServiceVersion))
 	if launchTradingView {
 		if strings.TrimSpace(symbol) == "" {
 			symbol = "BINANCE:BTCUSDT"
@@ -426,13 +540,21 @@ fi
 	} else {
 		b.WriteString("\"$CLIENT\" desktop.start >/tmp/tardi-desktop-start.log\n")
 	}
-	b.WriteString(fmt.Sprintf(`for i in $(seq 1 30); do
+	b.WriteString(fmt.Sprintf(`BLACKLIST_RECOVERED=false
+for i in $(seq 1 30); do
     if grep -q 'TARDI_DESKTOP_SERVICE_VERSION=%s' /etc/systemd/system/tardi-desktop.service 2>/dev/null &&
         systemctl is-active --quiet tardi-desktop.service &&
-        { command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; } &&
-        bash -lc '>/dev/tcp/127.0.0.1/5901' 2>/dev/null; then
-        "$CLIENT" desktop.status
-        exit 0
+        { command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; }; then
+        if probe_out=$(vnc_probe 2>&1); then
+            "$CLIENT" desktop.status
+            exit 0
+        elif [ "$BLACKLIST_RECOVERED" = false ] && vnc_probe_is_blacklisted "$probe_out"; then
+            BLACKLIST_RECOVERED=true
+            if ! systemctl restart tardi-desktop.service 2>/dev/null; then
+                "$CLIENT" desktop.restart >/tmp/tardi-desktop-restart.log
+            fi
+            sleep 2
+        fi
     fi
     sleep 1
 done

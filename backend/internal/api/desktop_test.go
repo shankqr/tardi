@@ -1,6 +1,8 @@
 package api
 
 import (
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -45,14 +47,16 @@ func TestBuildDesktopPrepareCommand(t *testing.T) {
 		"/api/agent/host-admin-script",
 		"/opt/openclaw/host-admin/bin/tardi-host-admin",
 		"/opt/hermes/host-admin/bin/tardi-host-admin",
-		"TARDI_HOST_ADMIN_CLIENT_VERSION=2026063001",
+		"TARDI_HOST_ADMIN_CLIENT_VERSION=2026070101",
 		"desktop.install",
 		"desktop.open 'NASDAQ:AAPL'",
 		"-SecurityTypes None",
-		"TARDI_DESKTOP_SERVICE_VERSION=20260629",
+		"-UseBlacklist 0",
+		"TARDI_DESKTOP_SERVICE_VERSION=2026070101",
 		"systemctl is-active --quiet tardi-desktop.service",
 		"command -v google-chrome",
-		"/dev/tcp/127.0.0.1/5901",
+		"vnc_probe",
+		"Too many security failures",
 	}
 	for _, want := range required {
 		if !strings.Contains(cmd, want) {
@@ -65,10 +69,11 @@ func TestBuildDesktopReadyCommand(t *testing.T) {
 	cmd := buildDesktopReadyCommand()
 
 	required := []string{
-		"TARDI_DESKTOP_SERVICE_VERSION=20260629",
+		"TARDI_DESKTOP_SERVICE_VERSION=2026070101",
 		"systemctl is-active --quiet tardi-desktop.service",
 		"command -v google-chrome",
-		"/dev/tcp/127.0.0.1/5901",
+		"vnc_probe",
+		"systemctl restart tardi-desktop.service",
 		"echo ready",
 		"echo preparing",
 	}
@@ -92,6 +97,28 @@ func TestBuildDesktopPrepareKickoffCommand(t *testing.T) {
 	for _, want := range required {
 		if !strings.Contains(cmd, want) {
 			t.Fatalf("buildDesktopPrepareKickoffCommand() missing %q", want)
+		}
+	}
+}
+
+func TestBuildDesktopShellCommandsSyntax(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+
+	commands := map[string]string{
+		"ready":   buildDesktopReadyCommand(),
+		"prepare": buildDesktopPrepareCommand(true, "NASDAQ:AAPL"),
+		"kickoff": buildDesktopPrepareKickoffCommand(false, ""),
+	}
+	for name, command := range commands {
+		path := t.TempDir() + "/" + name + ".sh"
+		if err := os.WriteFile(path, []byte(command), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command("bash", "-n", path).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s command failed bash -n: %v\n%s", name, err, out)
 		}
 	}
 }
