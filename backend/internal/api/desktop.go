@@ -37,8 +37,8 @@ const (
 	desktopVNCAddress        = "127.0.0.1:5901"
 	desktopReadyCheckTimeout = 15 * time.Second
 	desktopPrepareKickoffTTL = 20 * time.Second
-	desktopServiceVersion    = "2026070101"
-	desktopHostAdminVersion  = "2026070101"
+	desktopServiceVersion    = "2026070301"
+	desktopHostAdminVersion  = "2026070301"
 )
 
 const desktopVNCProbeShell = `

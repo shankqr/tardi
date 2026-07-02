@@ -47,12 +47,12 @@ func TestBuildDesktopPrepareCommand(t *testing.T) {
 		"/api/agent/host-admin-script",
 		"/opt/openclaw/host-admin/bin/tardi-host-admin",
 		"/opt/hermes/host-admin/bin/tardi-host-admin",
-		"TARDI_HOST_ADMIN_CLIENT_VERSION=2026070101",
+		"TARDI_HOST_ADMIN_CLIENT_VERSION=2026070301",
 		"desktop.install",
 		"desktop.open 'NASDAQ:AAPL'",
 		"-SecurityTypes None",
 		"-UseBlacklist 0",
-		"TARDI_DESKTOP_SERVICE_VERSION=2026070101",
+		"TARDI_DESKTOP_SERVICE_VERSION=2026070301",
 		"systemctl is-active --quiet tardi-desktop.service",
 		"command -v google-chrome",
 		"vnc_probe",
@@ -69,7 +69,7 @@ func TestBuildDesktopReadyCommand(t *testing.T) {
 	cmd := buildDesktopReadyCommand()
 
 	required := []string{
-		"TARDI_DESKTOP_SERVICE_VERSION=2026070101",
+		"TARDI_DESKTOP_SERVICE_VERSION=2026070301",
 		"systemctl is-active --quiet tardi-desktop.service",
 		"command -v google-chrome",
 		"vnc_probe",

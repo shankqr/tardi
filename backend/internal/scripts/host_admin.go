@@ -190,6 +190,42 @@ RUNTIME_DIR="/tmp/tardi-runtime-${DESKTOP_USER}"
 install -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" -m 700 -d "$DESKTOP_HOME/.vnc"
 install -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" -m 700 -d "$RUNTIME_DIR"
 install -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" -m 700 -d "$DESKTOP_HOME/.config/autostart"
+install -o "$DESKTOP_USER" -g "$DESKTOP_GROUP" -m 755 -d "$DESKTOP_HOME/Desktop"
+
+cat > /usr/local/bin/tardi-open-tradingview <<'TRADINGVIEWLAUNCH'
+#!/bin/sh
+set -eu
+
+URL="${1:-https://www.tradingview.com/chart/?symbol=BINANCE%3ABTCUSDT}"
+
+if command -v tradingview >/dev/null 2>&1; then
+    exec tradingview --no-sandbox "$URL"
+fi
+if command -v google-chrome-stable >/dev/null 2>&1; then
+    exec google-chrome-stable --no-sandbox --new-window "$URL"
+fi
+if command -v google-chrome >/dev/null 2>&1; then
+    exec google-chrome --no-sandbox --new-window "$URL"
+fi
+exec xdg-open "$URL"
+TRADINGVIEWLAUNCH
+chmod 755 /usr/local/bin/tardi-open-tradingview
+
+cat > "$DESKTOP_HOME/Desktop/TradingView.desktop" <<'TRADINGVIEWDESKTOP'
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=TradingView
+Comment=Open TradingView charts
+Exec=/usr/local/bin/tardi-open-tradingview
+Icon=tradingview
+Terminal=false
+Categories=Finance;Network;
+StartupNotify=true
+TRADINGVIEWDESKTOP
+chown "$DESKTOP_USER:$DESKTOP_GROUP" "$DESKTOP_HOME/Desktop/TradingView.desktop"
+chmod 755 "$DESKTOP_HOME/Desktop/TradingView.desktop"
+runuser -u "$DESKTOP_USER" -- gio set "$DESKTOP_HOME/Desktop/TradingView.desktop" metadata::trusted true >/dev/null 2>&1 || true
 
 cat > "$DESKTOP_HOME/.config/autostart/light-locker.desktop" <<'LIGHTLOCKER'
 [Desktop Entry]
@@ -266,7 +302,7 @@ Environment=HOME=${DESKTOP_HOME}
 Environment=SHELL=/bin/bash
 Environment=DISPLAY=:1
 Environment=XDG_RUNTIME_DIR=${RUNTIME_DIR}
-Environment=TARDI_DESKTOP_SERVICE_VERSION=2026070101
+Environment=TARDI_DESKTOP_SERVICE_VERSION=2026070301
 ExecStartPre=/bin/mkdir -p ${RUNTIME_DIR}
 ExecStartPre=/bin/chown ${DESKTOP_USER}:${DESKTOP_GROUP} ${RUNTIME_DIR}
 ExecStartPre=/bin/chmod 700 ${RUNTIME_DIR}
@@ -469,7 +505,7 @@ chmod 755 "$INSTALL_DIR/server.py"
 cat > "$BIN_DIR/tardi-host-admin" <<'CLIENTEOF'
 #!/bin/sh
 set -eu
-# TARDI_HOST_ADMIN_CLIENT_VERSION=2026070101
+# TARDI_HOST_ADMIN_CLIENT_VERSION=2026070301
 
 ACTION="${1:-}"
 SOCKET="${TARDI_HOST_ADMIN_SOCKET:-/run/tardi-host-admin/admin.sock}"

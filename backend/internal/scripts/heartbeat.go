@@ -60,7 +60,7 @@ fi
 # Installs a root-owned helper and mounts its Unix socket plus client binaries
 # into OpenClaw. The helper includes a generic host.exec root bridge exposed as
 # /opt/tardi/bin/sudo inside the container.
-if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/openclaw/host-admin/bin/tardi-host-admin ] || [ ! -x /opt/openclaw/host-admin/bin/sudo ] || ! grep -q 'host.exec' /opt/openclaw/host-admin/bin/tardi-host-admin 2>/dev/null || ! grep -q 'TARDI_HOST_ADMIN_CLIENT_VERSION=2026070101' /opt/openclaw/host-admin/bin/tardi-host-admin 2>/dev/null || ! grep -q 'TARDI_HOST_ADMIN_SUDO_VERSION=20260429' /opt/openclaw/host-admin/bin/sudo 2>/dev/null; then
+if [ ! -S /run/tardi-host-admin/admin.sock ] || [ ! -x /opt/openclaw/host-admin/bin/tardi-host-admin ] || [ ! -x /opt/openclaw/host-admin/bin/sudo ] || ! grep -q 'host.exec' /opt/openclaw/host-admin/bin/tardi-host-admin 2>/dev/null || ! grep -q 'TARDI_HOST_ADMIN_CLIENT_VERSION=2026070301' /opt/openclaw/host-admin/bin/tardi-host-admin 2>/dev/null || ! grep -q 'TARDI_HOST_ADMIN_SUDO_VERSION=20260429' /opt/openclaw/host-admin/bin/sudo 2>/dev/null; then
     if curl -sf -H "Authorization: Bearer ${AGENT_TOKEN}" "${API_URL}/api/agent/host-admin-script" -o /opt/openclaw/install-host-admin.sh 2>/dev/null; then
         chmod +x /opt/openclaw/install-host-admin.sh
         /opt/openclaw/install-host-admin.sh >/tmp/tardi-host-admin-install.log 2>&1 || true
