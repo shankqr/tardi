@@ -148,7 +148,7 @@ ensure_hermes_stack() {
         "SSL_CERT_DIR=/etc/ssl/certs" \
         "TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock" \
         "TARDI_HOST_EXEC_TIMEOUT=1800" \
-        "PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; do
+        "PATH=/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; do
         key=${kv%%=*}
         if grep -q "^${key}=" /opt/hermes/.env 2>/dev/null; then
             sed -i "s|^${key}=.*|${kv}|" /opt/hermes/.env

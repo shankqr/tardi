@@ -208,7 +208,7 @@ SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 SSL_CERT_DIR=/etc/ssl/certs
 TARDI_HOST_ADMIN_SOCKET=/run/tardi-host-admin/admin.sock
 TARDI_HOST_EXEC_TIMEOUT=1800
-PATH=/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PATH=/opt/hermes/bin:/opt/hermes/.venv/bin:/opt/data/.local/bin:/opt/tardi/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 OPENROUTER_API_KEY={{.OpenRouterAPIKey}}
 {{- if .BackendEgressCIDRs}}
 BACKEND_EGRESS_CIDRS={{.BackendEgressCIDRs}}

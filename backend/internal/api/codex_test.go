@@ -127,7 +127,7 @@ func TestCodexScriptsSupportHermes(t *testing.T) {
 			name:   "start",
 			script: codexLinkStartScript(inst, "false"),
 			want: []string{
-				"hermes auth add openai-codex",
+				hermesCLIPath + " auth add openai-codex",
 				hermesCodexLoginLogPath,
 			},
 			forbidden: []string{"openclaw-gateway"},

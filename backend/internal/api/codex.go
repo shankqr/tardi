@@ -25,6 +25,7 @@ const (
 	hermesCodexAuthHostPath  = "/opt/hermes/data/auth.json"
 	hermesCodexProvider      = "openai-codex"
 	hermesCodexModelID       = "openai-codex/gpt-5.5"
+	hermesCLIPath            = "/opt/hermes/bin/hermes"
 	codexLinkStartMinGap     = 30 * time.Second
 	codexRestartMaxDuration  = 90 * time.Second
 	codexHealthPollInterval  = 5 * time.Second
@@ -158,7 +159,7 @@ if [ "%s" = "true" ]; then
         rm -f "$tmp"
     fi
 fi
-docker exec -d hermes-agent sh -c 'rm -f %s; hermes auth add openai-codex --label tardi-chatgpt > %s 2>&1'
+docker exec -d hermes-agent sh -c 'rm -f %s; %s auth add openai-codex --label tardi-chatgpt > %s 2>&1'
 for i in $(seq 1 40); do
     sleep 0.5
     if docker exec hermes-agent grep -qE 'codex/device|Enter this code' %s 2>/dev/null; then
@@ -171,6 +172,7 @@ docker exec hermes-agent cat %s 2>/dev/null || true`,
 			hermesCodexAuthHostPath,
 			hermesCodexAuthHostPath,
 			hermesCodexLoginLogPath,
+			hermesCLIPath,
 			hermesCodexLoginLogPath,
 			hermesCodexLoginLogPath,
 			hermesCodexLoginLogPath)
