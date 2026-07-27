@@ -6,6 +6,11 @@ resource "google_cloud_run_v2_service" "api" {
   template {
     service_account = google_service_account.api.email
 
+    # Fractional CPU requires single-request concurrency. Production's 30-day
+    # hourly p99 peaked at ~0.33 vCPU and ~97 MiB, so this keeps healthy
+    # headroom while halving the idle minimum-instance allocation.
+    max_instance_request_concurrency = 1
+
     # Direct VPC egress so Cloud SQL Auth Proxy can reach private IP
     vpc_access {
       network_interfaces {
@@ -170,8 +175,8 @@ resource "google_cloud_run_v2_service" "api" {
 
       resources {
         limits = {
-          cpu    = "1"
-          memory = "512Mi"
+          cpu    = "0.5"
+          memory = "256Mi"
         }
         cpu_idle = true
       }
@@ -195,6 +200,8 @@ resource "google_cloud_run_v2_service" "api" {
 
     scaling {
       min_instance_count = var.environment == "prod" ? 1 : 0
+      # Fractional CPU forces concurrency=1, so retain enough burst capacity
+      # for long-lived terminal and desktop WebSocket connections.
       max_instance_count = var.environment == "prod" ? 10 : 2
     }
 

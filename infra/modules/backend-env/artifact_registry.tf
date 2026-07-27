@@ -15,10 +15,19 @@ resource "google_artifact_registry_repository" "tardi" {
   }
 
   cleanup_policies {
-    id     = "keep-10-most-recent-tagged"
+    id     = "delete-old-tagged-after-30d"
+    action = "DELETE"
+    condition {
+      tag_state  = "TAGGED"
+      older_than = "2592000s"
+    }
+  }
+
+  cleanup_policies {
+    id     = "keep-5-most-recent"
     action = "KEEP"
     most_recent_versions {
-      keep_count = 10
+      keep_count = 5
     }
   }
 
