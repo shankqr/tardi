@@ -47,8 +47,8 @@ var (
 // CodexLinkState holds in-process per-instance state that the codex link
 // handlers use to rate limit the start endpoint and avoid redundant gateway
 // restarts while a link is being finalised. Scope is a single Cloud Run
-// instance — cross-instance coordination isn't necessary because both
-// behaviours are best-effort optimisations.
+// instance; finalisation also uses a PostgreSQL advisory lock because gateway
+// restarts must be deduplicated across Cloud Run instances.
 type CodexLinkState struct {
 	lastStart sync.Map // uuid.UUID -> time.Time
 	restartAt sync.Map // uuid.UUID -> time.Time
@@ -422,6 +422,36 @@ func finaliseCodexLink(deps Dependencies, inst *models.VpsInstance, host string,
 	ctx, cancel := context.WithTimeout(context.Background(), codexRestartGoroutineCap)
 	defer cancel()
 
+	// Cloud Run can serve the status poll from multiple instances. The local
+	// CodexLinkState marker only deduplicates within one process, so without a
+	// shared lock several instances can concurrently restart the same gateway
+	// against one newly-issued refresh token. Codex rotates refresh tokens;
+	// the losing restart then reports refresh_token_reused and clears auth.
+	releaseLock, acquired, err := acquireCodexFinaliseLock(ctx, deps, instanceID)
+	if err != nil {
+		slog.Error("codex finalise: acquire distributed lock", "instance_id", instanceID, "error", err)
+		return
+	}
+	if !acquired {
+		slog.Info("codex finalise: already running elsewhere", "instance_id", instanceID)
+		return
+	}
+	defer releaseLock()
+
+	// A status request can read the old DB state before another finaliser
+	// completes, then reach this point after that finaliser releases the lock.
+	// Recheck under the lock so that stale request cannot restart the gateway a
+	// second time with the freshly-rotated refresh token.
+	complete, err := codexFinalisationComplete(ctx, deps, instanceID)
+	if err != nil {
+		slog.Error("codex finalise: check persisted state", "instance_id", instanceID, "error", err)
+		return
+	}
+	if complete {
+		slog.Info("codex finalise: already complete", "instance_id", instanceID)
+		return
+	}
+
 	if inst.Framework == models.FrameworkHermes {
 		if err := setHermesCodexAgentConfig(ctx, deps, instanceID); err != nil {
 			slog.Error("codex finalise: set Hermes agent config", "instance_id", instanceID, "error", err)
@@ -464,6 +494,54 @@ func finaliseCodexLink(deps Dependencies, inst *models.VpsInstance, host string,
 
 	writeCodexAuditLog(ctx, deps, instanceID, "codex_link", nil)
 	slog.Info("codex finalise: linked", "instance_id", instanceID)
+}
+
+// acquireCodexFinaliseLock holds a PostgreSQL advisory lock on a dedicated
+// pooled connection for the duration of finalisation. The release closure is
+// safe to call after the request that started the background goroutine ends.
+func acquireCodexFinaliseLock(ctx context.Context, deps Dependencies, instanceID uuid.UUID) (func(), bool, error) {
+	conn, err := deps.Pool.Acquire(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("acquire connection: %w", err)
+	}
+
+	lockKey := "codex-finalise:" + instanceID.String()
+	var acquired bool
+	if err := conn.QueryRow(ctx,
+		`SELECT pg_try_advisory_lock(hashtextextended($1, 0))`, lockKey,
+	).Scan(&acquired); err != nil {
+		conn.Release()
+		return nil, false, fmt.Errorf("try advisory lock: %w", err)
+	}
+	if !acquired {
+		conn.Release()
+		return func() {}, false, nil
+	}
+
+	release := func() {
+		unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := conn.Exec(unlockCtx,
+			`SELECT pg_advisory_unlock(hashtextextended($1, 0))`, lockKey,
+		); err != nil {
+			slog.Warn("codex finalise: release distributed lock", "instance_id", instanceID, "error", err)
+		}
+		conn.Release()
+	}
+	return release, true, nil
+}
+
+func codexFinalisationComplete(ctx context.Context, deps Dependencies, instanceID uuid.UUID) (bool, error) {
+	var complete bool
+	if err := deps.Pool.QueryRow(ctx, `
+		SELECT codex_linked_at IS NOT NULL
+		       AND agent_error IS DISTINCT FROM 'codex_reauth_required'
+		FROM vps_instances
+		WHERE id = $1
+	`, instanceID).Scan(&complete); err != nil {
+		return false, fmt.Errorf("query Codex link state: %w", err)
+	}
+	return complete, nil
 }
 
 // CodexUnlinkHandler removes the persisted auth.json, clears the DB link
